@@ -17,6 +17,71 @@ func (s *Server) handleListChannels(w http.ResponseWriter, r *http.Request, p mo
 	writeJSON(w, http.StatusOK, map[string]any{"channels": list})
 }
 
+// handleBrowseChannels lists the public channels the caller can join but has
+// not joined yet, with a live member count for each.
+func (s *Server) handleBrowseChannels(w http.ResponseWriter, r *http.Request, p models.Participant) {
+	list, err := s.store.BrowsableChannels(r.Context(), p.RoomID, p.ID)
+	if err != nil {
+		writeStoreErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"channels": list})
+}
+
+// handleJoinChannel adds the caller to a channel. Idempotent: re-joining is a
+// no-op that still returns 200 with the channel.
+func (s *Server) handleJoinChannel(w http.ResponseWriter, r *http.Request, p models.Participant) {
+	ch, err := s.resolveChannel(r, p, r.PathValue("id"))
+	if err != nil {
+		writeStoreErr(w, err)
+		return
+	}
+	if ch.Archived {
+		writeErr(w, http.StatusConflict, "channel is archived")
+		return
+	}
+	if _, err := s.store.JoinChannel(r.Context(), p.RoomID, ch.ID, p.ID, ch.Name); err != nil {
+		writeStoreErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, ch)
+}
+
+// handleLeaveChannel removes the caller from a channel. #general is pinned:
+// nobody can leave it, so no participant is ever left with an empty sidebar.
+func (s *Server) handleLeaveChannel(w http.ResponseWriter, r *http.Request, p models.Participant) {
+	ch, err := s.resolveChannel(r, p, r.PathValue("id"))
+	if err != nil {
+		writeStoreErr(w, err)
+		return
+	}
+	if ch.Name == "general" {
+		writeErr(w, http.StatusConflict, "the general channel cannot be left")
+		return
+	}
+	if _, err := s.store.LeaveChannel(r.Context(), p.RoomID, ch.ID, p.ID, ch.Name); err != nil {
+		writeStoreErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "left", "channel_id": ch.ID})
+}
+
+// requireChannelMember gates a channel's contents by membership. A non-member
+// gets 403. FR #2 will make private channels 404 here so they don't confirm
+// they exist; public channels stay 403 (you can see them in browse anyway).
+func (s *Server) requireChannelMember(w http.ResponseWriter, r *http.Request, p models.Participant, channelID string) bool {
+	ok, err := s.store.IsChannelMember(r.Context(), channelID, p.ID)
+	if err != nil {
+		writeStoreErr(w, err)
+		return false
+	}
+	if !ok {
+		writeErr(w, http.StatusForbidden, "you are not a member of this channel")
+		return false
+	}
+	return true
+}
+
 // handleMarkRead advances the caller's read marker for a channel to now.
 func (s *Server) handleMarkRead(w http.ResponseWriter, r *http.Request, p models.Participant) {
 	ch, err := s.resolveChannel(r, p, r.PathValue("id"))

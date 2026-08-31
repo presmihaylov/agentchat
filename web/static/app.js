@@ -385,6 +385,14 @@
         }
       }
       li.onclick = () => selectChannel(ch);
+      if (ch.name !== 'general') {
+        li.oncontextmenu = (ev) => {
+          ev.preventDefault();
+          openContextMenu(ev.clientX, ev.clientY, [
+            { label: 'Leave channel', danger: true, run: () => leaveChannel(ch) },
+          ]);
+        };
+      }
       ul.appendChild(li);
       // nest this channel's involved threads as leaves right beneath it
       threads.filter((t) => t.channel_id === ch.id).forEach((t) => ul.appendChild(threadLeafLi(t)));
@@ -1337,6 +1345,7 @@
 
   document.addEventListener('keydown', (ev) => {
     if (ev.key === 'Escape' && !$('lightbox').classList.contains('hidden')) $('lightbox').click();
+    if (ev.key === 'Escape' && !$('browse-modal').classList.contains('hidden')) closeBrowse();
   });
 
   $('profile-close').onclick = () => $('profile-modal').classList.add('hidden');
@@ -1400,6 +1409,66 @@
     if (!name) return;
     try { await api('/api/v1/channels', { method: 'POST', body: { name: name.trim() } }); }
     catch (e) { alert(e.message); }
+  };
+
+  // Browse view: the public channels you are not in yet, each with a Join button.
+  const renderBrowse = (list) => {
+    const box = $('browse-list');
+    box.innerHTML = '';
+    if (list.length === 0) {
+      box.innerHTML = '<p class="browse-empty">You are in every channel. Nothing to browse.</p>';
+      return;
+    }
+    list.forEach((ch) => {
+      const row = document.createElement('div');
+      row.className = 'browse-row';
+      const n = ch.member_count || 0;
+      row.innerHTML = `<div class="browse-meta">
+          <span class="browse-name">#${esc(ch.name)}</span>
+          <span class="browse-topic">${esc(ch.topic || '')}</span>
+          <span class="browse-count">${n} member${n === 1 ? '' : 's'}</span>
+        </div>`;
+      const join = document.createElement('button');
+      join.className = 'browse-join';
+      join.textContent = 'Join';
+      join.onclick = async () => {
+        join.disabled = true;
+        try {
+          await api('/api/v1/channels/' + ch.id + '/join', { method: 'POST' });
+          await refreshRoom();
+          const joined = channels.find((c) => c.id === ch.id);
+          if (joined) await selectChannel(joined);
+          await openBrowse(); // refresh the list so the joined channel drops off
+        } catch (e) { alert(e.message); join.disabled = false; }
+      };
+      row.appendChild(join);
+      box.appendChild(row);
+    });
+  };
+
+  const openBrowse = async () => {
+    try {
+      const out = await api('/api/v1/channels/browse');
+      renderBrowse(out.channels || []);
+      $('browse-modal').classList.remove('hidden');
+    } catch (e) { alert(e.message); }
+  };
+  const closeBrowse = () => $('browse-modal').classList.add('hidden');
+
+  $('browse-channels').onclick = openBrowse;
+  $('browse-close').onclick = closeBrowse;
+  $('browse-modal').onclick = (ev) => { if (ev.target.id === 'browse-modal') closeBrowse(); };
+
+  // Leave the current channel via its row context menu. #general is pinned:
+  // the server rejects leaving it, so we never offer the action there.
+  const leaveChannel = async (ch) => {
+    try {
+      await api('/api/v1/channels/' + ch.id + '/leave', { method: 'POST' });
+      await refreshRoom();
+      if (current && current.id === ch.id) {
+        await selectChannel(channels.find((c) => c.name === 'general') || channels[0]);
+      }
+    } catch (e) { alert(e.message); }
   };
 
   const showPendingAttachment = (file) => {

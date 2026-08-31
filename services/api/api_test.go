@@ -153,6 +153,9 @@ func TestFullFlow(t *testing.T) {
 	}
 	alice.must("POST", "/api/v1/channels", map[string]any{"name": "deploys"}, 409)
 
+	// bob must join #deploys before he can post or read it (alice auto-joined as creator)
+	bob.must("POST", "/api/v1/channels/deploys/join", nil, 200)
+
 	// events cursor before the action
 	cur := alice.must("GET", "/api/v1/events", nil, 200)
 	cursor := int64(cur["cursor"].(float64))
@@ -883,6 +886,7 @@ func TestRoomThreads(t *testing.T) {
 
 	alice.must("POST", "/api/v1/channels", map[string]any{"name": "proj"}, 201)
 	generalID, projID := chanID("general"), chanID("proj")
+	bob.must("POST", "/api/v1/channels/proj/join", nil, 200) // bob joins the new channel to take part
 
 	// thread A in general: bob replies (involved), then alice @mentions bob in it
 	rootA := alice.must("POST", "/api/v1/channels/general/messages", map[string]any{"body": "topic A"}, 201)
@@ -1372,4 +1376,89 @@ func TestSkillDoc(t *testing.T) {
 			t.Fatalf("hermes reference missing %q", want)
 		}
 	}
+}
+
+// TestChannelMembership is the FR #1 boundary suite: a non-member of a channel
+// can neither read, post, search, nor receive events from it; browse/join/leave
+// work; #general cannot be left.
+func TestChannelMembership(t *testing.T) {
+	srv, _ := newTestServer(t)
+	_, alice, bob := setupRoom(t, srv.URL)
+
+	// alice creates #secret and is auto-joined as its creator; bob is not a member
+	ch := alice.must("POST", "/api/v1/channels", map[string]any{"name": "secret", "topic": "hush"}, 201)
+	secretID := ch["id"].(string)
+	root := alice.must("POST", "/api/v1/channels/secret/messages", map[string]any{"body": "classified @channel"}, 201)
+	rootID := root["id"].(string)
+	alice.must("POST", "/api/v1/channels/secret/messages",
+		map[string]any{"body": "a reply", "thread_root_id": rootID}, 201)
+
+	// --- boundary: bob is not a member, so every content path is 403 ---
+	bob.must("POST", "/api/v1/channels/secret/messages", map[string]any{"body": "let me in"}, 403)
+	bob.must("GET", "/api/v1/channels/secret/messages", nil, 403)
+	bob.must("GET", "/api/v1/messages/"+rootID, nil, 403)
+	bob.must("GET", "/api/v1/threads/"+rootID, nil, 403)
+	bob.must("GET", "/api/v1/channels/secret/threads", nil, 403)
+
+	// bob's channel list never shows #secret; his room overview agrees
+	list := bob.must("GET", "/api/v1/channels", nil, 200)
+	for _, raw := range list["channels"].([]any) {
+		if raw.(map[string]any)["id"] == secretID {
+			t.Fatal("bob's channel list leaked #secret")
+		}
+	}
+
+	// bob's search does not surface a message from a channel he is not in
+	sr := bob.must("GET", "/api/v1/search?q=classified", nil, 200)
+	if n := len(sr["results"].([]any)); n != 0 {
+		t.Fatalf("bob search leaked %d results from #secret", n)
+	}
+
+	// bob's event stream does not deliver #secret's message.created (firehose)
+	c0 := fmt.Sprintf("%.0f", bob.must("GET", "/api/v1/events", nil, 200)["cursor"].(float64))
+	alice.must("POST", "/api/v1/channels/secret/messages", map[string]any{"body": "still secret"}, 201)
+	ev := bob.must("GET", "/api/v1/events?after="+c0, nil, 200)
+	for _, raw := range ev["events"].([]any) {
+		e := raw.(map[string]any)
+		if e["type"] == "message.created" {
+			pl := e["payload"].(map[string]any)
+			if pl["channel_id"] == secretID {
+				t.Fatal("bob received a #secret message.created event")
+			}
+		}
+	}
+
+	// --- browse + join: #secret shows in browse with a member count of 1 ---
+	br := bob.must("GET", "/api/v1/channels/browse", nil, 200)
+	var found map[string]any
+	for _, raw := range br["channels"].([]any) {
+		if raw.(map[string]any)["id"] == secretID {
+			found = raw.(map[string]any)
+		}
+	}
+	if found == nil {
+		t.Fatal("browse did not list joinable #secret")
+	}
+	if found["member_count"].(float64) != 1 {
+		t.Fatalf("browse member_count = %v, want 1", found["member_count"])
+	}
+
+	bob.must("POST", "/api/v1/channels/secret/join", nil, 200)
+	// now a member: read + post succeed, and the two earlier messages are visible
+	msgs := bob.must("GET", "/api/v1/channels/secret/messages", nil, 200)["messages"].([]any)
+	if len(msgs) != 2 {
+		t.Fatalf("after join bob sees %d top-level messages, want 2", len(msgs))
+	}
+	bob.must("POST", "/api/v1/channels/secret/messages", map[string]any{"body": "thanks"}, 201)
+	// once joined, #secret is gone from browse and present in the channel list
+	for _, raw := range bob.must("GET", "/api/v1/channels/browse", nil, 200)["channels"].([]any) {
+		if raw.(map[string]any)["id"] == secretID {
+			t.Fatal("browse still lists #secret after bob joined")
+		}
+	}
+
+	// --- leave: bob leaves #secret and is gated out again; #general cannot be left ---
+	bob.must("POST", "/api/v1/channels/secret/leave", nil, 200)
+	bob.must("GET", "/api/v1/channels/secret/messages", nil, 403)
+	bob.must("POST", "/api/v1/channels/general/leave", nil, 409)
 }

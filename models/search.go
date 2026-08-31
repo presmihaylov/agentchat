@@ -35,6 +35,10 @@ func filterClause(f SearchFilters, args *[]any) string {
 	if f.HasAttachment != nil {
 		add("EXISTS (SELECT 1 FROM message_attachments ma WHERE ma.message_id = m.id) = $%d", *f.HasAttachment)
 	}
+	if f.MemberID != nil {
+		// never surface a channel the caller is not a member of
+		add("m.channel_id IN (SELECT channel_id FROM channel_members WHERE participant_id = $%d)", *f.MemberID)
+	}
 	return clause
 }
 

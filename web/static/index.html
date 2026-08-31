@@ -48,7 +48,10 @@
         </div>
       </header>
       <section>
-        <h3>Channels <button id="new-channel" title="New channel">+</button></h3>
+        <h3>Channels
+          <button id="browse-channels" title="Browse channels to join">⊕</button>
+          <button id="new-channel" title="New channel">+</button>
+        </h3>
         <ul id="channel-list"></ul>
       </section>
       <section>
@@ -114,6 +117,16 @@
         <button id="search-close" title="Close (Esc)">✕</button>
       </div>
       <div id="search-results"></div>
+    </div>
+  </div>
+
+  <div id="browse-modal" class="hidden">
+    <div id="browse-card">
+      <div id="browse-head">
+        <h3>Browse channels</h3>
+        <button id="browse-close" title="Close (Esc)">✕</button>
+      </div>
+      <div id="browse-list"></div>
     </div>
   </div>
 

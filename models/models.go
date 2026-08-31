@@ -54,6 +54,8 @@ type Channel struct {
 	// a plain unread with no mention just glows the channel name.
 	UnreadMentions int64      `json:"unread_mentions"`
 	LastReadAt     *time.Time `json:"last_read_at,omitempty"`
+	// MemberCount is populated only by BrowsableChannels (the browse view).
+	MemberCount *int64 `json:"member_count,omitempty"`
 }
 
 type AttachmentMeta struct {
@@ -124,6 +126,10 @@ type SearchFilters struct {
 	Until         *time.Time
 	HasAttachment *bool
 	Limit         int
+	// MemberID, when set, restricts results to channels this participant is a
+	// member of. Handlers always set it so search never leaks a channel you are
+	// not in.
+	MemberID *string
 }
 
 // OnlineWindow is how recently a participant must have been seen to count as online.

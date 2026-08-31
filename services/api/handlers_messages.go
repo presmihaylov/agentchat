@@ -30,6 +30,9 @@ func (s *Server) handlePostMessage(w http.ResponseWriter, r *http.Request, p mod
 		writeStoreErr(w, err)
 		return
 	}
+	if !s.requireChannelMember(w, r, p, ch.ID) {
+		return
+	}
 	if ch.Archived {
 		writeErr(w, http.StatusConflict, "channel is archived")
 		return
@@ -127,6 +130,9 @@ func (s *Server) handleListMessages(w http.ResponseWriter, r *http.Request, p mo
 		writeStoreErr(w, err)
 		return
 	}
+	if !s.requireChannelMember(w, r, p, ch.ID) {
+		return
+	}
 	q := r.URL.Query()
 	limit, _ := strconv.Atoi(q.Get("limit"))
 	var before *time.Time
@@ -170,6 +176,9 @@ func (s *Server) handleGetMessage(w http.ResponseWriter, r *http.Request, p mode
 	msg, err := s.store.MessageByID(r.Context(), p.RoomID, id)
 	if err != nil {
 		writeStoreErr(w, err)
+		return
+	}
+	if !s.requireChannelMember(w, r, p, msg.ChannelID) {
 		return
 	}
 	writeJSON(w, http.StatusOK, msg)
@@ -241,6 +250,15 @@ func (s *Server) handleGetThread(w http.ResponseWriter, r *http.Request, p model
 		writeErr(w, http.StatusNotFound, "not found")
 		return
 	}
+	// gate on the thread's channel before returning any of its messages
+	root, err := s.store.MessageByID(r.Context(), p.RoomID, id)
+	if err != nil {
+		writeStoreErr(w, err)
+		return
+	}
+	if !s.requireChannelMember(w, r, p, root.ChannelID) {
+		return
+	}
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 	msgs, err := s.store.ListThread(r.Context(), p.RoomID, id, limit)
 	if err != nil {
@@ -272,6 +290,9 @@ func (s *Server) handleListThreads(w http.ResponseWriter, r *http.Request, p mod
 	ch, err := s.resolveChannel(r, p, r.PathValue("id"))
 	if err != nil {
 		writeStoreErr(w, err)
+		return
+	}
+	if !s.requireChannelMember(w, r, p, ch.ID) {
 		return
 	}
 	list, err := s.store.ListInvolvedThreads(r.Context(), p.RoomID, ch.ID, p.ID)

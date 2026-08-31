@@ -50,6 +50,18 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request, p models.P
 	}
 	relevant := q.Get("relevant") == "true"
 
+	// snapshot the caller's channel membership once per poll; a mid-poll join or
+	// leave is picked up on the next poll (<=30s), which is fine for the sidebar.
+	memberIDs, err := s.store.ParticipantChannelIDs(r.Context(), p.ID)
+	if err != nil {
+		writeStoreErr(w, err)
+		return
+	}
+	members := map[string]bool{}
+	for _, id := range memberIDs {
+		members[id] = true
+	}
+
 	wait := time.Duration(0)
 	if ws := q.Get("wait"); ws != "" {
 		sec, err := strconv.Atoi(ws)
@@ -71,7 +83,7 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request, p models.P
 		if len(events) > 0 {
 			scanned = events[len(events)-1].Seq
 		}
-		kept, err := s.filterEvents(r.Context(), events, p, types, relevant)
+		kept, err := s.filterEvents(r.Context(), events, p, members, types, relevant)
 		if err != nil {
 			writeStoreErr(w, err)
 			return
@@ -99,17 +111,40 @@ type eventMessage struct {
 	Mentions     []string `json:"mentions"`
 }
 
-func (s *Server) filterEvents(ctx context.Context, events []models.Event, p models.Participant, types map[string]bool, relevant bool) ([]models.Event, error) {
-	if len(types) == 0 && !relevant {
-		return events, nil
+// gatedChannel returns the channel an event belongs to and whether membership
+// gates its delivery. Content events (message.created/edited) and membership
+// events (channel.member_joined/left) reach only that channel's members.
+// Everything else — participant.*, channel.created/archived/deleted, and
+// message.deleted/working (which carry only a message id, no channel_id) — is
+// delivered to everyone as before.
+func gatedChannel(e models.Event) (string, bool) {
+	switch e.Type {
+	case "message.created", "message.edited",
+		"channel.member_joined", "channel.member_left":
+		var pl struct {
+			ChannelID string `json:"channel_id"`
+		}
+		if err := json.Unmarshal(e.Payload, &pl); err != nil || pl.ChannelID == "" {
+			return "", false
+		}
+		return pl.ChannelID, true
 	}
+	return "", false
+}
 
+func (s *Server) filterEvents(ctx context.Context, events []models.Event, p models.Participant, members, types map[string]bool, relevant bool) ([]models.Event, error) {
 	kept := []models.Event{}
 	// message events whose fate depends on thread participation, keyed by root
 	pending := map[string][]models.Event{}
 	rootIDs := []string{}
 
 	for _, e := range events {
+		// membership gate first, so it runs on every path including the web UI
+		// firehose (types empty, relevant=false): a non-member of a channel
+		// never receives its messages or its membership events.
+		if chID, gated := gatedChannel(e); gated && !members[chID] {
+			continue
+		}
 		if len(types) > 0 && !types[e.Type] {
 			continue
 		}

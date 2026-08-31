@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 func (s *Store) CreateChannel(ctx context.Context, roomID, name, topic, createdBy string) (Channel, error) {
@@ -31,11 +33,103 @@ func (s *Store) CreateChannel(ctx context.Context, roomID, name, topic, createdB
 		return c, err
 	}
 
+	// the creator is the channel's first member
+	if _, err := tx.Exec(ctx,
+		`INSERT INTO channel_members (channel_id, participant_id) VALUES ($1, $2)
+		 ON CONFLICT DO NOTHING`, c.ID, createdBy); err != nil {
+		return c, err
+	}
+
 	payload, _ := json.Marshal(map[string]string{"channel_id": c.ID, "name": c.Name, "created_by": createdBy})
 	if err := appendEventTx(ctx, tx, roomID, "channel.created", payload); err != nil {
 		return c, err
 	}
 	return c, tx.Commit(ctx)
+}
+
+// IsChannelMember reports whether a participant belongs to a channel.
+func (s *Store) IsChannelMember(ctx context.Context, channelID, participantID string) (bool, error) {
+	var ok bool
+	err := s.pool.QueryRow(ctx,
+		`SELECT EXISTS (SELECT 1 FROM channel_members WHERE channel_id = $1 AND participant_id = $2)`,
+		channelID, participantID).Scan(&ok)
+	return ok, err
+}
+
+// ParticipantChannelIDs returns the channel ids a participant is a member of.
+// The event filter uses this to gate content delivery by membership.
+func (s *Store) ParticipantChannelIDs(ctx context.Context, participantID string) ([]string, error) {
+	rows, err := s.pool.Query(ctx,
+		`SELECT channel_id FROM channel_members WHERE participant_id = $1`, participantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []string{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
+}
+
+// JoinChannel adds a participant to a channel and emits channel.member_joined.
+// Idempotent: joining a channel you are already in changes nothing and reports
+// changed=false. The event carries channel_id, so the membership gate delivers
+// it only to that channel's members (the new member included).
+func (s *Store) JoinChannel(ctx context.Context, roomID, channelID, participantID, name string) (bool, error) {
+	return s.setMembership(ctx, roomID, channelID, participantID, name, true)
+}
+
+// LeaveChannel removes a participant from a channel and emits channel.member_left.
+// Idempotent: leaving a channel you are not in reports changed=false.
+func (s *Store) LeaveChannel(ctx context.Context, roomID, channelID, participantID, name string) (bool, error) {
+	return s.setMembership(ctx, roomID, channelID, participantID, name, false)
+}
+
+func (s *Store) setMembership(ctx context.Context, roomID, channelID, participantID, name string, join bool) (bool, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback(ctx)
+
+	// advisory-first: keep event seq order == commit order, like every writer
+	if err := lockRoomEvents(ctx, tx, roomID); err != nil {
+		return false, err
+	}
+
+	var tag pgconn.CommandTag
+	if join {
+		tag, err = tx.Exec(ctx,
+			`INSERT INTO channel_members (channel_id, participant_id) VALUES ($1, $2)
+			 ON CONFLICT DO NOTHING`, channelID, participantID)
+	} else {
+		tag, err = tx.Exec(ctx,
+			`DELETE FROM channel_members WHERE channel_id = $1 AND participant_id = $2`,
+			channelID, participantID)
+	}
+	if err != nil {
+		return false, err
+	}
+	if tag.RowsAffected() == 0 {
+		return false, tx.Commit(ctx) // no-op, nothing to announce
+	}
+
+	typ := "channel.member_joined"
+	if !join {
+		typ = "channel.member_left"
+	}
+	payload, _ := json.Marshal(map[string]string{
+		"channel_id": channelID, "participant_id": participantID, "name": name,
+	})
+	if err := appendEventTx(ctx, tx, roomID, typ, payload); err != nil {
+		return false, err
+	}
+	return true, tx.Commit(ctx)
 }
 
 func (s *Store) ListChannels(ctx context.Context, roomID string) ([]Channel, error) {
@@ -78,6 +172,7 @@ func (s *Store) ListChannelsUnread(ctx context.Context, roomID, participantID st
 		                WHERE mn.message_id = m.id AND mn.participant_id = $2))) AS unread_mentions
 		 FROM channels c
 		 JOIN participants p ON p.id = $2
+		 JOIN channel_members cm ON cm.channel_id = c.id AND cm.participant_id = $2
 		 LEFT JOIN channel_reads r ON r.channel_id = c.id AND r.participant_id = $2
 		 WHERE c.room_id = $1 ORDER BY c.created_at ASC`, roomID, participantID)
 	if err != nil {
@@ -92,6 +187,38 @@ func (s *Store) ListChannelsUnread(ctx context.Context, roomID, participantID st
 			&c.CreatedAt, &c.LastReadAt, &c.UnreadCount, &c.UnreadMentions); err != nil {
 			return nil, err
 		}
+		out = append(out, c)
+	}
+	return out, rows.Err()
+}
+
+// BrowsableChannels lists the channels the caller can join but has not joined:
+// every non-archived channel in the room they are not already a member of, with
+// a live member count. FR #2 will exclude private channels here; for now every
+// channel is public. Sorted by name so the browse list reads alphabetically.
+func (s *Store) BrowsableChannels(ctx context.Context, roomID, participantID string) ([]Channel, error) {
+	rows, err := s.pool.Query(ctx,
+		`SELECT c.id, c.room_id, c.name, c.topic, c.created_by, c.archived, c.created_at,
+		        (SELECT count(*) FROM channel_members m WHERE m.channel_id = c.id) AS member_count
+		 FROM channels c
+		 WHERE c.room_id = $1 AND NOT c.archived
+		   AND NOT EXISTS (SELECT 1 FROM channel_members cm
+		                   WHERE cm.channel_id = c.id AND cm.participant_id = $2)
+		 ORDER BY c.name ASC`, roomID, participantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := []Channel{}
+	for rows.Next() {
+		var c Channel
+		var count int64
+		if err := rows.Scan(&c.ID, &c.RoomID, &c.Name, &c.Topic, &c.CreatedBy,
+			&c.Archived, &c.CreatedAt, &count); err != nil {
+			return nil, err
+		}
+		c.MemberCount = &count
 		out = append(out, c)
 	}
 	return out, rows.Err()

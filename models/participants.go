@@ -44,6 +44,15 @@ func (s *Store) CreateParticipant(ctx context.Context, roomID, name, avatar, des
 	p.Online = true
 	p.Tags = []Tag{}
 
+	// every new participant joins #general, so nobody lands in a room with an
+	// empty sidebar. #general is the one channel you cannot leave.
+	if _, err := tx.Exec(ctx,
+		`INSERT INTO channel_members (channel_id, participant_id)
+		 SELECT id, $2 FROM channels WHERE room_id = $1 AND name = 'general'
+		 ON CONFLICT DO NOTHING`, roomID, p.ID); err != nil {
+		return p, err
+	}
+
 	payload, _ := json.Marshal(map[string]any{
 		"participant_id": p.ID, "name": p.Name, "is_human": p.IsHuman,
 		"role": p.Role, "description": p.Description, "owner_id": p.OwnerID,

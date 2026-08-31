@@ -57,6 +57,8 @@ func (s *Server) parseFilters(w http.ResponseWriter, r *http.Request, p models.P
 		f.HasAttachment = &b
 	}
 	f.Limit, _ = strconv.Atoi(q.Get("limit"))
+	// always member-scope: search never returns a channel you are not in
+	f.MemberID = &p.ID
 	return f, true
 }
 

@@ -67,6 +67,7 @@ func (s *Store) involvedThreads(ctx context.Context, roomID, participantID strin
 		 JOIN messages r ON r.id = i.root_id
 		 JOIN participants ap ON ap.id = r.author_id
 		 JOIN participants p ON p.id = $2
+		 JOIN channel_members cm ON cm.channel_id = r.channel_id AND cm.participant_id = $2
 		 LEFT JOIN thread_states ts ON ts.root_id = r.id AND ts.participant_id = $2
 		 WHERE EXISTS (SELECT 1 FROM messages c WHERE c.thread_root_id = r.id)
 		   AND ts.resolved_at IS NULL
