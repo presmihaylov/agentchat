@@ -54,11 +54,11 @@ func (s *Store) CreateParticipant(ctx context.Context, roomID, name, avatar, des
 func (s *Store) ParticipantByTokenHash(ctx context.Context, hash []byte) (Participant, error) {
 	var p Participant
 	err := s.pool.QueryRow(ctx,
-		`SELECT id, room_id, name, avatar, description, is_human, role, last_seen_at, created_at,
+		`SELECT id, room_id, name, avatar, avatar_attachment_id, description, is_human, role, last_seen_at, created_at,
 		        last_seen_at > now() - $2::interval AS online
 		 FROM participants WHERE token_hash = $1 AND NOT revoked`,
 		hash, OnlineWindow.String(),
-	).Scan(&p.ID, &p.RoomID, &p.Name, &p.Avatar, &p.Description, &p.IsHuman, &p.Role, &p.LastSeenAt, &p.CreatedAt, &p.Online)
+	).Scan(&p.ID, &p.RoomID, &p.Name, &p.Avatar, &p.AvatarAttachmentID, &p.Description, &p.IsHuman, &p.Role, &p.LastSeenAt, &p.CreatedAt, &p.Online)
 	return p, mapRowErr(err)
 }
 
@@ -91,7 +91,7 @@ func (s *Store) ListParticipants(ctx context.Context, roomID string) ([]Particip
 
 func (s *Store) listParticipants(ctx context.Context, roomID string, id, name *string) ([]Participant, error) {
 	rows, err := s.pool.Query(ctx,
-		`SELECT p.id, p.room_id, p.name, p.avatar, p.description, p.is_human, p.role,
+		`SELECT p.id, p.room_id, p.name, p.avatar, p.avatar_attachment_id, p.description, p.is_human, p.role,
 		        p.last_seen_at, p.created_at,
 		        p.last_seen_at > now() - $2::interval AS online,
 		        COALESCE(
@@ -115,7 +115,7 @@ func (s *Store) listParticipants(ctx context.Context, roomID string, id, name *s
 	for rows.Next() {
 		var p Participant
 		var tagsJSON []byte
-		if err := rows.Scan(&p.ID, &p.RoomID, &p.Name, &p.Avatar, &p.Description, &p.IsHuman, &p.Role,
+		if err := rows.Scan(&p.ID, &p.RoomID, &p.Name, &p.Avatar, &p.AvatarAttachmentID, &p.Description, &p.IsHuman, &p.Role,
 			&p.LastSeenAt, &p.CreatedAt, &p.Online, &tagsJSON); err != nil {
 			return nil, err
 		}
@@ -153,6 +153,36 @@ func (s *Store) UpdateProfile(ctx context.Context, roomID, id string, name, avat
 	}
 
 	payload, _ := json.Marshal(map[string]any{"participant_id": id})
+	if err := appendEventTx(ctx, tx, roomID, "participant.updated", payload); err != nil {
+		return Participant{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return Participant{}, err
+	}
+	return s.ParticipantByID(ctx, roomID, id)
+}
+
+// SetAvatarAttachment points the participant's avatar at an uploaded image
+// (nil reverts to the emoji avatar).
+func (s *Store) SetAvatarAttachment(ctx context.Context, roomID, id string, attachmentID *string) (Participant, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return Participant{}, err
+	}
+	defer tx.Rollback(ctx)
+
+	res, err := tx.Exec(ctx,
+		`UPDATE participants SET avatar_attachment_id = $3
+		 WHERE room_id = $1 AND id = $2 AND NOT revoked`,
+		roomID, id, attachmentID)
+	if err != nil {
+		return Participant{}, err
+	}
+	if res.RowsAffected() == 0 {
+		return Participant{}, ErrNotFound
+	}
+
+	payload, _ := json.Marshal(map[string]string{"participant_id": id})
 	if err := appendEventTx(ctx, tx, roomID, "participant.updated", payload); err != nil {
 		return Participant{}, err
 	}

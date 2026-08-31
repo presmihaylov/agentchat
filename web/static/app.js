@@ -54,9 +54,30 @@
     return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
 
-  const avatarOf = (authorId) => {
-    const p = participants.find((x) => x.id === authorId);
-    return p ? p.avatar : '👻';
+  // avatar images are attachments behind bearer auth — blob-fetch once, cache
+  // the object URL per attachment id
+  const avatarBlobURLs = {};
+  const loadAvatarInto = (attID, img) => {
+    if (!avatarBlobURLs[attID]) {
+      avatarBlobURLs[attID] = fetch('/api/v1/attachments/' + attID, { headers: { Authorization: 'Bearer ' + token } })
+        .then((r) => (r.ok ? r.blob() : Promise.reject(new Error('avatar fetch failed'))))
+        .then((b) => URL.createObjectURL(b))
+        .catch(() => { delete avatarBlobURLs[attID]; return null; });
+    }
+    avatarBlobURLs[attID].then((url) => { if (url) img.src = url; });
+  };
+  const avatarEl = (p, cls) => {
+    if (p && p.avatar_attachment_id) {
+      const img = document.createElement('img');
+      img.className = cls + ' avatar-img';
+      img.alt = p.name;
+      loadAvatarInto(p.avatar_attachment_id, img);
+      return img;
+    }
+    const span = document.createElement('span');
+    span.className = cls + ' avatar-emoji';
+    span.textContent = p ? p.avatar : '👻';
+    return span;
   };
 
   const msgEl = (m, inThread) => {
@@ -81,7 +102,7 @@
       ? `<button class="thread-pill" data-act="thread">${m.reply_count} repl${m.reply_count === 1 ? 'y' : 'ies'} →</button>` : '';
 
     el.innerHTML = `
-      <div class="avatar">${esc(avatarOf(m.author_id))}</div>
+      <div class="avatar"></div>
       <div class="body">
         <div class="meta"><span class="author">${esc(m.author_name)}</span>${fmtTime(m.created_at)}
           ${m.edited_at ? '<span class="edited"> (edited)</span>' : ''}
@@ -90,6 +111,8 @@
         ${atts}${threadPill}
       </div>
       <div class="msg-actions">${actions.join('')}</div>`;
+    el.querySelector('.avatar').appendChild(
+      avatarEl(participants.find((x) => x.id === m.author_id), 'avatar-msg'));
 
     el.addEventListener('click', (ev) => {
       const attBtn = ev.target.closest('button.attachment');
@@ -121,8 +144,12 @@
   let showOffline = false;
 
   const showProfile = (p) => {
-    $('profile-avatar').textContent = p.avatar;
+    const slot = $('profile-avatar');
+    slot.innerHTML = '';
+    slot.appendChild(avatarEl(p, 'avatar-lg'));
     $('profile-name').textContent = p.name;
+    $('profile-actions').classList.toggle('hidden', p.id !== me.id);
+    $('avatar-remove').classList.toggle('hidden', !p.avatar_attachment_id);
     $('profile-meta').textContent =
       `${p.role}${p.is_human ? ' · human' : ' · agent'} · ${p.online ? 'online' : 'offline'}`;
     $('profile-desc').textContent = p.description || 'No description.';
@@ -136,8 +163,10 @@
     if (!p.online) li.classList.add('offline');
     const tags = (p.tags || []).map((t) => t.tag).join(', ');
     li.innerHTML = `<span class="dot${p.online ? ' online' : ''}"></span>
-      <span class="pname">${esc(p.avatar)} ${esc(p.name)}${p.role === 'admin' ? ' ⭐' : ''}${p.is_human ? ' 🧑' : ''}</span>
+      <span class="av-slot"></span>
+      <span class="pname">${esc(p.name)}${p.role === 'admin' ? ' ⭐' : ''}${p.is_human ? ' 🧑' : ''}</span>
       <span class="desc-preview">${esc(p.description || (tags ? '[' + tags + ']' : ''))}</span>`;
+    li.querySelector('.av-slot').replaceWith(avatarEl(p, 'avatar-sm'));
     li.title = `${p.name} — ${p.description || ''}${tags ? ' [' + tags + ']' : ''}`;
     li.onclick = () => showProfile(p);
     return li;
@@ -422,6 +451,27 @@
   }
 
   $('thread-close').onclick = closeThread;
+
+  $('avatar-input').addEventListener('change', async () => {
+    const file = $('avatar-input').files[0];
+    if (!file) return;
+    const fd = new FormData();
+    fd.append('file', file);
+    try {
+      me = await api('/api/v1/me/avatar', { method: 'POST', body: fd });
+      await refreshRoom();
+      showProfile(me);
+    } catch (e) { alert(e.message); }
+    $('avatar-input').value = '';
+  });
+
+  $('avatar-remove').onclick = async () => {
+    try {
+      me = await api('/api/v1/me/avatar', { method: 'DELETE' });
+      await refreshRoom();
+      showProfile(me);
+    } catch (e) { alert(e.message); }
+  };
 
   $('profile-close').onclick = () => $('profile-modal').classList.add('hidden');
   $('profile-modal').onclick = (ev) => {

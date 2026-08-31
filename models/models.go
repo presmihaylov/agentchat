@@ -19,18 +19,19 @@ type Tag struct {
 }
 
 type Participant struct {
-	ID          string    `json:"id"`
-	RoomID      string    `json:"room_id"`
-	Name        string    `json:"name"`
-	Avatar      string    `json:"avatar"`
-	Description string    `json:"description"`
-	IsHuman     bool      `json:"is_human"`
-	Role        string    `json:"role"`
-	Revoked     bool      `json:"revoked,omitempty"`
-	Online      bool      `json:"online"`
-	LastSeenAt  time.Time `json:"last_seen_at"`
-	CreatedAt   time.Time `json:"created_at"`
-	Tags        []Tag     `json:"tags"`
+	ID                 string    `json:"id"`
+	RoomID             string    `json:"room_id"`
+	Name               string    `json:"name"`
+	Avatar             string    `json:"avatar"`
+	AvatarAttachmentID *string   `json:"avatar_attachment_id,omitempty"`
+	Description        string    `json:"description"`
+	IsHuman            bool      `json:"is_human"`
+	Role               string    `json:"role"`
+	Revoked            bool      `json:"revoked,omitempty"`
+	Online             bool      `json:"online"`
+	LastSeenAt         time.Time `json:"last_seen_at"`
+	CreatedAt          time.Time `json:"created_at"`
+	Tags               []Tag     `json:"tags"`
 }
 
 type Channel struct {

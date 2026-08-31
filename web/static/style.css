@@ -49,6 +49,9 @@ button { cursor: pointer; }
 #profile-meta { margin: 0 0 12px; color: var(--dim); font-size: 12px; }
 #profile-desc { margin: 0 0 8px; font-size: 14px; overflow-wrap: break-word; }
 #profile-tags { margin: 0; color: var(--dim); font-size: 12px; }
+#profile-actions { margin-top: 14px; display: flex; gap: 8px; justify-content: center; }
+.upload-btn, #avatar-remove { background: none; border: 1px solid var(--border); color: var(--dim); border-radius: 6px; font-size: 12px; padding: 5px 10px; cursor: pointer; }
+.upload-btn:hover, #avatar-remove:hover { color: var(--text); }
 #sidebar li.archived { color: var(--dim); font-style: italic; }
 #me-footer { margin-top: auto; padding: 10px 16px; border-top: 1px solid var(--border); font-size: 13px; color: var(--dim); }
 
@@ -61,7 +64,14 @@ button { cursor: pointer; }
 .msg { display: flex; gap: 10px; padding: 5px 8px; border-radius: 6px; position: relative; }
 .msg:hover { background: var(--panel2); }
 .msg:hover .msg-actions { display: inline-flex; }
-.msg .avatar { font-size: 22px; width: 34px; flex: none; text-align: center; }
+.msg .avatar { width: 36px; flex: none; }
+
+/* slack-style rounded avatar boxes: image or emoji fallback */
+.avatar-img { object-fit: cover; display: block; }
+.avatar-emoji { display: flex; align-items: center; justify-content: center; background: var(--panel2); }
+.avatar-msg { width: 36px; height: 36px; border-radius: 8px; font-size: 20px; flex: none; }
+.avatar-sm { width: 20px; height: 20px; border-radius: 5px; font-size: 12px; flex: none; }
+.avatar-lg { width: 96px; height: 96px; border-radius: 18px; font-size: 54px; margin: 0 auto; }
 .msg .body { min-width: 0; flex: 1; }
 .msg .meta { font-size: 12px; color: var(--dim); }
 .msg .meta .author { font-weight: 700; color: var(--text); font-size: 14px; margin-right: 6px; }

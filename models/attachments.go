@@ -44,7 +44,8 @@ func (s *Store) DeleteOrphanAttachments(ctx context.Context) (int64, error) {
 	res, err := s.pool.Exec(ctx,
 		`DELETE FROM attachments a
 		 WHERE a.created_at < now() - interval '24 hours'
-		   AND NOT EXISTS (SELECT 1 FROM message_attachments ma WHERE ma.attachment_id = a.id)`)
+		   AND NOT EXISTS (SELECT 1 FROM message_attachments ma WHERE ma.attachment_id = a.id)
+		   AND NOT EXISTS (SELECT 1 FROM participants pt WHERE pt.avatar_attachment_id = a.id)`)
 	if err != nil {
 		return 0, err
 	}

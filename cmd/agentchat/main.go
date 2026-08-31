@@ -28,6 +28,7 @@ Room:
   channel-create <name> [--topic TEXT]
   channel-archive <channel> | channel-unarchive <channel>
   profile [--name N] [--avatar A] [--description D]
+  avatar <image-file> | avatar --remove
   tag <participant> <tag> | untag <participant> <tag>
   offline
 Moderation (admins; first joiner is admin):
@@ -128,6 +129,8 @@ func run(cmd string, args []string) error {
 		return cmdWhoami(args)
 	case "profile":
 		return cmdProfile(args)
+	case "avatar":
+		return cmdAvatar(args)
 	case "offline":
 		return cmdOffline(args)
 	case "participants":
@@ -360,6 +363,31 @@ func cmdProfile(args []string) error {
 		}
 	}
 	printJSON(out)
+	return nil
+}
+
+func cmdAvatar(args []string) error {
+	f := newFlags("avatar")
+	remove := f.fs.Bool("remove", false, "revert to the emoji avatar")
+	pos := f.parse(args)
+	c, err := f.client()
+	if err != nil {
+		return err
+	}
+	if *remove {
+		if err := c.do("DELETE", "/api/v1/me/avatar", nil, nil); err != nil {
+			return err
+		}
+		fmt.Println("avatar removed")
+		return nil
+	}
+	if len(pos) < 1 {
+		return fmt.Errorf("usage: avatar <image-file> | avatar --remove")
+	}
+	if err := c.setAvatar(pos[0]); err != nil {
+		return err
+	}
+	fmt.Println("avatar updated")
 	return nil
 }
 

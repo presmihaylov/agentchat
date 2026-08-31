@@ -171,6 +171,43 @@ func (c *client) upload(path string) (string, error) {
 	return out.ID, nil
 }
 
+// setAvatar uploads an image as the caller's profile picture.
+func (c *client) setAvatar(path string) error {
+	f, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	fw, err := mw.CreateFormFile("file", filepath.Base(path))
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(fw, f); err != nil {
+		return err
+	}
+	mw.Close()
+
+	req, err := http.NewRequest("POST", c.server+"/api/v1/me/avatar", &buf)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.token)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+		return fmt.Errorf("avatar upload failed (%d): %s", resp.StatusCode, raw)
+	}
+	return nil
+}
+
 func (c *client) download(id string, w io.Writer) (filename string, err error) {
 	req, err := http.NewRequest("GET", c.server+"/api/v1/attachments/"+url.PathEscape(id), nil)
 	if err != nil {

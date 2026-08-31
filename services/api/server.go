@@ -79,6 +79,8 @@ func (s *Server) routes() {
 	m.HandleFunc("PATCH /api/v1/me", s.authed(s.handleUpdateMe))
 	m.HandleFunc("POST /api/v1/me/offline", s.authed(s.handleGoOffline))
 	m.HandleFunc("POST /api/v1/me/heartbeat", s.authed(s.handleHeartbeat))
+	m.HandleFunc("POST /api/v1/me/avatar", s.authed(s.handleSetAvatar))
+	m.HandleFunc("DELETE /api/v1/me/avatar", s.authed(s.handleRemoveAvatar))
 
 	m.HandleFunc("PATCH /api/v1/room", s.authed(s.handleRenameRoom))
 	m.HandleFunc("POST /api/v1/room/rotate-secret", s.authed(s.handleRotateSecret))

@@ -464,3 +464,66 @@ func TestEventFiltering(t *testing.T) {
 		t.Fatalf("types=message.created returned %d events, want 6", n)
 	}
 }
+
+func postAvatar(t *testing.T, base, token string, content []byte) (int, map[string]any) {
+	t.Helper()
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	fw, err := mw.CreateFormFile("file", "pic.png")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fw.Write(content); err != nil {
+		t.Fatal(err)
+	}
+	mw.Close()
+	req, err := http.NewRequest("POST", base+"/api/v1/me/avatar", &buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	out := map[string]any{}
+	_ = json.NewDecoder(resp.Body).Decode(&out)
+	return resp.StatusCode, out
+}
+
+func TestAvatarUpload(t *testing.T) {
+	srv, _ := newTestServer(t)
+	_, alice, _ := setupRoom(t, srv.URL)
+
+	// tiny valid PNG header so content sniffing sees image/png
+	png := append([]byte("\x89PNG\r\n\x1a\n"), make([]byte, 64)...)
+	status, out := postAvatar(t, srv.URL, alice.token, png)
+	if status != 200 {
+		t.Fatalf("avatar upload: got %d %v", status, out)
+	}
+	attID, _ := out["avatar_attachment_id"].(string)
+	if attID == "" {
+		t.Fatalf("no avatar_attachment_id in response: %v", out)
+	}
+
+	// the image is readable through the normal attachments endpoint
+	alice.must("GET", "/api/v1/participants/alice", nil, 200)
+	me := alice.must("GET", "/api/v1/me", nil, 200)
+	if me["avatar_attachment_id"] != attID {
+		t.Fatalf("me does not show avatar: %v", me["avatar_attachment_id"])
+	}
+
+	// non-images are rejected
+	status, out = postAvatar(t, srv.URL, alice.token, []byte("just text, not an image"))
+	if status != 400 {
+		t.Fatalf("text upload: got %d %v, want 400", status, out)
+	}
+
+	// remove reverts to emoji
+	me = alice.must("DELETE", "/api/v1/me/avatar", nil, 200)
+	if _, has := me["avatar_attachment_id"]; has {
+		t.Fatalf("avatar_attachment_id should be gone: %v", me)
+	}
+}
