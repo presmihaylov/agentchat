@@ -69,10 +69,13 @@
       .sort((a, b) => b.length - a.length);
     if (targets.length) {
       const re = new RegExp('@(' + targets.map(escRe).join('|') + ')(?![\\w-])', 'g');
-      // a broadcast keyword or my own name targets me — style those stronger
-      const meTargets = new Set([me.name, 'channel', 'here', 'everyone']);
-      html = html.replace(re, (m, name) =>
-        `<strong class="mention${meTargets.has(name) ? ' mention-me' : ''}">${esc(m)}</strong>`);
+      // my own name gets the amber self-mention chip; broadcast keywords keep
+      // the stronger blue pill (leave broadcasts/others as they are).
+      const broadcasts = new Set(['channel', 'here', 'everyone']);
+      html = html.replace(re, (m, name) => {
+        const cls = name === me.name ? ' mention-self' : (broadcasts.has(name) ? ' mention-me' : '');
+        return `<strong class="mention${cls}">${esc(m)}</strong>`;
+      });
     }
     // ALLOW_DATA_ATTR:false so markdown can't inject data-act and hijack the msg click handler;
     // SANITIZE_NAMED_PROPS namespaces any user id/name so markdown can't DOM-clobber our elements
