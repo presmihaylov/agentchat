@@ -85,6 +85,28 @@ button { cursor: pointer; }
 #channel-list li.thread-leaf.unread .t-snippet { color: #fff; }
 #channel-list li.thread-leaf.active { border-left-color: transparent; }
 #channel-list li.thread-leaf.active .t-snippet { color: #fff; }
+/* hover-reveal archive X, shadcn-style: fades + scales in on hover/focus */
+#channel-list li.thread-leaf .t-archive {
+  flex: none; margin-left: 2px; width: 18px; height: 18px; padding: 0;
+  border: 0; background: transparent; color: var(--dim);
+  font-size: 11px; line-height: 1; cursor: pointer; border-radius: 5px;
+  display: inline-flex; align-items: center; justify-content: center;
+  opacity: 0; transform: scale(.8); pointer-events: none;
+  transition: opacity .15s ease, transform .15s ease, background-color .12s ease, color .12s ease;
+}
+#channel-list li.thread-leaf:hover .t-archive,
+#channel-list li.thread-leaf:focus-within .t-archive {
+  opacity: 1; transform: scale(1); pointer-events: auto;
+}
+#channel-list li.thread-leaf .t-archive:hover { background: var(--panel2); color: var(--text); }
+#channel-list li.thread-leaf .t-archive:active { transform: scale(.9); }
+#channel-list li.thread-leaf.active .t-archive { color: #fff; }
+#channel-list li.thread-leaf.active .t-archive:hover { background: rgba(255, 255, 255, .18); }
+@media (prefers-reduced-motion: reduce) {
+  #channel-list li.thread-leaf .t-archive { transition: opacity .15s ease; transform: none; }
+  #channel-list li.thread-leaf:hover .t-archive,
+  #channel-list li.thread-leaf:focus-within .t-archive { transform: none; }
+}
 #channel-list li.thread-leaf .t-count { flex: none; }
 #channel-list li.thread-leaf.muted { opacity: .5; }
 /* Owned agents nest under their human owner: indented, with a branch guide. */

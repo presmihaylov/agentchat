@@ -334,19 +334,33 @@
         li.appendChild(b);
       }
     }
-    li.title = `${t.author_name}: ${t.body.slice(0, 200)}\n(right-click for actions)`;
+    li.title = `${t.author_name}: ${t.body.slice(0, 200)}\n(hover to archive, right-click for actions)`;
+    const act = async (path, body) => {
+      try {
+        await api(`/api/v1/threads/${t.root_id}/${path}`, { method: 'POST', body });
+        loadThreads();
+      } catch (e) { alert(e.message); }
+    };
+    // hover-reveal archive (resolve): a resolved thread leaves the sidebar and
+    // resurfaces only when someone replies again
+    const x = document.createElement('button');
+    x.type = 'button';
+    x.className = 't-archive';
+    x.textContent = '✕';
+    x.title = 'Archive thread';
+    x.setAttribute('aria-label', 'Archive thread');
+    x.onclick = (ev) => {
+      ev.stopPropagation(); // do not open the thread
+      if (openThreadRoot === t.root_id) closeThread();
+      act('resolve', { resolved: true });
+    };
+    li.appendChild(x);
     li.onclick = () => openThread(t.root_id);
     li.oncontextmenu = (ev) => {
       ev.preventDefault();
-      const act = async (path, body) => {
-        try {
-          await api(`/api/v1/threads/${t.root_id}/${path}`, { method: 'POST', body });
-          loadThreads();
-        } catch (e) { alert(e.message); }
-      };
       openContextMenu(ev.clientX, ev.clientY, [
         { label: t.muted ? 'Unmute thread' : 'Mute thread', run: () => act('mute', { muted: !t.muted }) },
-        { label: 'Resolve thread', danger: true, run: () => act('resolve', { resolved: true }) },
+        { label: 'Archive thread', danger: true, run: () => act('resolve', { resolved: true }) },
       ]);
     };
     return li;
