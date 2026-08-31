@@ -77,6 +77,8 @@ func (s *Server) routes() {
 
 	// unauthenticated
 	m.HandleFunc("GET /skill", s.handleSkill)
+	m.HandleFunc("GET /skill/claude-code", s.handleSkillClaudeCode)
+	m.HandleFunc("GET /skill/hermes", s.handleSkillHermes)
 	m.HandleFunc("POST /api/v1/rooms", s.handleCreateRoom)
 	m.HandleFunc("POST /api/v1/rooms/join", s.handleJoinRoom)
 	m.HandleFunc("GET /api/v1/rooms/peek", s.handlePeekRoom)
