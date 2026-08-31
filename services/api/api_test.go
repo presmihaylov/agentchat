@@ -155,7 +155,7 @@ func TestFullFlow(t *testing.T) {
 	// attachment upload + message with mention
 	attID := uploadFile(t, srv.URL, alice.token, "report.txt", "quarterly numbers inside")
 	msg := alice.must("POST", "/api/v1/channels/deploys/messages", map[string]any{
-		"body": "hey @bob deploy is done, see attached. @channel",
+		"body":           "hey @bob deploy is done, see attached. @channel",
 		"attachment_ids": []string{attID},
 	}, 201)
 	msgID := msg["id"].(string)
@@ -408,4 +408,59 @@ func TestRolesAndModeration(t *testing.T) {
 	dead.must("POST", "/api/v1/rooms/join", map[string]any{"secret": secret, "name": "late"}, 404)
 	fresh := &testClient{t: t, base: srv.URL}
 	fresh.must("POST", "/api/v1/rooms/join", map[string]any{"secret": newSecret, "name": "late"}, 201)
+}
+
+func TestEventFiltering(t *testing.T) {
+	srv, _ := newTestServer(t)
+	_, alice, bob := setupRoom(t, srv.URL)
+
+	cursor := func(c *testClient) string {
+		out := c.must("GET", "/api/v1/events", nil, 200)
+		return fmt.Sprintf("%.0f", out["cursor"].(float64))
+	}
+	c0 := cursor(bob)
+
+	// irrelevant to bob: plain top-level message, no mention, no thread
+	plain := alice.must("POST", "/api/v1/channels/general/messages", map[string]any{"body": "just musing"}, 201)
+
+	// relevant=true returns nothing but still advances the cursor past it
+	out := bob.must("GET", "/api/v1/events?after="+c0+"&relevant=true", nil, 200)
+	if n := len(out["events"].([]any)); n != 0 {
+		t.Fatalf("plain message leaked through relevant filter: %v", out["events"])
+	}
+	if fmt.Sprintf("%.0f", out["cursor"].(float64)) == c0 {
+		t.Fatal("cursor did not advance past filtered events")
+	}
+
+	// relevant to bob: broadcast, direct mention, and a thread he wrote in
+	alice.must("POST", "/api/v1/channels/general/messages", map[string]any{"body": "@channel heads up"}, 201)
+	alice.must("POST", "/api/v1/channels/general/messages", map[string]any{"body": "hey @bob"}, 201)
+	bob.must("POST", "/api/v1/channels/general/messages", map[string]any{"body": "my reply", "thread_root_id": plain["id"].(string)}, 201)
+	// another irrelevant top-level message mixed in between relevant ones
+	alice.must("POST", "/api/v1/channels/general/messages", map[string]any{"body": "more musing"}, 201)
+	alice.must("POST", "/api/v1/channels/general/messages", map[string]any{"body": "in-thread answer", "thread_root_id": plain["id"].(string)}, 201)
+
+	out = bob.must("GET", "/api/v1/events?after="+c0+"&relevant=true", nil, 200)
+	bodies := []string{}
+	for _, e := range out["events"].([]any) {
+		ev := e.(map[string]any)
+		if ev["type"] != "message.created" {
+			t.Fatalf("relevant filter returned non-message event: %v", ev["type"])
+		}
+		bodies = append(bodies, ev["payload"].(map[string]any)["body"].(string))
+	}
+	want := []string{"@channel heads up", "hey @bob", "my reply", "in-thread answer"}
+	if fmt.Sprint(bodies) != fmt.Sprint(want) {
+		t.Fatalf("relevant events = %v, want %v", bodies, want)
+	}
+
+	// types filter
+	out = bob.must("GET", "/api/v1/events?after="+c0+"&types=participant.joined", nil, 200)
+	if n := len(out["events"].([]any)); n != 0 {
+		t.Fatalf("types filter leaked: %v", out["events"])
+	}
+	out = bob.must("GET", "/api/v1/events?after="+c0+"&types=message.created", nil, 200)
+	if n := len(out["events"].([]any)); n != 6 {
+		t.Fatalf("types=message.created returned %d events, want 6", n)
+	}
 }

@@ -332,6 +332,63 @@
     try { await post(text, openThreadRoot); input.value = ''; } catch (e) { alert(e.message); }
   });
 
+  // @-mention autocomplete: typing "@pre" pops matching participants + broadcasts.
+  // Registered BEFORE the enter-sends handlers so Enter can pick a name instead
+  // of submitting (stopImmediatePropagation).
+  const setupMentions = (taID) => {
+    const ta = $(taID);
+    const box = document.createElement('div');
+    box.className = 'mention-ac hidden';
+    ta.parentElement.appendChild(box);
+    let items = [];
+    let sel = 0;
+    let start = -1;
+
+    const close = () => { items = []; box.classList.add('hidden'); };
+    const apply = (name) => {
+      const end = ta.selectionStart;
+      ta.value = ta.value.slice(0, start) + '@' + name + ' ' + ta.value.slice(end);
+      const pos = start + name.length + 2;
+      ta.setSelectionRange(pos, pos);
+      ta.focus();
+      close();
+    };
+    const render = () => {
+      box.innerHTML = '';
+      items.forEach((it, i) => {
+        const d = document.createElement('div');
+        d.className = 'mention-opt' + (i === sel ? ' sel' : '');
+        d.textContent = `${it.avatar} ${it.name}`;
+        // mousedown (not click) so the pick lands before the textarea blurs
+        d.onmousedown = (ev) => { ev.preventDefault(); apply(it.name); };
+        box.appendChild(d);
+      });
+      box.classList.toggle('hidden', items.length === 0);
+    };
+    const update = () => {
+      const m = ta.value.slice(0, ta.selectionStart).match(/(^|\s)@([a-z0-9_-]*)$/);
+      if (!m) { close(); return; }
+      start = ta.selectionStart - m[2].length - 1;
+      const opts = participants.map((p) => ({ name: p.name, avatar: p.avatar }))
+        .concat([{ name: 'channel', avatar: '📣' }, { name: 'everyone', avatar: '📣' }, { name: 'here', avatar: '📣' }]);
+      items = opts.filter((o) => o.name.startsWith(m[2])).slice(0, 8);
+      sel = 0;
+      render();
+    };
+    ta.addEventListener('input', update);
+    ta.addEventListener('click', update);
+    ta.addEventListener('blur', () => setTimeout(close, 100));
+    ta.addEventListener('keydown', (ev) => {
+      if (box.classList.contains('hidden')) return;
+      if (ev.key === 'ArrowDown') { ev.preventDefault(); sel = (sel + 1) % items.length; render(); }
+      else if (ev.key === 'ArrowUp') { ev.preventDefault(); sel = (sel + items.length - 1) % items.length; render(); }
+      else if (ev.key === 'Enter' || ev.key === 'Tab') { ev.preventDefault(); ev.stopImmediatePropagation(); apply(items[sel].name); }
+      else if (ev.key === 'Escape') close();
+    });
+  };
+  setupMentions('composer-input');
+  setupMentions('thread-input');
+
   // enter sends, shift+enter for a newline
   for (const [ta, form] of [['composer-input', 'composer'], ['thread-input', 'thread-composer']]) {
     $(ta).addEventListener('keydown', (ev) => {

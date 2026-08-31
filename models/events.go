@@ -72,6 +72,32 @@ func (s *Store) ListEvents(ctx context.Context, roomID string, afterSeq int64, l
 	return out, rows.Err()
 }
 
+// ParticipatedThreadRoots reports which of rootIDs are threads the participant
+// wrote in (as root author or replier). Used by the events relevance filter.
+func (s *Store) ParticipatedThreadRoots(ctx context.Context, roomID, participantID string, rootIDs []string) (map[string]bool, error) {
+	out := map[string]bool{}
+	if len(rootIDs) == 0 {
+		return out, nil
+	}
+	rows, err := s.pool.Query(ctx,
+		`SELECT DISTINCT COALESCE(thread_root_id, id) FROM messages
+		 WHERE room_id = $1 AND author_id = $2
+		   AND COALESCE(thread_root_id, id) = ANY($3::uuid[])`,
+		roomID, participantID, rootIDs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out[id] = true
+	}
+	return out, rows.Err()
+}
+
 // LatestSeq returns the highest event seq for a room (0 if none).
 func (s *Store) LatestSeq(ctx context.Context, roomID string) (int64, error) {
 	var seq int64
