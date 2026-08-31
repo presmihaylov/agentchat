@@ -654,6 +654,65 @@ func TestThreadTree(t *testing.T) {
 	}
 }
 
+// TestThreadResolve: resolving hides a thread from the caller's tree; a plain
+// reply does not bring it back, but a direct @mention resurrects it.
+func TestThreadResolve(t *testing.T) {
+	srv, _ := newTestServer(t)
+	defer srv.Close()
+	_, alice, bob := setupRoom(t, srv.URL)
+
+	threadsOf := func(c *testClient) []map[string]any {
+		out := c.must("GET", "/api/v1/channels/general/threads", nil, 200)
+		list := []map[string]any{}
+		for _, raw := range out["threads"].([]any) {
+			list = append(list, raw.(map[string]any))
+		}
+		return list
+	}
+
+	root := alice.must("POST", "/api/v1/channels/general/messages", map[string]any{"body": "topic"}, 201)
+	rootID := root["id"].(string)
+	bob.must("POST", "/api/v1/channels/general/messages",
+		map[string]any{"body": "reply from bob", "thread_root_id": rootID}, 201)
+
+	if n := len(threadsOf(alice)); n != 1 {
+		t.Fatalf("before resolve alice sees %d threads, want 1", n)
+	}
+
+	// resolve removes it from alice's tree, bob still sees it
+	alice.must("POST", "/api/v1/threads/"+rootID+"/resolve", map[string]any{"resolved": true}, 200)
+	if n := len(threadsOf(alice)); n != 0 {
+		t.Fatalf("after resolve alice sees %d threads, want 0", n)
+	}
+	if n := len(threadsOf(bob)); n != 1 {
+		t.Fatalf("resolve leaked to bob: he sees %d threads, want 1", n)
+	}
+
+	// a plain reply does NOT resurrect a resolved thread
+	bob.must("POST", "/api/v1/channels/general/messages",
+		map[string]any{"body": "another reply", "thread_root_id": rootID}, 201)
+	if n := len(threadsOf(alice)); n != 0 {
+		t.Fatalf("plain reply resurrected a resolved thread: alice sees %d, want 0", n)
+	}
+
+	// a direct @mention brings it back
+	bob.must("POST", "/api/v1/channels/general/messages",
+		map[string]any{"body": "hey @alice look", "thread_root_id": rootID}, 201)
+	if n := len(threadsOf(alice)); n != 1 {
+		t.Fatalf("@mention did not resurrect the resolved thread: alice sees %d, want 1", n)
+	}
+
+	// resolving again then un-resolving via the endpoint restores it too
+	alice.must("POST", "/api/v1/threads/"+rootID+"/resolve", map[string]any{"resolved": true}, 200)
+	if n := len(threadsOf(alice)); n != 0 {
+		t.Fatalf("re-resolve failed: alice sees %d, want 0", n)
+	}
+	alice.must("POST", "/api/v1/threads/"+rootID+"/resolve", map[string]any{"resolved": false}, 200)
+	if n := len(threadsOf(alice)); n != 1 {
+		t.Fatalf("un-resolve failed: alice sees %d, want 1", n)
+	}
+}
+
 // TestRoomThreads: the room-wide thread endpoint returns the caller's involved
 // threads across every channel, each tagged with its channel_id, and per-thread
 // unread_mentions follows the mention-only rule (direct + broadcast).

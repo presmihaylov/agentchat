@@ -69,6 +69,7 @@ func (s *Store) involvedThreads(ctx context.Context, roomID, participantID strin
 		 JOIN participants p ON p.id = $2
 		 LEFT JOIN thread_states ts ON ts.root_id = r.id AND ts.participant_id = $2
 		 WHERE EXISTS (SELECT 1 FROM messages c WHERE c.thread_root_id = r.id)
+		   AND ts.resolved_at IS NULL
 		 ORDER BY COALESCE((SELECT max(c.created_at) FROM messages c WHERE c.thread_root_id = r.id), r.created_at) DESC`,
 		roomID, participantID, channelID)
 	if err != nil {
@@ -106,5 +107,18 @@ func (s *Store) SetThreadMuted(ctx context.Context, participantID, rootID string
 		 VALUES ($1, $2, $3)
 		 ON CONFLICT (participant_id, root_id) DO UPDATE SET muted = $3`,
 		participantID, rootID, muted)
+	return err
+}
+
+// SetThreadResolved hides (resolve=true) or restores a thread in the
+// participant's sidebar tree. A later direct @mention clears this the same way
+// it clears mute (see CreateMessage), so a resolved thread can resurface.
+func (s *Store) SetThreadResolved(ctx context.Context, participantID, rootID string, resolved bool) error {
+	_, err := s.pool.Exec(ctx,
+		`INSERT INTO thread_states (participant_id, root_id, resolved_at)
+		 VALUES ($1, $2, CASE WHEN $3 THEN now() END)
+		 ON CONFLICT (participant_id, root_id)
+		 DO UPDATE SET resolved_at = CASE WHEN $3 THEN now() END`,
+		participantID, rootID, resolved)
 	return err
 }

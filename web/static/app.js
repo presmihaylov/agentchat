@@ -219,6 +219,43 @@
     return el;
   };
 
+  // A single themed context menu, reused for every right-click target. items is
+  // [{label, danger?, run}]; dismisses on pick, click-outside, Esc, scroll, resize.
+  let closeContextMenu = () => {};
+  function openContextMenu(x, y, items) {
+    closeContextMenu();
+    const menu = document.createElement('div');
+    menu.className = 'context-menu';
+    items.forEach((it) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'ctx-item' + (it.danger ? ' danger' : '');
+      b.textContent = it.label;
+      b.onclick = () => { closeContextMenu(); it.run(); };
+      menu.appendChild(b);
+    });
+    document.body.appendChild(menu);
+    // clamp inside the viewport (menu is measured after it is in the DOM)
+    const w = menu.offsetWidth, h = menu.offsetHeight;
+    menu.style.left = Math.min(x, window.innerWidth - w - 8) + 'px';
+    menu.style.top = Math.min(y, window.innerHeight - h - 8) + 'px';
+
+    const onKey = (e) => { if (e.key === 'Escape') closeContextMenu(); };
+    const onDown = (e) => { if (!menu.contains(e.target)) closeContextMenu(); };
+    closeContextMenu = () => {
+      menu.remove();
+      document.removeEventListener('keydown', onKey);
+      document.removeEventListener('mousedown', onDown, true);
+      window.removeEventListener('scroll', closeContextMenu, true);
+      window.removeEventListener('resize', closeContextMenu);
+      closeContextMenu = () => {};
+    };
+    document.addEventListener('keydown', onKey);
+    document.addEventListener('mousedown', onDown, true);
+    window.addEventListener('scroll', closeContextMenu, true);
+    window.addEventListener('resize', closeContextMenu);
+  }
+
   // One thread leaf, rendered nested under its parent channel (Discord-style).
   // Same mention-only rule as channels: glow on any unread, a number only for
   // unread @mentions.
@@ -238,14 +275,20 @@
         li.appendChild(b);
       }
     }
-    li.title = `${t.author_name}: ${t.body.slice(0, 200)}\n(right-click to ${t.muted ? 'follow' : 'mute'})`;
+    li.title = `${t.author_name}: ${t.body.slice(0, 200)}\n(right-click for actions)`;
     li.onclick = () => openThread(t.root_id);
-    li.oncontextmenu = async (ev) => {
+    li.oncontextmenu = (ev) => {
       ev.preventDefault();
-      try {
-        await api(`/api/v1/threads/${t.root_id}/mute`, { method: 'POST', body: { muted: !t.muted } });
-        loadThreads();
-      } catch (e) { alert(e.message); }
+      const act = async (path, body) => {
+        try {
+          await api(`/api/v1/threads/${t.root_id}/${path}`, { method: 'POST', body });
+          loadThreads();
+        } catch (e) { alert(e.message); }
+      };
+      openContextMenu(ev.clientX, ev.clientY, [
+        { label: t.muted ? 'Unmute thread' : 'Mute thread', run: () => act('mute', { muted: !t.muted }) },
+        { label: 'Resolve thread', danger: true, run: () => act('resolve', { resolved: true }) },
+      ]);
     };
     return li;
   };
@@ -897,6 +940,41 @@
   window.addEventListener('resize', () => { autoGrow($('composer-input')); autoGrow($('thread-input')); });
 
   $('thread-close').onclick = closeThread;
+
+  // Thread panel resize: drag the left divider. Width clamps to 20%-50% of the
+  // viewport and persists per browser; the 504px CSS default holds until a drag.
+  // Applied as a CSS var so the mobile full-bleed media query still wins.
+  const THREAD_W_KEY = 'agentchat:threadWidth';
+  const clampThreadW = (px) => Math.max(window.innerWidth * 0.2, Math.min(window.innerWidth * 0.5, px));
+  const applyThreadW = (px) => document.documentElement.style.setProperty('--thread-w', px + 'px');
+  const storedW = parseFloat(localStorage.getItem(THREAD_W_KEY));
+  if (storedW > 0) applyThreadW(clampThreadW(storedW));
+  (() => {
+    const handle = $('thread-resize'), panel = $('thread-panel');
+    let dragging = false;
+    handle.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      dragging = true;
+      document.body.style.cursor = 'col-resize';
+      document.body.style.userSelect = 'none';
+    });
+    window.addEventListener('mousemove', (e) => {
+      if (!dragging) return;
+      // panel hugs the right edge, so its width is everything right of the cursor
+      const w = clampThreadW(panel.getBoundingClientRect().right - e.clientX);
+      applyThreadW(w);
+    });
+    window.addEventListener('mouseup', () => {
+      if (!dragging) return;
+      dragging = false;
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      const w = parseFloat(getComputedStyle(panel).width);
+      localStorage.setItem(THREAD_W_KEY, String(Math.round(w)));
+    });
+    // keep a persisted width legal when the viewport shrinks
+    window.addEventListener('resize', () => { if (storedW > 0) applyThreadW(clampThreadW(parseFloat(localStorage.getItem(THREAD_W_KEY)) || storedW)); });
+  })();
 
   $('avatar-input').addEventListener('change', async () => {
     const file = $('avatar-input').files[0];

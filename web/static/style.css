@@ -211,11 +211,24 @@ button { cursor: pointer; }
 .pending-clear:hover { color: var(--text); }
 
 /* thread panel */
-#thread-panel { width: 504px; border-left: 1px solid var(--border); background: var(--panel); display: flex; flex-direction: column; }
+#thread-panel { position: relative; width: var(--thread-w, 504px); border-left: 1px solid var(--border); background: var(--panel); display: flex; flex-direction: column; }
 #thread-panel header { display: flex; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid var(--border); font-weight: 700; }
 #thread-close { background: none; border: 0; color: var(--dim); font-size: 15px; }
+
+/* drag divider: a slim hit area straddling the left edge, accent on hover/drag */
+#thread-resize { position: absolute; top: 0; left: -3px; width: 7px; height: 100%; cursor: col-resize; z-index: 5; }
+#thread-resize::after { content: ""; position: absolute; top: 0; left: 3px; width: 1px; height: 100%; background: transparent; transition: background 0.12s; }
+#thread-resize:hover::after, body[style*="col-resize"] #thread-resize::after { background: var(--accent); }
+
+/* right-click context menu */
+.context-menu { position: fixed; z-index: 50; min-width: 168px; padding: 4px; background: var(--panel2); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45); display: flex; flex-direction: column; }
+.ctx-item { text-align: left; background: none; border: 0; color: var(--text); font: inherit; font-size: 13px; padding: 7px 10px; border-radius: 5px; cursor: pointer; }
+.ctx-item:hover { background: var(--accent); color: #fff; }
+.ctx-item.danger { color: #e0736b; }
+.ctx-item.danger:hover { background: var(--broadcast); color: #fff; }
 
 @media (max-width: 800px) {
   #sidebar { display: none; }
   #thread-panel { position: fixed; inset: 0; width: auto; z-index: 10; }
+  #thread-resize { display: none; }
 }

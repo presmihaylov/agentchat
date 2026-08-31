@@ -329,6 +329,27 @@ func (s *Server) handleThreadMute(w http.ResponseWriter, r *http.Request, p mode
 	writeJSON(w, http.StatusOK, map[string]any{"root_id": root, "muted": req.Muted})
 }
 
+type threadResolveReq struct {
+	Resolved bool `json:"resolved"`
+}
+
+func (s *Server) handleThreadResolve(w http.ResponseWriter, r *http.Request, p models.Participant) {
+	root, err := s.resolveThreadRoot(r, p)
+	if err != nil {
+		writeStoreErr(w, err)
+		return
+	}
+	var req threadResolveReq
+	if !readJSON(w, r, &req) {
+		return
+	}
+	if err := s.store.SetThreadResolved(r.Context(), p.ID, root, req.Resolved); err != nil {
+		writeStoreErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"root_id": root, "resolved": req.Resolved})
+}
+
 func (s *Server) handleUploadAttachment(w http.ResponseWriter, r *http.Request, p models.Participant) {
 	if !s.uploadLimit.Allow("up:" + p.ID) {
 		writeErr(w, http.StatusTooManyRequests, "too many uploads, slow down")

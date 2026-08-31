@@ -137,12 +137,13 @@ func (s *Store) CreateMessage(ctx context.Context, p CreateMessageParams) (Messa
 		if res.RowsAffected() == 0 {
 			return Message{}, ErrNotFound
 		}
-		// a direct @mention breaks a thread mute, so the tagged person
-		// starts glowing again
+		// a direct @mention breaks a thread mute and un-resolves it, so the
+		// tagged person starts glowing again / the thread reappears
 		if p.ThreadRootID != nil {
 			if _, err := tx.Exec(ctx,
-				`UPDATE thread_states SET muted = false
-				 WHERE root_id = $1 AND participant_id = $2 AND muted`,
+				`UPDATE thread_states SET muted = false, resolved_at = NULL
+				 WHERE root_id = $1 AND participant_id = $2
+				   AND (muted OR resolved_at IS NOT NULL)`,
 				*p.ThreadRootID, pid); err != nil {
 				return Message{}, err
 			}
