@@ -241,7 +241,8 @@ func (s *Server) handleGetThread(w http.ResponseWriter, r *http.Request, p model
 		writeErr(w, http.StatusNotFound, "not found")
 		return
 	}
-	msgs, err := s.store.ListThread(r.Context(), p.RoomID, id)
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	msgs, err := s.store.ListThread(r.Context(), p.RoomID, id, limit)
 	if err != nil {
 		writeStoreErr(w, err)
 		return
@@ -250,6 +251,10 @@ func (s *Server) handleGetThread(w http.ResponseWriter, r *http.Request, p model
 }
 
 func (s *Server) handleUploadAttachment(w http.ResponseWriter, r *http.Request, p models.Participant) {
+	if !s.uploadLimit.Allow("up:" + p.ID) {
+		writeErr(w, http.StatusTooManyRequests, "too many uploads, slow down")
+		return
+	}
 	r.Body = http.MaxBytesReader(w, r.Body, maxAttachmentBytes+64*1024)
 	if err := r.ParseMultipartForm(maxAttachmentBytes); err != nil {
 		var mbe *http.MaxBytesError

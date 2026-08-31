@@ -56,6 +56,12 @@ func (s *Store) RotateSecret(ctx context.Context, roomID, newSecret string) (Roo
 	}
 	defer tx.Rollback(ctx)
 
+	// advisory lock BEFORE the rooms-row lock: every event-appending tx locks
+	// advisory-first, so taking the row lock first here would be an AB-BA
+	// deadlock against e.g. a concurrent join (FK FOR KEY SHARE on rooms)
+	if err := lockRoomEvents(ctx, tx, roomID); err != nil {
+		return r, err
+	}
 	err = tx.QueryRow(ctx,
 		`UPDATE rooms SET secret = $2 WHERE id = $1
 		 RETURNING id, secret, name, created_at`,
@@ -80,6 +86,9 @@ func (s *Store) RenameRoom(ctx context.Context, roomID, name string) (Room, erro
 	}
 	defer tx.Rollback(ctx)
 
+	if err := lockRoomEvents(ctx, tx, roomID); err != nil {
+		return r, err
+	}
 	err = tx.QueryRow(ctx,
 		`UPDATE rooms SET name = $2 WHERE id = $1
 		 RETURNING id, secret, name, created_at`,

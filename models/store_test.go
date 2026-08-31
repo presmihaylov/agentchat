@@ -172,7 +172,7 @@ func TestMessagesThreadsAttachmentsEvents(t *testing.T) {
 		t.Fatalf("top-level listing wrong: %v %+v", err, top)
 	}
 
-	thread, err := s.ListThread(ctx, r.ID, root.ID)
+	thread, err := s.ListThread(ctx, r.ID, root.ID, 0)
 	if err != nil || len(thread) != 2 || thread[0].ID != root.ID || thread[1].ID != reply.ID {
 		t.Fatalf("thread listing wrong: %v", err)
 	}

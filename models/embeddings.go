@@ -82,6 +82,17 @@ func (s *Store) ReleaseEmbeddings(ctx context.Context, messageIDs []string) erro
 	return err
 }
 
+// RequeueFailedEmbeddings gives exhausted rows another cycle after a cool-down,
+// so a transient provider outage never permanently drops messages from semantic
+// search. A true poison message just retries slowly (5 attempts per ~15 min).
+func (s *Store) RequeueFailedEmbeddings(ctx context.Context) error {
+	_, err := s.pool.Exec(ctx,
+		`UPDATE messages SET embed_status = 'pending', embed_attempts = 0
+		 WHERE embed_status = 'failed'
+		   AND embed_claimed_at < now() - interval '15 minutes'`)
+	return err
+}
+
 // ResetStaleEmbeddings requeues rows stuck 'inflight' for over 5 minutes
 // (crashed worker). The age filter keeps one instance's startup from stealing
 // another live instance's freshly claimed batch.

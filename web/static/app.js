@@ -151,12 +151,18 @@
     setTitle();
   };
 
+  const closeThread = () => { $('thread-panel').classList.add('hidden'); openThreadRoot = null; };
+
   const selectChannel = async (ch) => {
+    // a thread belongs to its channel; leaving the channel closes it, else a
+    // reply would post against a root in another channel (server 400)
+    if (current && ch.id !== current.id) closeThread();
     current = ch;
     $('channel-title').textContent = '# ' + ch.name;
     $('channel-topic').textContent = ch.topic || '';
     renderChannels();
     const out = await api(`/api/v1/channels/${ch.id}/messages?limit=100`);
+    if (!current || current.id !== ch.id) return; // stale response, a newer click won
     const box = $('messages');
     box.innerHTML = '';
     out.messages.forEach((m) => box.appendChild(msgEl(m, false)));
@@ -167,6 +173,7 @@
     openThreadRoot = rootID;
     $('thread-panel').classList.remove('hidden');
     const out = await api('/api/v1/threads/' + rootID);
+    if (openThreadRoot !== rootID) return; // stale response
     const box = $('thread-messages');
     box.innerHTML = '';
     out.messages.forEach((m) => box.appendChild(msgEl(m, true)));
@@ -253,7 +260,10 @@
       }
       const out = await api(`/api/v1/events?after=${cursor}&wait=25`);
       cursor = out.cursor;
-      for (const ev of out.events || []) await applyEvent(ev);
+      for (const ev of out.events || []) {
+        // cursor is already advanced: one bad event must not eat the rest of the batch
+        try { await applyEvent(ev); } catch (e) { console.error('applyEvent', ev.type, e); }
+      }
     } catch (e) {
       if (e.status === 401) { localStorage.removeItem(storeKey); location.reload(); return; }
       await new Promise((r) => setTimeout(r, 3000));
@@ -329,7 +339,7 @@
     });
   }
 
-  $('thread-close').onclick = () => { $('thread-panel').classList.add('hidden'); openThreadRoot = null; };
+  $('thread-close').onclick = closeThread;
 
   $('copy-link').onclick = async () => {
     await navigator.clipboard.writeText(joinURL || location.href);
@@ -362,11 +372,20 @@
   // boot
   (async () => {
     if (!secret) { document.body.textContent = 'Missing room link.'; return; }
-    const saved = localStorage.getItem(storeKey);
-    if (saved) {
-      token = JSON.parse(saved).token;
-      try { await enterChat(); return; }
-      catch (e) { token = null; localStorage.removeItem(storeKey); }
+    let saved = null;
+    try { saved = JSON.parse(localStorage.getItem(storeKey) || 'null'); } catch (e) { /* corrupt entry */ }
+    if (saved && saved.token) {
+      token = saved.token;
+      // only a 401 means the token is bad; a network blip or server restart
+      // must not log the user out and orphan their identity
+      for (;;) {
+        try { await enterChat(); return; }
+        catch (e) {
+          if (e.status === 401 || e.status === 404) { token = null; localStorage.removeItem(storeKey); break; }
+          console.error('boot', e);
+          await new Promise((r) => setTimeout(r, 3000));
+        }
+      }
     }
     showJoin();
   })();

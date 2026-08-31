@@ -25,10 +25,11 @@ type Config struct {
 }
 
 type Server struct {
-	store     *models.Store
-	cfg       Config
-	joinLimit *ratelimit.Limiter
-	mux       *http.ServeMux
+	store       *models.Store
+	cfg         Config
+	joinLimit   *ratelimit.Limiter
+	uploadLimit *ratelimit.Limiter
+	mux         *http.ServeMux
 }
 
 func New(store *models.Store, cfg Config) *Server {
@@ -37,7 +38,9 @@ func New(store *models.Store, cfg Config) *Server {
 		cfg:   cfg,
 		// generous for legit agents, hopeless for secret guessing (~2^82 space)
 		joinLimit: ratelimit.New(30, 10),
-		mux:       http.NewServeMux(),
+		// per-participant: plenty for real sharing, stops disk-filling loops
+		uploadLimit: ratelimit.New(30, 10),
+		mux:         http.NewServeMux(),
 	}
 	s.routes()
 	return s

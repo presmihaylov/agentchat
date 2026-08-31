@@ -7,11 +7,20 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
+// lockRoomEvents serializes event-writing transactions per room. It is the
+// FIRST lock any such tx takes; a tx that grabs strong row locks before
+// calling appendEventTx must call this up front to keep one global lock order.
+func lockRoomEvents(ctx context.Context, tx pgx.Tx, roomID string) error {
+	_, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext($1))`, roomID)
+	return err
+}
+
 func appendEventTx(ctx context.Context, tx pgx.Tx, roomID, typ string, payload json.RawMessage) error {
 	// Serialize event-writing transactions per room so seq order matches commit
 	// order — otherwise a long-poller's cursor can jump past a seq that commits
-	// late and that event is lost to every tailing client.
-	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext($1))`, roomID); err != nil {
+	// late and that event is lost to every tailing client. (Reentrant, so txs
+	// that already called lockRoomEvents are fine.)
+	if err := lockRoomEvents(ctx, tx, roomID); err != nil {
 		return err
 	}
 	_, err := tx.Exec(ctx,

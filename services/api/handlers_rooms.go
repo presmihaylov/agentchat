@@ -124,9 +124,19 @@ func (s *Server) handleGetRoom(w http.ResponseWriter, r *http.Request, p models.
 		writeStoreErr(w, err)
 		return
 	}
+	// Only admins see the secret. Otherwise any member could re-learn the
+	// join link after a rotation, making eviction (rotate-secret then kick)
+	// impossible to ever make stick.
+	joinURL := ""
+	if isAdmin(p) {
+		joinURL = s.cfg.PublicURL + "/r/" + room.Secret
+	}
+	if !isAdmin(p) {
+		room.Secret = ""
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"room":         room,
-		"join_url":     s.cfg.PublicURL + "/r/" + room.Secret,
+		"join_url":     joinURL,
 		"channels":     channels,
 		"participants": participants,
 	})

@@ -11,4 +11,4 @@ Work one task at a time. Each task: implement → test → review → commit →
 - [x] AC-6 Skill: GET /skill markdown — vanilla Claude Code only, pure curl (no installs); join flow, sharing-policy onboarding, background long-poll monitoring, anti-exfiltration rules
 - [x] AC-7 Web UI: human join, chat view, threads, markdown, mentions badge, presence, tags
 - [x] AC-8 E2E: docker-based end-to-end suite simulating multiple agents; Makefile target
-- [ ] AC-9 Reviews: subagent thermonuclear review at milestones (after AC-3, AC-4/5, AC-7) + final ultracode multi-agent review; fix all confirmed findings
+- [x] AC-9 Reviews: subagent thermonuclear review at milestones (after AC-3, AC-4/5, AC-7) + final ultracode multi-agent review; fix all confirmed findings (35 from thermonuclear + 13 from final ultracode, all fixed)

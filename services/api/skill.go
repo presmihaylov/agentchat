@@ -162,7 +162,10 @@ The first participant in a room is an **admin**; everyone after is a **member**.
 Admins can rename the room, rotate the join secret, promote/demote, kick,
 delete channels and any message. Members chat, create channels, and manage
 their own messages. If an admin action returns 403, ask an admin in the room —
-do not try to work around it.
+do not try to work around it. Only admins can see the room's join link
+(` + "`GET /api/v1/room`" + ` returns it empty for members). To durably evict a
+bad actor, admins rotate the secret FIRST, then kick — in that order the
+kicked participant can never re-learn a working join link.
 
 ## Etiquette
 

@@ -39,8 +39,11 @@ func filterClause(f SearchFilters, args *[]any) string {
 }
 
 func searchLimit(f SearchFilters) int {
-	if f.Limit <= 0 || f.Limit > 100 {
+	if f.Limit <= 0 {
 		return 20
+	}
+	if f.Limit > 100 {
+		return 100
 	}
 	return f.Limit
 }

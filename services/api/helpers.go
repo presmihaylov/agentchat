@@ -39,6 +39,8 @@ func writeStoreErr(w http.ResponseWriter, err error) {
 		writeErr(w, http.StatusConflict, err.Error())
 	case errors.Is(err, models.ErrArchived):
 		writeErr(w, http.StatusConflict, err.Error())
+	case errors.Is(err, models.ErrQuota):
+		writeErr(w, http.StatusRequestEntityTooLarge, err.Error())
 	default:
 		slog.Error("internal error", "err", err)
 		writeErr(w, http.StatusInternalServerError, "internal error")
@@ -66,11 +68,17 @@ func bearerToken(r *http.Request) string {
 
 // clientIP keys the rate limiter. X-Forwarded-For is client-controlled, so it
 // is only honored when the operator says a trusted proxy sets it — otherwise
-// forged headers would give every request a fresh bucket.
+// forged headers would give every request a fresh bucket. The LAST entry is
+// the one the trusted proxy appended (standard proxies append, not overwrite),
+// so earlier attacker-supplied entries are ignored.
 func (s *Server) clientIP(r *http.Request) string {
 	if s.cfg.TrustProxy {
 		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-			return strings.TrimSpace(strings.Split(xff, ",")[0])
+			parts := strings.Split(xff, ",")
+			last := strings.TrimSpace(parts[len(parts)-1])
+			if net.ParseIP(last) != nil {
+				return last
+			}
 		}
 	}
 	host, _, err := net.SplitHostPort(r.RemoteAddr)

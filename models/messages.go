@@ -146,8 +146,13 @@ func (s *Store) MessageByID(ctx context.Context, roomID, id string) (Message, er
 // before filters strictly older; beforeID (paired with beforeAt) is a tuple
 // cursor so pages don't skip or repeat messages sharing a timestamp.
 func (s *Store) ListChannelMessages(ctx context.Context, roomID, channelID string, before *time.Time, beforeID *string, beforeAt *time.Time, limit int) ([]Message, error) {
-	if limit <= 0 || limit > 200 {
+	if limit <= 0 {
 		limit = 50
+	}
+	// clamp, don't reset: a too-big limit collapsing to 50 makes paginating
+	// clients think they hit the end of history
+	if limit > 200 {
+		limit = 200
 	}
 	rows, err := s.pool.Query(ctx,
 		messageSelect+`
@@ -169,13 +174,23 @@ func (s *Store) ListChannelMessages(ctx context.Context, roomID, channelID strin
 	return out, nil
 }
 
-// ListThread returns the root message followed by its replies, oldest first.
-func (s *Store) ListThread(ctx context.Context, roomID, rootID string) ([]Message, error) {
+// ListThread returns the root message followed by the newest limit replies,
+// oldest first. Bounded so a huge autonomous-agent thread can't make one GET
+// serialize the whole conversation.
+func (s *Store) ListThread(ctx context.Context, roomID, rootID string, limit int) ([]Message, error) {
+	if limit <= 0 {
+		limit = 200
+	}
+	if limit > 500 {
+		limit = 500
+	}
 	rows, err := s.pool.Query(ctx,
-		messageSelect+`
-		 WHERE m.room_id = $1 AND (m.id = $2 OR m.thread_root_id = $2)
-		 ORDER BY m.created_at ASC`,
-		roomID, rootID)
+		`SELECT * FROM (
+		    SELECT`+messageColumns+messageFrom+`
+		     WHERE m.room_id = $1 AND (m.id = $2 OR m.thread_root_id = $2)
+		     ORDER BY (m.id = $2) DESC, m.created_at DESC, m.id DESC LIMIT $3
+		 ) latest ORDER BY created_at ASC, id ASC`,
+		roomID, rootID, limit+1)
 	if err != nil {
 		return nil, err
 	}

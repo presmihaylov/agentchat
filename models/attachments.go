@@ -1,15 +1,31 @@
 package models
 
-import "context"
+import (
+	"context"
+	"errors"
+	"fmt"
+
+	"github.com/jackc/pgx/v5"
+)
+
+// roomStorageCap bounds total attachment bytes per room so one participant
+// can't fill the shared database disk.
+const roomStorageCap = 500 * 1024 * 1024
+
+var ErrQuota = errors.New("room storage quota exceeded")
 
 func (s *Store) CreateAttachment(ctx context.Context, roomID, uploaderID, filename, contentType string, data []byte) (AttachmentMeta, error) {
 	var meta AttachmentMeta
 	err := s.pool.QueryRow(ctx,
 		`INSERT INTO attachments (room_id, uploader_id, filename, content_type, size_bytes, data)
-		 VALUES ($1, $2, $3, $4, $5, $6)
+		 SELECT $1::uuid, $2::uuid, $3::text, $4::text, $5::bigint, $6::bytea
+		 WHERE (SELECT COALESCE(sum(size_bytes), 0) FROM attachments WHERE room_id = $1) + $5 <= $7
 		 RETURNING id, filename, content_type, size_bytes, created_at`,
-		roomID, uploaderID, filename, contentType, len(data), data,
+		roomID, uploaderID, filename, contentType, len(data), data, roomStorageCap,
 	).Scan(&meta.ID, &meta.Filename, &meta.ContentType, &meta.SizeBytes, &meta.CreatedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return meta, fmt.Errorf("%w (%dMB per room)", ErrQuota, roomStorageCap/(1024*1024))
+	}
 	return meta, err
 }
 

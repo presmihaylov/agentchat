@@ -88,7 +88,9 @@ func run() error {
 		BaseContext:       func(net.Listener) context.Context { return ctx },
 	}
 
+	shutdownDone := make(chan struct{})
 	go func() {
+		defer close(shutdownDone)
 		<-ctx.Done()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -99,5 +101,8 @@ func run() error {
 	if err := httpServer.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}
+	// ListenAndServe returns the moment Shutdown starts; wait for the actual
+	// drain or in-flight responses get connection-reset on process exit
+	<-shutdownDone
 	return nil
 }
