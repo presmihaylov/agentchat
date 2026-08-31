@@ -301,11 +301,15 @@
     $('profile-modal').classList.remove('hidden');
   };
 
-  const participantLi = (p) => {
+  // leaf=true renders the row as an owned-agent child (indented). Under its
+  // owner the parent already establishes ownership, so the text "X's agent"
+  // badge is suppressed there; the owner-badged avatar still carries the cue.
+  const participantLi = (p, leaf) => {
     const li = document.createElement('li');
+    if (leaf) li.classList.add('participant-leaf');
     if (!p.online) li.classList.add('offline');
     const tags = (p.tags || []).map((t) => t.tag).join(', ');
-    const owner = p.owner_name ? `<span class="owner-badge" title="server-verified owner">${esc(p.owner_name)}'s agent</span>` : '';
+    const owner = (!leaf && p.owner_name) ? `<span class="owner-badge" title="server-verified owner">${esc(p.owner_name)}'s agent</span>` : '';
     li.innerHTML = `<span class="dot${p.online ? ' online' : ''}"></span>
       <span class="av-slot"></span>
       <span class="pname">${esc(p.name)}</span>${owner}
@@ -316,26 +320,35 @@
     return li;
   };
 
+  // Participants render as a tree: each human is a parent, the agents whose
+  // server-verified owner_id points at them nest beneath. Ownerless agents
+  // (or ones whose owner is not a visible human) group under "unowned agents".
   const renderParticipants = () => {
     const ul = $('participant-list');
     ul.innerHTML = '';
-    const groups = [
-      ['humans', participants.filter((p) => p.is_human)],
-      ['agents', participants.filter((p) => !p.is_human)],
-    ];
-    let offlineTotal = 0;
-    for (const [label, group] of groups) {
-      const online = group.filter((p) => p.online);
-      const offline = group.filter((p) => !p.online);
-      offlineTotal += offline.length;
-      if (online.length === 0 && !(showOffline && offline.length > 0)) continue;
+    const humans = participants.filter((p) => p.is_human);
+    const agents = participants.filter((p) => !p.is_human);
+    const ownerOf = (a) => (a.owner_id && humans.find((h) => h.id === a.owner_id)) ? a.owner_id : null;
+    const vis = (p) => p.online || showOffline;
+    const offlineTotal = participants.filter((p) => !p.online).length;
+
+    humans.forEach((h) => {
+      const kids = agents.filter((a) => ownerOf(a) === h.id && vis(a));
+      // show a human if it is visible itself, or it has a visible owned agent
+      if (!vis(h) && kids.length === 0) return;
+      ul.appendChild(participantLi(h));
+      kids.forEach((a) => ul.appendChild(participantLi(a, true)));
+    });
+
+    const ownerless = agents.filter((a) => ownerOf(a) === null && vis(a));
+    if (ownerless.length > 0) {
       const h = document.createElement('li');
       h.className = 'group-label';
-      h.textContent = label;
+      h.textContent = 'unowned agents';
       ul.appendChild(h);
-      online.forEach((p) => ul.appendChild(participantLi(p)));
-      if (showOffline) offline.forEach((p) => ul.appendChild(participantLi(p)));
+      ownerless.forEach((a) => ul.appendChild(participantLi(a, true)));
     }
+
     if (offlineTotal === 0) return;
     const t = document.createElement('li');
     t.className = 'offline-toggle';

@@ -76,6 +76,8 @@ button { cursor: pointer; }
 #channel-list li.thread-leaf.unread .t-snippet { color: #fff; }
 #channel-list li.thread-leaf .t-count { flex: none; }
 #channel-list li.thread-leaf.muted { opacity: .5; }
+/* Owned agents nest under their human owner: indented, with a branch guide. */
+#participant-list li.participant-leaf { margin-left: 15px; padding-left: 8px; border-left: 1px solid var(--border); border-radius: 0 6px 6px 0; }
 .owner-badge { flex: none; margin: 0 6px; padding: 0 6px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel2); color: var(--dim); font-size: 10px; line-height: 15px; white-space: nowrap; }
 #me-footer { margin-top: auto; padding: 10px 16px; border-top: 1px solid var(--border); font-size: 13px; color: var(--dim); display: flex; align-items: center; gap: 7px; cursor: pointer; }
 
