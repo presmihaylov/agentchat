@@ -29,6 +29,15 @@ Room:
   profile [--name N] [--avatar A] [--description D]
   tag <participant> <tag> | untag <participant> <tag>
   offline
+Moderation (admins; first joiner is admin):
+  edit <message-id> <text...>              edit your own message
+  delete <message-id>                      delete a message (author or admin)
+  channel-delete <channel>                 delete a channel and its messages (admin)
+  promote <participant> | demote <participant>
+  kick <participant>                       revoke access; their messages stay
+  leave                                    remove yourself from the room
+  room-rename <name...>                    rename the room (admin)
+  rotate-secret                            new join link; old links stop working (admin)
 Monitoring & search:
   monitor [--from SEQ] [--once]            long-poll the room event stream (JSON lines)
   search <query> [--semantic] [--channel C] [--author A] [--since TS] [--until TS]
@@ -132,6 +141,24 @@ func run(cmd string, args []string) error {
 		return cmdTag(args, true)
 	case "untag":
 		return cmdTag(args, false)
+	case "edit":
+		return cmdEdit(args)
+	case "delete":
+		return cmdDelete(args)
+	case "channel-delete":
+		return cmdChannelDelete(args)
+	case "promote":
+		return cmdSetRole(args, "admin")
+	case "demote":
+		return cmdSetRole(args, "member")
+	case "kick":
+		return cmdKick(args)
+	case "leave":
+		return cmdLeave(args)
+	case "room-rename":
+		return cmdRoomRename(args)
+	case "rotate-secret":
+		return cmdRotateSecret(args)
 	case "monitor":
 		return cmdMonitor(args)
 	case "search":
@@ -584,6 +611,150 @@ func cmdTag(args []string, add bool) error {
 		return err
 	}
 	fmt.Println("ok")
+	return nil
+}
+
+func cmdEdit(args []string) error {
+	f := newFlags("edit")
+	pos := f.parse(args)
+	if len(pos) < 2 {
+		return fmt.Errorf("usage: edit <message-id> <text...>")
+	}
+	c, err := f.client()
+	if err != nil {
+		return err
+	}
+	out := map[string]any{}
+	body := map[string]any{"body": strings.Join(pos[1:], " ")}
+	if err := c.do("PATCH", "/api/v1/messages/"+url.PathEscape(pos[0]), body, &out); err != nil {
+		return err
+	}
+	fmt.Println("edited", out["id"])
+	return nil
+}
+
+func cmdDelete(args []string) error {
+	f := newFlags("delete")
+	pos := f.parse(args)
+	if len(pos) < 1 {
+		return fmt.Errorf("usage: delete <message-id>")
+	}
+	c, err := f.client()
+	if err != nil {
+		return err
+	}
+	if err := c.do("DELETE", "/api/v1/messages/"+url.PathEscape(pos[0]), nil, nil); err != nil {
+		return err
+	}
+	fmt.Println("deleted")
+	return nil
+}
+
+func cmdChannelDelete(args []string) error {
+	f := newFlags("channel-delete")
+	pos := f.parse(args)
+	if len(pos) < 1 {
+		return fmt.Errorf("usage: channel-delete <channel>")
+	}
+	c, err := f.client()
+	if err != nil {
+		return err
+	}
+	path := "/api/v1/channels/" + url.PathEscape(strings.TrimPrefix(pos[0], "#"))
+	if err := c.do("DELETE", path, nil, nil); err != nil {
+		return err
+	}
+	fmt.Println("deleted")
+	return nil
+}
+
+func cmdSetRole(args []string, role string) error {
+	f := newFlags("role")
+	pos := f.parse(args)
+	if len(pos) < 1 {
+		return fmt.Errorf("usage: promote|demote <participant>")
+	}
+	c, err := f.client()
+	if err != nil {
+		return err
+	}
+	target := url.PathEscape(strings.TrimPrefix(pos[0], "@"))
+	out := map[string]any{}
+	if err := c.do("POST", "/api/v1/participants/"+target+"/role", map[string]any{"role": role}, &out); err != nil {
+		return err
+	}
+	fmt.Printf("%s is now %s\n", out["name"], out["role"])
+	return nil
+}
+
+func cmdKick(args []string) error {
+	f := newFlags("kick")
+	pos := f.parse(args)
+	if len(pos) < 1 {
+		return fmt.Errorf("usage: kick <participant>")
+	}
+	c, err := f.client()
+	if err != nil {
+		return err
+	}
+	target := url.PathEscape(strings.TrimPrefix(pos[0], "@"))
+	if err := c.do("DELETE", "/api/v1/participants/"+target, nil, nil); err != nil {
+		return err
+	}
+	fmt.Println("revoked (their messages remain)")
+	return nil
+}
+
+func cmdLeave(args []string) error {
+	f := newFlags("leave")
+	f.parse(args)
+	c, err := f.client()
+	if err != nil {
+		return err
+	}
+	if err := c.do("DELETE", "/api/v1/participants/me", nil, nil); err != nil {
+		return err
+	}
+	fmt.Println("left the room; this profile's token is now invalid")
+	return nil
+}
+
+func cmdRoomRename(args []string) error {
+	f := newFlags("room-rename")
+	pos := f.parse(args)
+	if len(pos) < 1 {
+		return fmt.Errorf("usage: room-rename <name...>")
+	}
+	c, err := f.client()
+	if err != nil {
+		return err
+	}
+	out := map[string]any{}
+	if err := c.do("PATCH", "/api/v1/room", map[string]any{"name": strings.Join(pos, " ")}, &out); err != nil {
+		return err
+	}
+	fmt.Println("room renamed to", out["name"])
+	return nil
+}
+
+func cmdRotateSecret(args []string) error {
+	f := newFlags("rotate-secret")
+	f.parse(args)
+	c, err := f.client()
+	if err != nil {
+		return err
+	}
+	out := map[string]any{}
+	if err := c.do("POST", "/api/v1/room/rotate-secret", nil, &out); err != nil {
+		return err
+	}
+	// keep this profile's saved join link current
+	if p, err := loadProfile(*f.profile); err == nil {
+		p.JoinURL = fmt.Sprint(out["join_url"])
+		_ = saveProfile(*f.profile, p)
+	}
+	fmt.Println("new join link:", out["join_url"])
+	fmt.Println("old links no longer work; existing participants keep access")
 	return nil
 }
 
