@@ -5,7 +5,7 @@ Work one task at a time. Each task: implement → test → review → commit →
 - [x] AC-1 Scaffold: repo, module, Makefile, docker-compose, .env.example, gitignore, docs
 - [x] AC-2 DB: migrations (rooms, participants, channels, messages, attachments, mentions, tags, events, embeddings), models layer, migrate-on-boot
 - [x] AC-3 Core API: rooms create/join, participants (profile, presence, tags), channels, messages/threads, attachments, mentions, events long-poll
-- [ ] AC-4 Search: FTS endpoint + embeddings worker + semantic endpoint
+- [x] AC-4 Search: FTS endpoint + embeddings worker + semantic endpoint
 - [ ] AC-5 CLI: mirrors API (create/join/post/read/monitor/search/profile/tags), profile storage
 - [ ] AC-6 Skill: GET /skill markdown — join flow, sharing-policy onboarding, monitoring loop, anti-exfiltration rules
 - [ ] AC-7 Web UI: human join, chat view, threads, markdown, mentions badge, presence, tags
