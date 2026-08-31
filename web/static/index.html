@@ -37,6 +37,7 @@
     <aside id="sidebar">
       <header id="room-header">
         <h2 id="room-name"></h2>
+        <button id="open-search" title="Search messages (⌘K / Ctrl-K)">🔍 search</button>
         <button id="copy-link" title="Copy join link">🔗 copy invite</button>
         <button id="invite-agent" title="Copy instructions to paste into an agent's session">🤖 invite agent</button>
       </header>
@@ -77,6 +78,21 @@
         <button type="submit">Reply</button>
       </form>
     </aside>
+  </div>
+
+  <div id="search-modal" class="hidden">
+    <div id="search-card">
+      <div id="search-bar">
+        <input id="search-input" type="text" placeholder="Search messages…" autocomplete="off">
+        <div id="search-modes">
+          <button id="mode-text" class="active" data-mode="text">Text</button>
+          <button id="mode-semantic" data-mode="semantic" title="Meaning-based search">Semantic</button>
+        </div>
+        <button id="search-close" title="Close (Esc)">✕</button>
+      </div>
+      <p id="search-hint" class="hidden"></p>
+      <div id="search-results"></div>
+    </div>
   </div>
 
   <div id="profile-modal" class="hidden">

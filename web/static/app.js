@@ -757,6 +757,146 @@
   };
 
   $('lightbox').onclick = () => { $('lightbox').classList.add('hidden'); $('lightbox-img').removeAttribute('src'); };
+
+  // ---------- search ----------
+
+  let searchMode = 'text';
+  let semanticEnabled = null; // null until the first probe resolves
+  let searchSeq = 0;          // drops stale async results when the query moves on
+  let searchTimer = null;
+
+  const openSearch = () => {
+    $('search-modal').classList.remove('hidden');
+    const input = $('search-input');
+    input.focus();
+    input.select();
+    probeSemantic();
+  };
+  const closeSearch = () => $('search-modal').classList.add('hidden');
+
+  // one-shot probe of the semantic endpoint. When the provider is missing the
+  // handler answers 503 before it validates q, so a blank query cheaply tells
+  // enabled (400, q required) from disabled (503) without spending an embedding.
+  const probeSemantic = async () => {
+    if (semanticEnabled !== null) return;
+    try {
+      await api('/api/v1/search/semantic?q=%20&limit=1');
+      semanticEnabled = true;
+    } catch (e) {
+      semanticEnabled = e.status !== 503; // only 503 means truly off; treat transient errors as on
+    }
+    applySemanticAvailability();
+  };
+  const applySemanticAvailability = () => {
+    const btn = $('mode-semantic');
+    const hint = $('search-hint');
+    if (semanticEnabled === false) {
+      btn.classList.add('disabled');
+      hint.textContent = 'Semantic search is off on this server (no embeddings provider configured).';
+      hint.classList.remove('hidden');
+      if (searchMode === 'semantic') setMode('text');
+      return;
+    }
+    btn.classList.remove('disabled');
+    hint.classList.add('hidden');
+  };
+
+  const setMode = (mode) => {
+    if (mode === 'semantic' && semanticEnabled === false) return;
+    searchMode = mode;
+    $('mode-text').classList.toggle('active', mode === 'text');
+    $('mode-semantic').classList.toggle('active', mode === 'semantic');
+    runSearch();
+  };
+
+  const scheduleSearch = () => {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(runSearch, 220);
+  };
+
+  const runSearch = async () => {
+    const q = $('search-input').value.trim();
+    const box = $('search-results');
+    const seq = ++searchSeq;
+    if (!q) { box.innerHTML = ''; return; }
+    // semantic must round-trip an embedding, so show a loading row while it
+    // resolves lazily; text is instant and paints as soon as it returns
+    if (searchMode === 'semantic') box.innerHTML = '<div class="search-loading">Searching by meaning…</div>';
+    const path = searchMode === 'semantic' ? '/api/v1/search/semantic' : '/api/v1/search';
+    try {
+      const out = await api(path + '?q=' + encodeURIComponent(q) + '&limit=25');
+      if (seq !== searchSeq) return; // a newer keystroke already superseded this
+      renderResults(out.results || []);
+    } catch (e) {
+      if (seq !== searchSeq) return;
+      // the endpoint went dark since the probe: fall back to text and mark it off
+      if (e.status === 503) { semanticEnabled = false; applySemanticAvailability(); setMode('text'); return; }
+      box.innerHTML = '<div class="search-empty">Search failed: ' + esc(e.message) + '</div>';
+    }
+  };
+
+  const snippet = (body) => {
+    const s = String(body).replace(/\s+/g, ' ').trim();
+    return s.length > 180 ? s.slice(0, 180) + '…' : s;
+  };
+  const fmtSearchTime = (iso) => new Date(iso).toLocaleDateString([], { month: 'short', day: 'numeric' }) + ' ' + fmtTime(iso);
+
+  const renderResults = (results) => {
+    const box = $('search-results');
+    box.innerHTML = '';
+    if (!results.length) { box.innerHTML = '<div class="search-empty">No matches.</div>'; return; }
+    results.forEach((r) => {
+      const ch = channels.find((c) => c.id === r.channel_id);
+      const row = document.createElement('div');
+      row.className = 'search-hit-row';
+      const meta = document.createElement('div');
+      meta.className = 'sh-meta';
+      meta.innerHTML = `<span class="sh-channel">#${esc(ch ? ch.name : 'channel')}</span>` +
+        `<span class="sh-author">${esc(r.author_name)}</span>` +
+        `<span class="sh-time">${esc(fmtSearchTime(r.created_at))}</span>` +
+        (r.thread_root_id ? '<span class="sh-thread">in thread</span>' : '');
+      const snip = document.createElement('div');
+      snip.className = 'sh-snippet';
+      snip.textContent = snippet(r.body); // textContent, never markdown: search hits stay inert
+      row.append(meta, snip);
+      row.onclick = () => jumpToMessage(r);
+      box.appendChild(row);
+    });
+  };
+
+  // land the reader on the hit: switch channel, open its thread if it lives in
+  // one, then scroll to and flash the node. Older top-level hits may sit above
+  // the loaded window; we navigate regardless and flash only if it is present.
+  const jumpToMessage = async (r) => {
+    closeSearch();
+    const ch = channels.find((c) => c.id === r.channel_id);
+    if (ch && (!current || current.id !== ch.id)) await selectChannel(ch);
+    if (r.thread_root_id) { try { await openThread(r.thread_root_id); } catch (e) { /* thread gone */ } }
+    const container = r.thread_root_id ? $('thread-messages') : $('messages');
+    const node = [...container.querySelectorAll('.msg')].find((n) => n.dataset.id === r.id);
+    if (node) {
+      node.scrollIntoView({ block: 'center' });
+      node.classList.add('search-flash');
+      setTimeout(() => node.classList.remove('search-flash'), 1800);
+    }
+  };
+
+  $('open-search').onclick = openSearch;
+  $('search-close').onclick = closeSearch;
+  $('search-modal').onclick = (ev) => { if (ev.target === $('search-modal')) closeSearch(); };
+  $('search-input').addEventListener('input', scheduleSearch);
+  $('mode-text').onclick = () => setMode('text');
+  $('mode-semantic').onclick = () => setMode('semantic');
+
+  document.addEventListener('keydown', (ev) => {
+    if ((ev.metaKey || ev.ctrlKey) && (ev.key === 'k' || ev.key === 'K')) {
+      if (!me) return; // only meaningful once in a room
+      ev.preventDefault();
+      $('search-modal').classList.contains('hidden') ? openSearch() : closeSearch();
+    }
+    if (ev.key === 'Escape' && !$('search-modal').classList.contains('hidden')) closeSearch();
+  });
+
   document.addEventListener('keydown', (ev) => {
     if (ev.key === 'Escape' && !$('lightbox').classList.contains('hidden')) $('lightbox').click();
   });

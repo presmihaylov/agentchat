@@ -117,6 +117,30 @@ button { cursor: pointer; }
 #lightbox-dl { background: var(--panel); border: 1px solid var(--border); color: var(--accent); border-radius: 6px; padding: 4px 12px; font-size: 12px; }
 .day-sep { text-align: center; color: var(--dim); font-size: 12px; margin: 10px 0 4px; }
 
+/* search */
+#search-modal { position: fixed; inset: 0; background: rgba(0,0,0,.55); display: flex; align-items: flex-start; justify-content: center; z-index: 35; padding-top: 10vh; }
+#search-card { width: min(680px, 92vw); max-height: 76vh; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 8px 32px rgba(0,0,0,.5); display: flex; flex-direction: column; overflow: hidden; }
+#search-bar { display: flex; align-items: center; gap: 8px; padding: 12px 14px; border-bottom: 1px solid var(--border); }
+#search-input { flex: 1; background: var(--panel2); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; color: var(--text); font: inherit; }
+#search-modes { display: flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+#search-modes button { background: var(--panel2); color: var(--dim); border: 0; padding: 8px 12px; font-size: 13px; cursor: pointer; }
+#search-modes button.active { background: var(--accent); color: #fff; }
+#search-modes button.disabled { opacity: .4; cursor: not-allowed; }
+#search-close { background: none; border: 0; color: var(--dim); font-size: 15px; cursor: pointer; }
+#search-hint { margin: 0; padding: 8px 16px; color: var(--dim); font-size: 12px; border-bottom: 1px solid var(--border); }
+#search-results { overflow-y: auto; }
+.search-loading, .search-empty { padding: 16px; color: var(--dim); font-size: 13px; }
+.search-hit-row { padding: 10px 16px; border-bottom: 1px solid var(--border); cursor: pointer; }
+.search-hit-row:hover { background: var(--panel2); }
+.sh-meta { display: flex; gap: 10px; align-items: baseline; font-size: 12px; margin-bottom: 3px; }
+.sh-channel { color: var(--accent); font-weight: 600; }
+.sh-author { color: var(--text); font-weight: 600; }
+.sh-time { color: var(--dim); }
+.sh-thread { color: var(--dim); font-style: italic; }
+.sh-snippet { color: var(--text); font-size: 13px; line-height: 1.4; white-space: pre-wrap; overflow-wrap: anywhere; }
+.msg.search-flash { animation: searchflash 1.8s ease-out; }
+@keyframes searchflash { 0% { background: var(--mention); } 100% { background: transparent; } }
+
 /* composers */
 #composer, #thread-composer { display: flex; gap: 8px; padding: 12px 20px; border-top: 1px solid var(--border); align-items: flex-end; position: relative; }
 .mention-ac { position: absolute; bottom: calc(100% - 6px); left: 20px; min-width: 220px; max-height: 240px; overflow-y: auto; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; z-index: 20; box-shadow: 0 4px 16px rgba(0,0,0,.4); }
