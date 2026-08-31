@@ -23,8 +23,16 @@ button { cursor: pointer; }
 #chat-view { display: flex; height: 100vh; }
 #sidebar { width: 240px; background: var(--panel); border-right: 1px solid var(--border); display: flex; flex-direction: column; overflow-y: auto; }
 #room-header { padding: 14px 16px; border-bottom: 1px solid var(--border); }
-#room-header h2 { margin: 0 0 6px; font-size: 16px; }
-#copy-link, #invite-agent { background: none; border: 1px solid var(--border); color: var(--dim); border-radius: 6px; font-size: 11px; padding: 3px 8px; }
+#room-header h2 { margin: 0 0 10px; font-size: 16px; }
+/* Slack-style: a full-width search field on its own row, then a tidy pill row.
+   all header controls share the same muted ghost style so none screams. */
+#open-search { display: flex; align-items: center; gap: 8px; width: 100%; margin: 0 0 8px; background: var(--panel2); border: 1px solid var(--border); color: var(--dim); border-radius: 8px; padding: 7px 10px; font-size: 13px; cursor: pointer; text-align: left; }
+#open-search:hover { border-color: var(--accent); color: var(--text); }
+#open-search .os-label { flex: 1; }
+#open-search .os-kbd { border: 1px solid var(--border); border-radius: 4px; padding: 1px 6px; font-size: 11px; color: var(--dim); }
+#header-actions { display: flex; gap: 6px; }
+#copy-link, #invite-agent { background: none; border: 1px solid var(--border); color: var(--dim); border-radius: 6px; font-size: 11px; padding: 4px 8px; cursor: pointer; }
+#copy-link:hover, #invite-agent:hover { border-color: var(--accent); color: var(--text); }
 #sidebar section { padding: 12px 8px 4px; }
 #sidebar h3 { margin: 0 8px 6px; font-size: 12px; text-transform: uppercase; color: var(--dim); display: flex; justify-content: space-between; }
 #new-channel { background: none; border: 0; color: var(--dim); font-size: 14px; }

@@ -881,6 +881,8 @@
     }
   };
 
+  // show the platform-correct shortcut in the search field's hint chip
+  $('search-kbd').textContent = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent) ? '⌘K' : 'Ctrl K';
   $('open-search').onclick = openSearch;
   $('search-close').onclick = closeSearch;
   $('search-modal').onclick = (ev) => { if (ev.target === $('search-modal')) closeSearch(); };

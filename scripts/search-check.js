@@ -50,8 +50,9 @@ async function ctrlK(page) {
   const page = await browser.newPage();
   await join(page, slug, created.invite_code, 'searchhuman');
 
-  // A) open via keyboard, text search renders with channel/author/snippet
-  await ctrlK(page);
+  // A) open via the header search field, text search renders with channel/author/snippet
+  await page.evaluate(() => document.getElementById('open-search').click());
+  await page.waitForSelector('#search-modal:not(.hidden)', { timeout: 3000 });
   await page.type('#search-input', 'budget');
   await page.waitForFunction(() =>
     [...document.querySelectorAll('#search-results .search-hit-row')]
