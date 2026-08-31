@@ -54,18 +54,19 @@
     return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
 
-  // avatar images are attachments behind bearer auth — blob-fetch once, cache
-  // the object URL per attachment id
-  const avatarBlobURLs = {};
-  const loadAvatarInto = (attID, img) => {
-    if (!avatarBlobURLs[attID]) {
-      avatarBlobURLs[attID] = fetch('/api/v1/attachments/' + attID, { headers: { Authorization: 'Bearer ' + token } })
-        .then((r) => (r.ok ? r.blob() : Promise.reject(new Error('avatar fetch failed'))))
+  // attachment images sit behind bearer auth — blob-fetch once, cache the
+  // object URL per attachment id (avatars and inline images share this)
+  const blobURLs = {};
+  const blobURL = (attID) => {
+    if (!blobURLs[attID]) {
+      blobURLs[attID] = fetch('/api/v1/attachments/' + attID, { headers: { Authorization: 'Bearer ' + token } })
+        .then((r) => (r.ok ? r.blob() : Promise.reject(new Error('image fetch failed'))))
         .then((b) => URL.createObjectURL(b))
-        .catch(() => { delete avatarBlobURLs[attID]; return null; });
+        .catch(() => { delete blobURLs[attID]; return null; });
     }
-    avatarBlobURLs[attID].then((url) => { if (url) img.src = url; });
+    return blobURLs[attID];
   };
+  const loadAvatarInto = (attID, img) => blobURL(attID).then((url) => { if (url) img.src = url; });
   const avatarEl = (p, cls) => {
     if (p && p.avatar_attachment_id) {
       const img = document.createElement('img');
@@ -96,7 +97,9 @@
 
     // fetch-with-header + blob keeps the token out of URLs (logs, history, referrers)
     const atts = (m.attachments || []).map((a) =>
-      `<button class="attachment" data-att="${esc(a.id)}" data-name="${esc(a.filename)}">📄 ${esc(a.filename)}</button>`).join(' ');
+      (a.content_type || '').startsWith('image/')
+        ? `<img class="inline-img" data-att="${esc(a.id)}" data-name="${esc(a.filename)}" alt="${esc(a.filename)}">`
+        : `<button class="attachment" data-att="${esc(a.id)}" data-name="${esc(a.filename)}">📄 ${esc(a.filename)}</button>`).join(' ');
 
     const threadPill = (!inThread && m.reply_count > 0)
       ? `<button class="thread-pill" data-act="thread">${m.reply_count} repl${m.reply_count === 1 ? 'y' : 'ies'} →</button>` : '';
@@ -113,8 +116,20 @@
       <div class="msg-actions">${actions.join('')}</div>`;
     el.querySelector('.avatar').appendChild(
       avatarEl(participants.find((x) => x.id === m.author_id), 'avatar-msg'));
+    el.querySelectorAll('img.inline-img[data-att]').forEach((im) => {
+      // keep the view pinned to the bottom when an image finishes loading late
+      im.addEventListener('load', () => {
+        const sc = im.closest('#messages, #thread-messages');
+        if (sc && sc.scrollHeight - sc.scrollTop - sc.clientHeight < 240) sc.scrollTop = sc.scrollHeight;
+      });
+      blobURL(im.dataset.att).then((url) => { if (url) im.src = url; });
+    });
 
     el.addEventListener('click', (ev) => {
+      const inlineImg = ev.target.closest('img.inline-img');
+      if (inlineImg && el.contains(inlineImg) && inlineImg.dataset.att) {
+        openLightbox(inlineImg.dataset.att, inlineImg.dataset.name); return;
+      }
       const attBtn = ev.target.closest('button.attachment');
       if (attBtn && el.contains(attBtn)) { downloadAttachment(attBtn.dataset.att, attBtn.dataset.name); return; }
       // only real action buttons act — rendered markdown can't fake these
@@ -263,6 +278,13 @@
       a.click();
       setTimeout(() => URL.revokeObjectURL(url), 10000);
     } catch (e) { alert(e.message); }
+  };
+
+  const openLightbox = (id, name) => {
+    blobURL(id).then((url) => { if (url) $('lightbox-img').src = url; });
+    $('lightbox-name').textContent = name || '';
+    $('lightbox-dl').onclick = (ev) => { ev.stopPropagation(); downloadAttachment(id, name); };
+    $('lightbox').classList.remove('hidden');
   };
 
   const editMessage = async (m) => {
@@ -496,6 +518,11 @@
     } catch (e) { alert(e.message); }
   };
 
+  $('lightbox').onclick = () => { $('lightbox').classList.add('hidden'); $('lightbox-img').removeAttribute('src'); };
+  document.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Escape' && !$('lightbox').classList.contains('hidden')) $('lightbox').click();
+  });
+
   $('profile-close').onclick = () => $('profile-modal').classList.add('hidden');
   $('profile-modal').onclick = (ev) => {
     if (ev.target === $('profile-modal')) $('profile-modal').classList.add('hidden');
@@ -523,17 +550,49 @@
     catch (e) { alert(e.message); }
   };
 
-  $('attach-input').addEventListener('change', async () => {
-    const file = $('attach-input').files[0];
-    if (!file) return;
+  const showPendingAttachment = (file) => {
+    const pend = $('attach-pending');
+    pend.innerHTML = '';
+    if (file.type.startsWith('image/')) {
+      const im = document.createElement('img');
+      im.className = 'pending-thumb';
+      im.src = URL.createObjectURL(file);
+      pend.appendChild(im);
+    }
+    pend.appendChild(document.createTextNode('📎 ' + pendingAttachment.filename));
+    const clear = document.createElement('button');
+    clear.type = 'button';
+    clear.className = 'pending-clear';
+    clear.textContent = '✕';
+    clear.onclick = () => { pendingAttachment = null; pend.classList.add('hidden'); };
+    pend.appendChild(clear);
+    pend.classList.remove('hidden');
+  };
+
+  const uploadPending = async (file) => {
     const fd = new FormData();
     fd.append('file', file);
     try {
       pendingAttachment = await api('/api/v1/attachments', { method: 'POST', body: fd });
-      $('attach-pending').textContent = '📎 ' + pendingAttachment.filename;
-      $('attach-pending').classList.remove('hidden');
+      showPendingAttachment(file);
     } catch (e) { alert(e.message); }
+  };
+
+  $('attach-input').addEventListener('change', async () => {
+    const file = $('attach-input').files[0];
+    if (!file) return;
+    await uploadPending(file);
     $('attach-input').value = '';
+  });
+
+  // paste an image straight into the composer, slack-style
+  $('composer-input').addEventListener('paste', (ev) => {
+    const item = [...(ev.clipboardData?.items || [])].find((i) => i.type.startsWith('image/'));
+    if (!item) return;
+    const file = item.getAsFile();
+    if (!file) return;
+    ev.preventDefault();
+    uploadPending(new File([file], file.name || 'pasted-image.png', { type: file.type }));
   });
 
   window.addEventListener('focus', () => { unreadMentions = 0; setTitle(); });
