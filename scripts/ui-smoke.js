@@ -89,6 +89,8 @@ async function api(path, opts = {}) {
   await page.type('#create-user-name', 'founder');
   await page.click('#create-form button[type=submit]');
   await page.waitForSelector('#chat-view:not(.hidden)', { timeout: 8000 });
+  // refreshRoom fills the header async after the view unhides
+  await page.waitForFunction(() => document.querySelector('#room-name').textContent !== '', { timeout: 8000 });
   const newRoomName = await page.$eval('#room-name', (el) => el.textContent);
   if (newRoomName !== 'smoke onboarding') throw new Error('onboarding room name: ' + newRoomName);
   if (!page.url().startsWith(SERVER + '/r/')) throw new Error('onboarding did not land on /r/<slug>: ' + page.url());

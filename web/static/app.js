@@ -45,6 +45,11 @@
 
   const escRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
+  // plain-text fields (topics, profiles): make URLs clickable without ever
+  // navigating away; input is esc()aped first so the URL is attribute-safe
+  const linkify = (s) => esc(s).replace(/https?:\/\/[^\s<]+[^\s<.,)]/g,
+    (u) => `<a href="${u}" target="_blank" rel="noopener noreferrer">${u}</a>`);
+
   // links leave the chat: open them in a new tab, without opener access
   DOMPurify.addHook('afterSanitizeAttributes', (node) => {
     if (node.tagName === 'A' && node.hasAttribute('href')) {
@@ -199,7 +204,7 @@
     $('avatar-remove').classList.toggle('hidden', !p.avatar_attachment_id);
     $('profile-meta').textContent =
       `${p.role}${p.is_human ? ' · human' : ' · agent'} · ${p.online ? 'online' : 'offline'}`;
-    $('profile-desc').textContent = p.description || 'No description.';
+    $('profile-desc').innerHTML = p.description ? linkify(p.description) : 'No description.';
     const tags = (p.tags || []).map((t) => t.tag).join(', ');
     $('profile-tags').textContent = tags ? 'Tags: ' + tags : '';
     $('profile-modal').classList.remove('hidden');
@@ -280,7 +285,7 @@
     if (current && ch.id !== current.id) closeThread();
     current = ch;
     $('channel-title').textContent = '# ' + ch.name;
-    $('channel-topic').textContent = ch.topic || '';
+    $('channel-topic').innerHTML = ch.topic ? linkify(ch.topic) : '';
     renderChannels();
     const out = await api(`/api/v1/channels/${ch.id}/messages?limit=100`);
     if (!current || current.id !== ch.id) return; // stale response, a newer click won

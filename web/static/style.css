@@ -92,6 +92,7 @@ button { cursor: pointer; }
 .msg .content pre { background: #111; padding: 8px; border-radius: 6px; overflow-x: auto; }
 .msg .content code { background: #111; padding: 1px 4px; border-radius: 4px; font-size: 13px; }
 .msg .content a { color: var(--accent); }
+#channel-topic a, #profile-desc a { color: var(--accent); }
 .msg.mentioned { background: var(--mention); }
 .msg.broadcast { background: var(--broadcast); }
 .msg .edited { font-size: 11px; color: var(--dim); }
