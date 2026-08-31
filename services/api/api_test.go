@@ -740,3 +740,52 @@ func TestOwnership(t *testing.T) {
 	cc := &testClient{t: t, base: srv.URL}
 	cc.must("POST", "/api/v1/rooms/join", map[string]any{"invite_code": "inv-nope-nope-nope-nope", "name": "nobody"}, 404)
 }
+
+func TestReplyBarData(t *testing.T) {
+	srv, _ := newTestServer(t)
+	_, alice, bob := setupRoom(t, srv.URL)
+
+	root := alice.must("POST", "/api/v1/channels/general/messages", map[string]any{"body": "root"}, 201)
+	rootID := root["id"].(string)
+	aliceID := root["author_id"].(string)
+	reply := func(c *testClient, body string) map[string]any {
+		return c.must("POST", "/api/v1/channels/general/messages",
+			map[string]any{"body": body, "thread_root_id": rootID}, 201)
+	}
+	reply(alice, "r1")
+	bobMsg := reply(bob, "r2")
+	bobID := bobMsg["author_id"].(string)
+	last := reply(alice, "r3") // alice replies again: most recent replier
+
+	out := alice.must("GET", "/api/v1/channels/general/messages", nil, 200)
+	msgs := out["messages"].([]any)
+	var m map[string]any
+	for _, raw := range msgs {
+		if mm := raw.(map[string]any); mm["id"] == rootID {
+			m = mm
+		}
+	}
+	if m == nil {
+		t.Fatal("root message not in channel list")
+	}
+	if m["reply_count"].(float64) != 3 {
+		t.Fatalf("reply_count: %v", m["reply_count"])
+	}
+	if m["last_reply_at"] != last["created_at"] {
+		t.Fatalf("last_reply_at %v, want %v", m["last_reply_at"], last["created_at"])
+	}
+	ids := m["replier_ids"].([]any)
+	// distinct repliers, most recent first: alice (r3) then bob (r2)
+	if len(ids) != 2 || ids[0] != aliceID || ids[1] != bobID {
+		t.Fatalf("replier_ids: %v (alice=%s bob=%s)", ids, aliceID, bobID)
+	}
+
+	// a message with no replies exposes an empty list and no timestamp
+	solo := alice.must("POST", "/api/v1/channels/general/messages", map[string]any{"body": "solo"}, 201)
+	if _, ok := solo["last_reply_at"]; ok {
+		t.Fatalf("solo message has last_reply_at: %v", solo["last_reply_at"])
+	}
+	if len(solo["replier_ids"].([]any)) != 0 {
+		t.Fatalf("solo replier_ids: %v", solo["replier_ids"])
+	}
+}

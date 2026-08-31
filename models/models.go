@@ -79,6 +79,8 @@ type Message struct {
 	CreatedAt    time.Time        `json:"created_at"`
 	EditedAt     *time.Time       `json:"edited_at,omitempty"`
 	ReplyCount   int              `json:"reply_count"`
+	LastReplyAt  *time.Time       `json:"last_reply_at,omitempty"`
+	ReplierIDs   []string         `json:"replier_ids"` // distinct, most recent first, capped
 	Attachments  []AttachmentMeta `json:"attachments"`
 	Mentions     []string         `json:"mentions"`
 }

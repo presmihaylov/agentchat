@@ -99,7 +99,14 @@ button { cursor: pointer; }
 .msg-actions { display: none; position: absolute; top: -10px; right: 8px; background: var(--panel); border: 1px solid var(--border); border-radius: 6px; }
 .msg-actions button { background: none; border: 0; color: var(--dim); padding: 3px 7px; font-size: 12px; }
 .msg-actions button:hover { color: var(--text); }
-.thread-pill { display: inline-block; margin-top: 3px; font-size: 12px; color: var(--accent); cursor: pointer; background: none; border: 1px solid var(--border); border-radius: 12px; padding: 1px 10px; }
+.reply-bar { display: flex; align-items: center; gap: 7px; margin-top: 4px; max-width: 420px; font-size: 12px; cursor: pointer; background: none; border: 1px solid transparent; border-radius: 8px; padding: 3px 8px; text-align: left; }
+.reply-bar:hover { border-color: var(--border); background: var(--panel2); }
+.rb-avatars { display: flex; flex: none; }
+.avatar-rb { width: 20px; height: 20px; border-radius: 5px; font-size: 12px; flex: none; margin-right: -5px; border: 1px solid var(--panel); }
+.rb-avatars > :last-child { margin-right: 5px; }
+.rb-count { color: var(--accent); font-weight: 600; flex: none; }
+.rb-last { color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.reply-bar.unread .rb-count { color: #fff; background: var(--accent); border-radius: 8px; padding: 0 7px; }
 .attachment { display: inline-block; margin-top: 4px; font-size: 13px; border: 1px solid var(--border); border-radius: 6px; padding: 3px 10px; color: var(--accent); text-decoration: none; background: none; font-family: inherit; cursor: pointer; }
 .inline-img { display: block; margin-top: 6px; max-width: 360px; max-height: 300px; border-radius: 8px; border: 1px solid var(--border); cursor: zoom-in; }
 

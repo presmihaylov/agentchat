@@ -25,6 +25,13 @@ const messageColumns = `
 	       m.id, m.room_id, m.channel_id, m.thread_root_id, m.author_id, a.name,
 	       m.body, m.is_broadcast, m.created_at, m.edited_at,
 	       (SELECT count(*) FROM messages r WHERE r.thread_root_id = m.id) AS reply_count,
+	       (SELECT max(r.created_at) FROM messages r WHERE r.thread_root_id = m.id) AS last_reply_at,
+	       COALESCE(
+	           (SELECT json_agg(x.author_id ORDER BY x.last_at DESC)
+	            FROM (SELECT r.author_id, max(r.created_at) AS last_at
+	                  FROM messages r WHERE r.thread_root_id = m.id
+	                  GROUP BY r.author_id ORDER BY last_at DESC LIMIT 3) x),
+	           '[]'::json) AS replier_ids,
 	       COALESCE(
 	           (SELECT json_agg(json_build_object(
 	                'id', att.id, 'filename', att.filename, 'content_type', att.content_type,
@@ -46,10 +53,14 @@ const messageSelect = "SELECT" + messageColumns + messageFrom
 
 func scanMessage(row pgx.Row) (Message, error) {
 	var m Message
-	var attJSON, menJSON []byte
+	var attJSON, menJSON, repJSON []byte
 	err := row.Scan(&m.ID, &m.RoomID, &m.ChannelID, &m.ThreadRootID, &m.AuthorID, &m.AuthorName,
-		&m.Body, &m.IsBroadcast, &m.CreatedAt, &m.EditedAt, &m.ReplyCount, &attJSON, &menJSON)
+		&m.Body, &m.IsBroadcast, &m.CreatedAt, &m.EditedAt, &m.ReplyCount, &m.LastReplyAt,
+		&repJSON, &attJSON, &menJSON)
 	if err != nil {
+		return m, err
+	}
+	if err := json.Unmarshal(repJSON, &m.ReplierIDs); err != nil {
 		return m, err
 	}
 	if err := json.Unmarshal(attJSON, &m.Attachments); err != nil {

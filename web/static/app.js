@@ -80,6 +80,16 @@
     return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
 
+  const fmtLastReply = (iso) => {
+    const d = new Date(iso);
+    const now = new Date();
+    const day = (x) => x.toDateString();
+    if (day(d) === day(now)) return 'today at ' + fmtTime(iso);
+    const yd = new Date(now); yd.setDate(now.getDate() - 1);
+    if (day(d) === day(yd)) return 'yesterday at ' + fmtTime(iso);
+    return 'on ' + d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+  };
+
   // attachment images sit behind bearer auth — blob-fetch once, cache the
   // object URL per attachment id (avatars and inline images share this)
   const blobURLs = {};
@@ -127,8 +137,8 @@
         ? `<img class="inline-img" data-att="${esc(a.id)}" data-name="${esc(a.filename)}" alt="${esc(a.filename)}">`
         : `<button class="attachment" data-att="${esc(a.id)}" data-name="${esc(a.filename)}">📄 ${esc(a.filename)}</button>`).join(' ');
 
-    const threadPill = (!inThread && m.reply_count > 0)
-      ? `<button class="thread-pill" data-act="thread">${m.reply_count} repl${m.reply_count === 1 ? 'y' : 'ies'} →</button>` : '';
+    const replyBar = (!inThread && m.reply_count > 0)
+      ? '<button class="reply-bar" data-act="thread"></button>' : '';
 
     el.innerHTML = `
       <div class="avatar"></div>
@@ -140,11 +150,27 @@
           ${m.edited_at ? '<span class="edited"> (edited)</span>' : ''}
           ${m.is_broadcast ? ' 📣' : ''}</div>
         <div class="content">${renderMarkdown(m.body)}</div>
-        ${atts}${threadPill}
+        ${atts}${replyBar}
       </div>
       <div class="msg-actions">${actions.join('')}</div>`;
     el.querySelector('.avatar').appendChild(
       avatarEl(participants.find((x) => x.id === m.author_id), 'avatar-msg'));
+    const bar = el.querySelector('.reply-bar');
+    if (bar) {
+      const avs = document.createElement('span');
+      avs.className = 'rb-avatars';
+      (m.replier_ids || []).forEach((id) =>
+        avs.appendChild(avatarEl(participants.find((x) => x.id === id), 'avatar-rb')));
+      const count = document.createElement('span');
+      count.className = 'rb-count';
+      count.textContent = `${m.reply_count} repl${m.reply_count === 1 ? 'y' : 'ies'}`;
+      const last = document.createElement('span');
+      last.className = 'rb-last';
+      if (m.last_reply_at) last.textContent = 'Last reply ' + fmtLastReply(m.last_reply_at);
+      bar.append(avs, count, last);
+      const th = threads.find((x) => x.root_id === m.id);
+      if (th && th.unread_count > 0 && !th.muted) bar.classList.add('unread');
+    }
     // hljs respects a language-x class from the fence and auto-detects otherwise
     el.querySelectorAll('.content pre code').forEach((c) => {
       try { hljs.highlightElement(c); } catch (e) { /* unknown language tag */ }
@@ -166,7 +192,7 @@
       const attBtn = ev.target.closest('button.attachment');
       if (attBtn && el.contains(attBtn)) { downloadAttachment(attBtn.dataset.att, attBtn.dataset.name); return; }
       // only real action buttons act — rendered markdown can't fake these
-      const btn = ev.target.closest('.msg-actions button, button.thread-pill');
+      const btn = ev.target.closest('.msg-actions button, button.reply-bar');
       if (!btn || !el.contains(btn)) return;
       const act = btn.dataset.act;
       if (act === 'thread') openThread(m.thread_root_id || m.id);
@@ -391,6 +417,12 @@
         } catch (e) { alert(e.message); }
       };
       ul.appendChild(li);
+    });
+    // reply bars in the channel view share the tree's unread state
+    document.querySelectorAll('#messages .reply-bar').forEach((bar) => {
+      const id = bar.closest('.msg')?.dataset.id;
+      const th = threads.find((x) => x.root_id === id);
+      bar.classList.toggle('unread', !!(th && th.unread_count > 0 && !th.muted));
     });
   };
 
