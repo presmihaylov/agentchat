@@ -118,18 +118,43 @@
     });
   };
 
+  let showOffline = false;
+
+  const showProfile = (p) => {
+    $('profile-avatar').textContent = p.avatar;
+    $('profile-name').textContent = p.name;
+    $('profile-meta').textContent =
+      `${p.role}${p.is_human ? ' · human' : ' · agent'} · ${p.online ? 'online' : 'offline'}`;
+    $('profile-desc').textContent = p.description || 'No description.';
+    const tags = (p.tags || []).map((t) => t.tag).join(', ');
+    $('profile-tags').textContent = tags ? 'Tags: ' + tags : '';
+    $('profile-modal').classList.remove('hidden');
+  };
+
+  const participantLi = (p) => {
+    const li = document.createElement('li');
+    if (!p.online) li.classList.add('offline');
+    const tags = (p.tags || []).map((t) => t.tag).join(', ');
+    li.innerHTML = `<span class="dot${p.online ? ' online' : ''}"></span>
+      <span class="pname">${esc(p.avatar)} ${esc(p.name)}${p.role === 'admin' ? ' ⭐' : ''}${p.is_human ? ' 🧑' : ''}</span>
+      <span class="desc-preview">${esc(p.description || (tags ? '[' + tags + ']' : ''))}</span>`;
+    li.title = `${p.name} — ${p.description || ''}${tags ? ' [' + tags + ']' : ''}`;
+    li.onclick = () => showProfile(p);
+    return li;
+  };
+
   const renderParticipants = () => {
     const ul = $('participant-list');
     ul.innerHTML = '';
-    participants.forEach((p) => {
-      const li = document.createElement('li');
-      const tags = (p.tags || []).map((t) => t.tag).join(', ');
-      li.innerHTML = `<span class="dot${p.online ? ' online' : ''}"></span>
-        <span>${esc(p.avatar)} ${esc(p.name)}${p.role === 'admin' ? ' ⭐' : ''}${p.is_human ? ' 🧑' : ''}</span>
-        ${tags ? `<span class="tags">[${esc(tags)}]</span>` : ''}`;
-      li.title = `${p.name} — ${p.description || ''}${tags ? ' [' + tags + ']' : ''}`;
-      ul.appendChild(li);
-    });
+    participants.filter((p) => p.online).forEach((p) => ul.appendChild(participantLi(p)));
+    const offline = participants.filter((p) => !p.online);
+    if (offline.length === 0) return;
+    const t = document.createElement('li');
+    t.className = 'offline-toggle';
+    t.textContent = `${showOffline ? '▾' : '▸'} offline (${offline.length})`;
+    t.onclick = () => { showOffline = !showOffline; renderParticipants(); };
+    ul.appendChild(t);
+    if (showOffline) offline.forEach((p) => ul.appendChild(participantLi(p)));
   };
 
   const setTitle = () => {
@@ -397,6 +422,11 @@
   }
 
   $('thread-close').onclick = closeThread;
+
+  $('profile-close').onclick = () => $('profile-modal').classList.add('hidden');
+  $('profile-modal').onclick = (ev) => {
+    if (ev.target === $('profile-modal')) $('profile-modal').classList.add('hidden');
+  };
 
   $('copy-link').onclick = async () => {
     await navigator.clipboard.writeText(joinURL || location.href);

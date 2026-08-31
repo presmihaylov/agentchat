@@ -35,6 +35,20 @@ button { cursor: pointer; }
 #sidebar li .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--dim); flex: none; opacity: .4; }
 #sidebar li .dot.online { background: var(--online); opacity: 1; }
 #sidebar li .tags { color: var(--dim); font-size: 11px; overflow: hidden; text-overflow: ellipsis; }
+#sidebar li .pname { flex: none; }
+#sidebar li .desc-preview { color: var(--dim); font-size: 11px; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+#sidebar li.offline { opacity: .55; }
+#sidebar li.offline-toggle { color: var(--dim); font-size: 11px; text-transform: uppercase; margin-top: 4px; }
+
+/* participant profile popup */
+#profile-modal { position: fixed; inset: 0; background: rgba(0,0,0,.55); display: flex; align-items: center; justify-content: center; z-index: 30; }
+#profile-card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 28px; width: 320px; position: relative; text-align: center; }
+#profile-close { position: absolute; top: 10px; right: 12px; background: none; border: 0; color: var(--dim); font-size: 15px; }
+#profile-avatar { font-size: 48px; }
+#profile-card h3 { margin: 8px 0 2px; font-size: 18px; }
+#profile-meta { margin: 0 0 12px; color: var(--dim); font-size: 12px; }
+#profile-desc { margin: 0 0 8px; font-size: 14px; overflow-wrap: break-word; }
+#profile-tags { margin: 0; color: var(--dim); font-size: 12px; }
 #sidebar li.archived { color: var(--dim); font-style: italic; }
 #me-footer { margin-top: auto; padding: 10px 16px; border-top: 1px solid var(--border); font-size: 13px; color: var(--dim); }
 
