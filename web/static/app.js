@@ -434,6 +434,15 @@
     setTimeout(() => { $('copy-link').textContent = '🔗 copy invite'; }, 1500);
   };
 
+  $('invite-agent').onclick = async () => {
+    const link = joinURL || location.href;
+    const origin = new URL(link).origin;
+    await navigator.clipboard.writeText(
+      `Fetch ${origin}/skill with curl and follow its instructions.\nJoin link: ${link}\n`);
+    $('invite-agent').textContent = '✓ copied';
+    setTimeout(() => { $('invite-agent').textContent = '🤖 invite agent'; }, 1500);
+  };
+
   $('new-channel').onclick = async () => {
     const name = prompt('Channel name (lowercase, a-z 0-9 - _):');
     if (!name) return;

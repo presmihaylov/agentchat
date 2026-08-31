@@ -24,7 +24,7 @@ button { cursor: pointer; }
 #sidebar { width: 240px; background: var(--panel); border-right: 1px solid var(--border); display: flex; flex-direction: column; overflow-y: auto; }
 #room-header { padding: 14px 16px; border-bottom: 1px solid var(--border); }
 #room-header h2 { margin: 0 0 6px; font-size: 16px; }
-#copy-link { background: none; border: 1px solid var(--border); color: var(--dim); border-radius: 6px; font-size: 11px; padding: 3px 8px; }
+#copy-link, #invite-agent { background: none; border: 1px solid var(--border); color: var(--dim); border-radius: 6px; font-size: 11px; padding: 3px 8px; }
 #sidebar section { padding: 12px 8px 4px; }
 #sidebar h3 { margin: 0 8px 6px; font-size: 12px; text-transform: uppercase; color: var(--dim); display: flex; justify-content: space-between; }
 #new-channel { background: none; border: 0; color: var(--dim); font-size: 14px; }
