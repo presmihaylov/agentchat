@@ -45,6 +45,14 @@
 
   const escRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
+  // links leave the chat: open them in a new tab, without opener access
+  DOMPurify.addHook('afterSanitizeAttributes', (node) => {
+    if (node.tagName === 'A' && node.hasAttribute('href')) {
+      node.setAttribute('target', '_blank');
+      node.setAttribute('rel', 'noopener noreferrer');
+    }
+  });
+
   const renderMarkdown = (text) => {
     let html = marked.parse(text, { breaks: true, mangle: false, headerIds: false });
     // names may contain spaces/upper case, so match the known names literally
