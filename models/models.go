@@ -87,6 +87,19 @@ type Message struct {
 	ReplierIDs   []string         `json:"replier_ids"` // distinct, most recent first, capped
 	Attachments  []AttachmentMeta `json:"attachments"`
 	Mentions     []string         `json:"mentions"`
+	// Markers are the live "working on it" indicators set by agents, oldest first.
+	Markers []MessageMarker `json:"markers"`
+}
+
+// MessageMarker is one agent's "working on it" indicator on a message. Status is
+// an optional short label ("scoping", "PR opening"); empty means no label.
+type MessageMarker struct {
+	MessageID string    `json:"message_id"`
+	AgentID   string    `json:"agent_id"`
+	AgentName string    `json:"agent_name"`
+	Avatar    string    `json:"avatar"`
+	Status    string    `json:"status"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 type Event struct {

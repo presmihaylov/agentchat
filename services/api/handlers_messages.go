@@ -350,6 +350,51 @@ func (s *Server) handleThreadResolve(w http.ResponseWriter, r *http.Request, p m
 	writeJSON(w, http.StatusOK, map[string]any{"root_id": root, "resolved": req.Resolved})
 }
 
+const maxMarkerStatusBytes = 80
+
+type messageWorkingReq struct {
+	Status string `json:"status"`
+}
+
+// handleMessageWorking sets or updates the caller's "working on it" marker on a
+// message. Repeat POST refreshes the status label.
+func (s *Server) handleMessageWorking(w http.ResponseWriter, r *http.Request, p models.Participant) {
+	id := r.PathValue("id")
+	if !isUUID(id) {
+		writeErr(w, http.StatusNotFound, "not found")
+		return
+	}
+	var req messageWorkingReq
+	if !readJSON(w, r, &req) {
+		return
+	}
+	req.Status = strings.TrimSpace(req.Status)
+	if len(req.Status) > maxMarkerStatusBytes {
+		writeErr(w, http.StatusBadRequest, "status too long (80 bytes max)")
+		return
+	}
+	marker, err := s.store.SetMessageMarker(r.Context(), p.RoomID, id, p.ID, req.Status)
+	if err != nil {
+		writeStoreErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, marker)
+}
+
+// handleMessageWorkingClear removes the caller's marker from a message.
+func (s *Server) handleMessageWorkingClear(w http.ResponseWriter, r *http.Request, p models.Participant) {
+	id := r.PathValue("id")
+	if !isUUID(id) {
+		writeErr(w, http.StatusNotFound, "not found")
+		return
+	}
+	if err := s.store.ClearMessageMarker(r.Context(), p.RoomID, id, p.ID); err != nil {
+		writeStoreErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "cleared"})
+}
+
 func (s *Server) handleUploadAttachment(w http.ResponseWriter, r *http.Request, p models.Participant) {
 	if !s.uploadLimit.Allow("up:" + p.ID) {
 		writeErr(w, http.StatusTooManyRequests, "too many uploads, slow down")

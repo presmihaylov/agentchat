@@ -134,6 +134,52 @@
     return wrap;
   };
 
+  // "Working on it" markers, keyed by message id. Seeded from each message's
+  // payload and kept live by message.working / message.working.cleared events.
+  const markerMap = {};
+
+  const markerLine = (mk) => {
+    const wrap = document.createElement('div');
+    wrap.className = 'msg-marker';
+    // prefer the live participant (owner badge, current avatar); fall back to the
+    // name/avatar the marker carried in case the agent is not in the local list
+    const p = participants.find((x) => x.id === mk.agent_id) || { name: mk.agent_name, avatar: mk.avatar };
+    wrap.appendChild(avatarEl(p, 'avatar-rb'));
+    const txt = document.createElement('span');
+    txt.className = 'mk-text';
+    const status = (mk.status || '').trim();
+    txt.innerHTML = `🔧 <strong>${esc(mk.agent_name)}</strong> is working on this${status ? ` <span class="mk-status">— ${esc(status)}</span>` : ''}`;
+    wrap.appendChild(txt);
+    return wrap;
+  };
+
+  const fillMarkerBox = (box, list) => {
+    box.innerHTML = '';
+    box.hidden = list.length === 0;
+    list.forEach((mk) => box.appendChild(markerLine(mk)));
+  };
+
+  // repaint every rendered copy of a message (feed + thread panel share the id)
+  const renderMarkers = (msgId) => {
+    const list = markerMap[msgId] || [];
+    document.querySelectorAll(`.msg[data-id="${msgId}"] .msg-markers`).forEach((box) => fillMarkerBox(box, list));
+  };
+
+  const upsertMarker = (mk) => {
+    const list = (markerMap[mk.message_id] = markerMap[mk.message_id] || []);
+    const i = list.findIndex((x) => x.agent_id === mk.agent_id);
+    if (i >= 0) list[i] = mk;
+    else list.push(mk);
+    renderMarkers(mk.message_id);
+  };
+
+  const removeMarker = (msgId, agentId) => {
+    const list = markerMap[msgId];
+    if (!list) return;
+    markerMap[msgId] = list.filter((x) => x.agent_id !== agentId);
+    renderMarkers(msgId);
+  };
+
   const msgEl = (m, inThread) => {
     const el = document.createElement('div');
     el.className = 'msg';
@@ -172,6 +218,12 @@
       <div class="msg-actions">${actions.join('')}</div>`;
     el.querySelector('.avatar').appendChild(
       avatarEl(participants.find((x) => x.id === m.author_id), 'avatar-msg'));
+    // "working on it" markers sit under the content; live-updated via events
+    markerMap[m.id] = m.markers || [];
+    const mbox = document.createElement('div');
+    mbox.className = 'msg-markers';
+    el.querySelector('.content').after(mbox);
+    fillMarkerBox(mbox, markerMap[m.id]);
     const bar = el.querySelector('.reply-bar');
     if (bar) {
       const avs = document.createElement('span');
@@ -661,6 +713,14 @@
         catch (e) { closeThread(); }
       }
       loadThreads();
+      return;
+    }
+    if (t === 'message.working') {
+      upsertMarker(ev.payload);
+      return;
+    }
+    if (t === 'message.working.cleared') {
+      removeMarker(ev.payload.message_id, ev.payload.agent_id);
       return;
     }
     // everything else changes room structure or people — refresh the sidebar

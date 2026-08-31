@@ -713,6 +713,80 @@ func TestThreadResolve(t *testing.T) {
 	}
 }
 
+// TestMessageMarkers: an agent can mark a message "working on it", update the
+// status, and multiple agents can mark the same message; replying into the
+// thread auto-clears the replier's own marker; DELETE clears it by hand.
+func TestMessageMarkers(t *testing.T) {
+	srv, _ := newTestServer(t)
+	defer srv.Close()
+	_, alice, bob := setupRoom(t, srv.URL)
+
+	markersOf := func(c *testClient, id string) []map[string]any {
+		out := c.must("GET", "/api/v1/messages/"+id, nil, 200)
+		list := []map[string]any{}
+		for _, raw := range out["markers"].([]any) {
+			list = append(list, raw.(map[string]any))
+		}
+		return list
+	}
+	find := func(ms []map[string]any, name string) map[string]any {
+		for _, m := range ms {
+			if m["agent_name"] == name {
+				return m
+			}
+		}
+		return nil
+	}
+
+	root := alice.must("POST", "/api/v1/channels/general/messages", map[string]any{"body": "marker topic"}, 201)
+	rootID := root["id"].(string)
+
+	// bob marks the message; the marker shows up with his name + status
+	mk := bob.must("POST", "/api/v1/messages/"+rootID+"/working", map[string]any{"status": "scoping"}, 200)
+	if mk["agent_name"] != "bob" || mk["status"] != "scoping" {
+		t.Fatalf("set marker returned %v", mk)
+	}
+	if ms := markersOf(alice, rootID); len(ms) != 1 || find(ms, "bob")["status"] != "scoping" {
+		t.Fatalf("after set, markers = %v", ms)
+	}
+
+	// repeat POST updates the status in place, still one marker for bob
+	bob.must("POST", "/api/v1/messages/"+rootID+"/working", map[string]any{"status": "PR opening"}, 200)
+	if ms := markersOf(alice, rootID); len(ms) != 1 || find(ms, "bob")["status"] != "PR opening" {
+		t.Fatalf("after update, markers = %v", ms)
+	}
+
+	// a second agent marks the same message: two independent markers
+	alice.must("POST", "/api/v1/messages/"+rootID+"/working", map[string]any{"status": ""}, 200)
+	if ms := markersOf(alice, rootID); len(ms) != 2 {
+		t.Fatalf("multi-agent: markers = %v, want 2", ms)
+	}
+
+	// bob replying into the thread auto-clears HIS marker; alice's remains
+	bob.must("POST", "/api/v1/channels/general/messages",
+		map[string]any{"body": "on it, PR up", "thread_root_id": rootID}, 201)
+	ms := markersOf(alice, rootID)
+	if len(ms) != 1 || find(ms, "bob") != nil || find(ms, "alice") == nil {
+		t.Fatalf("after bob replies, markers = %v, want only alice", ms)
+	}
+
+	// alice clears hers by hand; DELETE is idempotent (second call still 200)
+	alice.must("DELETE", "/api/v1/messages/"+rootID+"/working", nil, 200)
+	alice.must("DELETE", "/api/v1/messages/"+rootID+"/working", nil, 200)
+	if ms := markersOf(alice, rootID); len(ms) != 0 {
+		t.Fatalf("after clear, markers = %v, want 0", ms)
+	}
+
+	// marking a non-existent message is a 404, not a silent success
+	bob.must("POST", "/api/v1/messages/11111111-1111-4111-8111-111111111111/working", map[string]any{"status": "x"}, 404)
+
+	// the new markers column must not break message search scans
+	res := alice.must("GET", "/api/v1/search?q=marker", nil, 200)
+	if len(res["results"].([]any)) == 0 {
+		t.Fatalf("search returned no results after adding markers column")
+	}
+}
+
 // TestRoomThreads: the room-wide thread endpoint returns the caller's involved
 // threads across every channel, each tagged with its channel_id, and per-thread
 // unread_mentions follows the mention-only rule (direct + broadcast).
