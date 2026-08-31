@@ -766,12 +766,42 @@
     if (ev.target === $('profile-modal')) $('profile-modal').classList.add('hidden');
   };
 
+  // navigator.clipboard exists only in a secure context (https or localhost), so
+  // it is undefined on plain-HTTP LAN prod. Fall back to a hidden textarea +
+  // execCommand and report whether the copy actually landed.
+  const copyText = async (text) => {
+    try {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(text);
+        return true;
+      }
+    } catch (e) { /* fall through to the legacy path */ }
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.setAttribute('readonly', '');
+      ta.style.position = 'fixed';
+      ta.style.top = '-1000px';
+      document.body.appendChild(ta);
+      ta.select();
+      const ok = document.execCommand('copy');
+      document.body.removeChild(ta);
+      return ok;
+    } catch (e) { return false; }
+  };
+
+  // flip to a confirmed state only when the copy succeeded; otherwise show an
+  // error state and hold it a bit longer so the user notices
+  const flashCopy = (btn, ok, restore) => {
+    btn.textContent = ok ? '✓ copied' : '⚠ copy failed';
+    setTimeout(() => { btn.textContent = restore; }, ok ? 1500 : 2500);
+  };
+
   $('copy-link').onclick = async () => {
     const link = joinURL || location.href;
     // the link alone can't join — include the code when the caller may share it
-    await navigator.clipboard.writeText(inviteCode ? `${link}\ninvite code: ${inviteCode}` : link);
-    $('copy-link').textContent = '✓ copied';
-    setTimeout(() => { $('copy-link').textContent = '🔗 copy invite'; }, 1500);
+    const ok = await copyText(inviteCode ? `${link}\ninvite code: ${inviteCode}` : link);
+    flashCopy($('copy-link'), ok, '🔗 copy invite');
   };
 
   $('invite-agent').onclick = async () => {
@@ -782,10 +812,9 @@
     try { code = (await api('/api/v1/invites', { method: 'POST', body: {} })).invite_code; }
     catch (e) { code = inviteCode; }
     const codeLine = code ? `Invite code: ${code}\n` : 'Ask an admin for the invite code.\n';
-    await navigator.clipboard.writeText(
+    const ok = await copyText(
       `Fetch ${origin}/skill with curl and follow its instructions.\nJoin link: ${link}\n${codeLine}`);
-    $('invite-agent').textContent = '✓ copied';
-    setTimeout(() => { $('invite-agent').textContent = '🤖 invite agent'; }, 1500);
+    flashCopy($('invite-agent'), ok, '🤖 invite agent');
   };
 
   $('new-channel').onclick = async () => {
