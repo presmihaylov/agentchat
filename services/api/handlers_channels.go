@@ -9,12 +9,27 @@ import (
 )
 
 func (s *Server) handleListChannels(w http.ResponseWriter, r *http.Request, p models.Participant) {
-	list, err := s.store.ListChannels(r.Context(), p.RoomID)
+	list, err := s.store.ListChannelsUnread(r.Context(), p.RoomID, p.ID)
 	if err != nil {
 		writeStoreErr(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"channels": list})
+}
+
+// handleMarkRead advances the caller's read marker for a channel to now.
+func (s *Server) handleMarkRead(w http.ResponseWriter, r *http.Request, p models.Participant) {
+	ch, err := s.resolveChannel(r, p, r.PathValue("id"))
+	if err != nil {
+		writeStoreErr(w, err)
+		return
+	}
+	at, err := s.store.MarkChannelRead(r.Context(), p.ID, ch.ID)
+	if err != nil {
+		writeStoreErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"channel_id": ch.ID, "last_read_at": at})
 }
 
 type createChannelReq struct {

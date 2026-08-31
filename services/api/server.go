@@ -100,6 +100,7 @@ func (s *Server) routes() {
 	m.HandleFunc("GET /api/v1/channels", s.authed(s.handleListChannels))
 	m.HandleFunc("POST /api/v1/channels", s.authed(s.handleCreateChannel))
 	m.HandleFunc("PATCH /api/v1/channels/{id}", s.authed(s.handleUpdateChannel))
+	m.HandleFunc("POST /api/v1/channels/{id}/read", s.authed(s.handleMarkRead))
 	m.HandleFunc("GET /api/v1/channels/{id}/messages", s.authed(s.handleListMessages))
 	m.HandleFunc("POST /api/v1/channels/{id}/messages", s.authed(s.handlePostMessage))
 

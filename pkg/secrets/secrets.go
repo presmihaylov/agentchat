@@ -31,8 +31,14 @@ func randInt(n int) int {
 // 2 EFF wordlist words + 4 crockford chars. Knowing it does not let you join.
 func RoomSlug() string {
 	parts := make([]string, 0, 3)
-	for range 2 {
-		parts = append(parts, words[randInt(len(words))])
+	for len(parts) < 2 {
+		// the EFF list has hyphenated words ("yo-yo"); skip them so the
+		// slug's dash structure stays word-word-suffix
+		w := words[randInt(len(words))]
+		if strings.Contains(w, "-") {
+			continue
+		}
+		parts = append(parts, w)
 	}
 	suffix := make([]byte, 4)
 	for i := range suffix {

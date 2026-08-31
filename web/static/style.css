@@ -55,6 +55,11 @@ button { cursor: pointer; }
 .upload-btn, #avatar-remove { background: none; border: 1px solid var(--border); color: var(--dim); border-radius: 6px; font-size: 12px; padding: 5px 10px; cursor: pointer; }
 .upload-btn:hover, #avatar-remove:hover { color: var(--text); }
 #sidebar li.archived { color: var(--dim); font-style: italic; }
+#sidebar li.unread { font-weight: 700; color: #fff; }
+.unread-badge { margin-left: auto; background: var(--accent); color: #fff; font-size: 11px; font-weight: 700; border-radius: 10px; padding: 0 7px; line-height: 17px; flex: none; }
+.unread-divider { display: flex; align-items: center; gap: 8px; margin: 10px 0; color: #e0666b; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; }
+.unread-divider::before, .unread-divider::after { content: ''; flex: 1; border-top: 1px solid #e0666b55; }
+.unread-divider span { flex: none; }
 #me-footer { margin-top: auto; padding: 10px 16px; border-top: 1px solid var(--border); font-size: 13px; color: var(--dim); display: flex; align-items: center; gap: 7px; cursor: pointer; }
 
 /* main */

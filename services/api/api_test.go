@@ -532,3 +532,46 @@ func TestAvatarUpload(t *testing.T) {
 		t.Fatalf("avatar_attachment_id should be gone: %v", me)
 	}
 }
+
+func TestUnreadCounts(t *testing.T) {
+	srv, _ := newTestServer(t)
+	defer srv.Close()
+	_, alice, bob := setupRoom(t, srv.URL)
+
+	getUnread := func(c *testClient, name string) (float64, bool) {
+		out := c.must("GET", "/api/v1/channels", nil, 200)
+		for _, raw := range out["channels"].([]any) {
+			ch := raw.(map[string]any)
+			if ch["name"] == name {
+				_, hasMark := ch["last_read_at"]
+				return ch["unread_count"].(float64), hasMark
+			}
+		}
+		t.Fatalf("channel %s not found", name)
+		return 0, false
+	}
+
+	alice.must("POST", "/api/v1/channels/general/messages", map[string]any{"body": "one"}, 201)
+	alice.must("POST", "/api/v1/channels/general/messages", map[string]any{"body": "two"}, 201)
+
+	if n, _ := getUnread(bob, "general"); n != 2 {
+		t.Fatalf("bob unread = %v, want 2", n)
+	}
+	// own messages never count as unread
+	if n, _ := getUnread(alice, "general"); n != 0 {
+		t.Fatalf("alice unread = %v, want 0", n)
+	}
+
+	bob.must("POST", "/api/v1/channels/general/read", nil, 200)
+	if n, hasMark := getUnread(bob, "general"); n != 0 || !hasMark {
+		t.Fatalf("after read: unread=%v hasMark=%v, want 0/true", n, hasMark)
+	}
+
+	// a thread reply must not bump the channel counter
+	msg := alice.must("POST", "/api/v1/channels/general/messages", map[string]any{"body": "root"}, 201)
+	alice.must("POST", "/api/v1/channels/general/messages",
+		map[string]any{"body": "reply", "thread_root_id": msg["id"]}, 201)
+	if n, _ := getUnread(bob, "general"); n != 1 {
+		t.Fatalf("after root+reply: unread=%v, want 1 (thread replies don't count)", n)
+	}
+}

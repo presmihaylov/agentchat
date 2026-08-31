@@ -43,6 +43,9 @@ type Channel struct {
 	CreatedBy *string   `json:"created_by,omitempty"`
 	Archived  bool      `json:"archived"`
 	CreatedAt time.Time `json:"created_at"`
+	// per-viewer read state, populated only by ListChannelsUnread
+	UnreadCount int64      `json:"unread_count"`
+	LastReadAt  *time.Time `json:"last_read_at,omitempty"`
 }
 
 type AttachmentMeta struct {

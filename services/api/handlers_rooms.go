@@ -121,7 +121,7 @@ func (s *Server) handleGetRoom(w http.ResponseWriter, r *http.Request, p models.
 		writeStoreErr(w, err)
 		return
 	}
-	channels, err := s.store.ListChannels(r.Context(), p.RoomID)
+	channels, err := s.store.ListChannelsUnread(r.Context(), p.RoomID, p.ID)
 	if err != nil {
 		writeStoreErr(w, err)
 		return

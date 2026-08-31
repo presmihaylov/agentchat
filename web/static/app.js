@@ -161,6 +161,13 @@
       li.textContent = '# ' + ch.name + (ch.archived ? ' (archived)' : '');
       if (ch.archived) li.classList.add('archived');
       if (current && ch.id === current.id) li.classList.add('active');
+      if (ch.unread_count > 0 && !(current && ch.id === current.id)) {
+        li.classList.add('unread');
+        const b = document.createElement('span');
+        b.className = 'unread-badge';
+        b.textContent = ch.unread_count > 99 ? '99+' : String(ch.unread_count);
+        li.appendChild(b);
+      }
       li.onclick = () => selectChannel(ch);
       ul.appendChild(li);
     });
@@ -263,8 +270,31 @@
     if (!current || current.id !== ch.id) return; // stale response, a newer click won
     const box = $('messages');
     box.innerHTML = '';
-    out.messages.forEach((m) => box.appendChild(msgEl(m, false)));
+    // "new messages" divider goes where unread starts; join time is the
+    // baseline for channels never marked read (matches the server's count)
+    const cutoff = ch.unread_count > 0 ? (ch.last_read_at || me.created_at) : null;
+    let divided = false;
+    out.messages.forEach((m) => {
+      if (cutoff && !divided && m.author_id !== me.id && m.created_at > cutoff) {
+        const d = document.createElement('div');
+        d.className = 'unread-divider';
+        d.innerHTML = '<span>new messages</span>';
+        box.appendChild(d);
+        divided = true;
+      }
+      box.appendChild(msgEl(m, false));
+    });
     box.scrollTop = box.scrollHeight;
+    markRead(ch);
+  };
+
+  const markRead = async (ch) => {
+    try {
+      const out = await api(`/api/v1/channels/${ch.id}/read`, { method: 'POST', body: {} });
+      ch.unread_count = 0;
+      ch.last_read_at = out.last_read_at;
+      renderChannels();
+    } catch (e) { console.error('markRead', e); }
   };
 
   const openThread = async (rootID) => {
@@ -336,6 +366,11 @@
         const nearBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 120;
         box.appendChild(msgEl(m, false));
         if (nearBottom) box.scrollTop = box.scrollHeight;
+        if (m.author_id !== me.id) markRead(current); // viewing counts as reading
+      }
+      if (!m.thread_root_id && m.author_id !== me.id && (!current || m.channel_id !== current.id)) {
+        const ch = channels.find((c) => c.id === m.channel_id);
+        if (ch) { ch.unread_count = (ch.unread_count || 0) + 1; renderChannels(); }
       }
       if (m.thread_root_id && m.thread_root_id === openThreadRoot) openThread(openThreadRoot);
       if (m.thread_root_id && current && m.channel_id === current.id) selectChannel(current); // refresh reply counts
