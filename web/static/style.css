@@ -87,6 +87,17 @@ button { cursor: pointer; }
 #channel-list li.thread-leaf.muted { opacity: .5; }
 /* Owned agents nest under their human owner: indented, with a branch guide. */
 #participant-list li.participant-leaf { margin-left: 15px; padding-left: 8px; border-left: 1px solid var(--border); border-radius: 0 6px 6px 0; }
+/* collapsible agent list: a chevron column reserved on every parent row so
+   avatars stay aligned whether or not a human has nested agents */
+#participant-list li .p-toggle { width: 12px; flex: none; text-align: center; color: var(--dim); font-size: 10px; cursor: pointer; }
+#participant-list li .p-toggle:hover { color: var(--text); }
+#participant-list li .p-toggle.spacer { cursor: default; }
+#participant-list li .p-agentcount { margin-left: auto; flex: none; font-size: 10px; color: var(--dim); background: var(--panel2); border: 1px solid var(--border); border-radius: 9px; padding: 0 6px; line-height: 15px; }
+/* rolled-up presence: a collapsed parent glows when a hidden agent is online.
+   The parent's own dot keeps its true presence; only the name glows and the
+   count badge lights up, so a live-but-hidden agent is never lost. */
+#participant-list li.rollup .pname { color: #fff; text-shadow: 0 0 9px rgba(74, 158, 218, .5); }
+#participant-list li.rollup .p-agentcount { color: #fff; border-color: var(--accent); box-shadow: 0 0 6px rgba(74, 158, 218, .4); }
 .owner-badge { flex: none; margin: 0 6px; padding: 0 6px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel2); color: var(--dim); font-size: 10px; line-height: 15px; white-space: nowrap; }
 #me-footer { margin-top: auto; padding: 10px 16px; border-top: 1px solid var(--border); font-size: 13px; color: var(--dim); display: flex; align-items: center; gap: 7px; cursor: pointer; }
 

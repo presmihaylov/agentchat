@@ -401,25 +401,55 @@
   // leaf=true renders the row as an owned-agent child (indented). Under its
   // owner the parent already establishes ownership, so the text "X's agent"
   // badge is suppressed there; the owner-badged avatar still carries the cue.
-  const participantLi = (p, leaf) => {
+  // opts (parents only): hasKids, collapsed, kidCount, rollup, onToggle.
+  // Non-leaf rows always reserve the toggle column so avatars stay aligned;
+  // only a parent with nested agents gets a real chevron.
+  const participantLi = (p, leaf, opts) => {
+    opts = opts || {};
     const li = document.createElement('li');
     if (leaf) li.classList.add('participant-leaf');
     if (!p.online) li.classList.add('offline');
+    if (opts.rollup) li.classList.add('rollup'); // a collapsed child's presence, surfaced on the parent
     const tags = (p.tags || []).map((t) => t.tag).join(', ');
     const owner = (!leaf && p.owner_name) ? `<span class="owner-badge" title="server-verified owner">${esc(p.owner_name)}'s agent</span>` : '';
-    li.innerHTML = `<span class="dot${p.online ? ' online' : ''}"></span>
+    const toggle = leaf ? '' :
+      `<span class="p-toggle${opts.hasKids ? '' : ' spacer'}">${opts.hasKids ? (opts.collapsed ? '▸' : '▾') : ''}</span>`;
+    const count = (opts.hasKids && opts.collapsed) ?
+      `<span class="p-agentcount" title="${opts.kidCount} agent${opts.kidCount === 1 ? '' : 's'} hidden">${opts.kidCount}</span>` : '';
+    li.innerHTML = `${toggle}<span class="dot${p.online ? ' online' : ''}"></span>
       <span class="av-slot"></span>
       <span class="pname">${esc(p.name)}</span>${owner}
-      <span class="desc-preview">${esc(p.description || (tags ? '[' + tags + ']' : ''))}</span>`;
+      <span class="desc-preview">${esc(p.description || (tags ? '[' + tags + ']' : ''))}</span>${count}`;
     li.querySelector('.av-slot').replaceWith(avatarEl(p, 'avatar-sm'));
     li.title = `${p.name} — ${p.description || ''}${tags ? ' [' + tags + ']' : ''}`;
     li.onclick = () => showProfile(p);
+    if (opts.onToggle) {
+      const t = li.querySelector('.p-toggle');
+      t.onclick = (ev) => { ev.stopPropagation(); opts.onToggle(); }; // chevron toggles, never opens the profile
+    }
     return li;
   };
 
+  // Each human's expand/collapse choice persists per room in localStorage.
+  // Default is collapsed, so we store the set of humans the user has EXPANDED;
+  // an id absent from the set stays collapsed across reloads.
+  const rosterKey = () => 'agentchat:roster:' + (room ? room.slug : '');
+  const expandedSet = () => {
+    try { return new Set(JSON.parse(localStorage.getItem(rosterKey()) || '[]')); } catch (e) { return new Set(); }
+  };
+  const toggleHuman = (id) => {
+    const set = expandedSet();
+    set.has(id) ? set.delete(id) : set.add(id);
+    try { localStorage.setItem(rosterKey(), JSON.stringify([...set])); } catch (e) { /* private mode */ }
+    renderParticipants();
+  };
+
   // Participants render as a tree: each human is a parent, the agents whose
-  // server-verified owner_id points at them nest beneath. Ownerless agents
-  // (or ones whose owner is not a visible human) group under "unowned agents".
+  // server-verified owner_id points at them nest beneath. The parent's nested
+  // agents collapse under a chevron (collapsed by default); a collapsed parent
+  // still shows a hidden-agent count and rolls up a glow if any hidden agent is
+  // online, so no presence signal is lost by collapsing. Ownerless agents (or
+  // ones whose owner is not a visible human) group under "unowned agents".
   const renderParticipants = () => {
     const ul = $('participant-list');
     ul.innerHTML = '';
@@ -428,13 +458,20 @@
     const ownerOf = (a) => (a.owner_id && humans.find((h) => h.id === a.owner_id)) ? a.owner_id : null;
     const vis = (p) => p.online || showOffline;
     const offlineTotal = participants.filter((p) => !p.online).length;
+    const expanded = expandedSet();
 
     humans.forEach((h) => {
       const kids = agents.filter((a) => ownerOf(a) === h.id && vis(a));
       // show a human if it is visible itself, or it has a visible owned agent
       if (!vis(h) && kids.length === 0) return;
-      ul.appendChild(participantLi(h));
-      kids.forEach((a) => ul.appendChild(participantLi(a, true)));
+      const hasKids = kids.length > 0;
+      const collapsed = hasKids && !expanded.has(h.id);
+      const rollup = collapsed && kids.some((a) => a.online); // hidden child's green dot, surfaced
+      ul.appendChild(participantLi(h, false, {
+        hasKids, collapsed, kidCount: kids.length, rollup,
+        onToggle: hasKids ? () => toggleHuman(h.id) : null,
+      }));
+      if (!collapsed) kids.forEach((a) => ul.appendChild(participantLi(a, true)));
     });
 
     const ownerless = agents.filter((a) => ownerOf(a) === null && vis(a));
