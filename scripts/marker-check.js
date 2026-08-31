@@ -53,6 +53,15 @@ async function api(path, opts = {}) {
   let txt = (await markerTexts())[0] || '';
   if (!/plain-dev/.test(txt) || !/working on this/.test(txt) || !/scoping/.test(txt)) fail(`marker text wrong: "${txt}"`);
 
+  // the marker words shimmer (Slack-style thinking sweep) — the clip span exists
+  // and carries a running animation, not a static color
+  const shim = await page.$eval(`.msg[data-id="${root.id}"] .msg-marker .mk-shim`,
+    (e) => ({ present: true, anim: getComputedStyle(e).animationName, clip: getComputedStyle(e).webkitBackgroundClip || getComputedStyle(e).backgroundClip }))
+    .catch(() => ({ present: false }));
+  if (!shim.present) fail('marker text is not wrapped in a .mk-shim shimmer span');
+  if (shim.anim === 'none' || !shim.anim) fail(`shimmer animation missing, got "${shim.anim}"`);
+  if (!/text/.test(shim.clip)) fail(`shimmer should clip to text, got "${shim.clip}"`);
+
   // dev updates the status in place -> still one marker, new label, live
   await api(`/api/v1/messages/${root.id}/working`, { method: 'POST', token: dev.token, body: { status: 'PR opening' } });
   try { await page.waitForFunction((id) =>

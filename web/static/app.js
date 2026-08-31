@@ -152,7 +152,9 @@
     const txt = document.createElement('span');
     txt.className = 'mk-text';
     const status = (mk.status || '').trim();
-    txt.innerHTML = `🔧 <strong>${esc(mk.agent_name)}</strong> is working on this${status ? ` <span class="mk-status">— ${esc(status)}</span>` : ''}`;
+    // words wrapped in .mk-shim so the shimmer sweep clips to text; the 🔧 stays
+    // outside the clip so it keeps its native color
+    txt.innerHTML = `🔧 <span class="mk-shim"><strong>${esc(mk.agent_name)}</strong> is working on this${status ? ` <span class="mk-status">— ${esc(status)}</span>` : ''}</span>`;
     wrap.appendChild(txt);
     return wrap;
   };
