@@ -67,6 +67,9 @@ func (s *Server) routes() {
 		_, _ = w.Write(page)
 	}
 	m.HandleFunc("GET /r/{slug}", serveApp)
+	// deep links: channel and thread live in the path, the SPA restores them
+	m.HandleFunc("GET /r/{slug}/c/{channel}", serveApp)
+	m.HandleFunc("GET /r/{slug}/c/{channel}/t/{thread}", serveApp)
 	m.HandleFunc("GET /create", serveApp)
 	m.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/create", http.StatusFound)

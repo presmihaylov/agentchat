@@ -4,7 +4,10 @@
 
   // the URL carries only the public slug; joining needs a separate invite code
   const isCreatePage = location.pathname.replace(/\/+$/, '') === '/create';
-  const slug = isCreatePage ? '' : decodeURIComponent(location.pathname.replace(/^\/r\//, '')).replace(/\/+$/, '');
+  // path shape: /r/<slug>[/c/<channel>[/t/<thread-id>]] — channel/thread are
+  // restored on load and kept in sync so refresh, back/forward and deep links work
+  const pathSegs = location.pathname.split('/').filter(Boolean);
+  const slug = isCreatePage ? '' : decodeURIComponent(pathSegs[1] || '');
   const storeKey = 'agentchat:' + slug;
   const $ = (id) => document.getElementById(id);
 
@@ -277,13 +280,53 @@
     setTitle();
   };
 
-  const closeThread = () => { $('thread-panel').classList.add('hidden'); openThreadRoot = null; };
+  // ---------- URL <-> view sync ----------
+
+  let navFromURL = false; // suppress pushState while applying a URL we didn't create
+
+  const syncURL = (push) => {
+    if (!room || navFromURL) return;
+    let path = '/r/' + encodeURIComponent(room.slug);
+    if (current) path += '/c/' + encodeURIComponent(current.name);
+    if (openThreadRoot) path += '/t/' + encodeURIComponent(openThreadRoot);
+    if (location.pathname === path) return;
+    history[push ? 'pushState' : 'replaceState'](null, '', path);
+  };
+
+  const applyURL = async () => {
+    navFromURL = true;
+    try {
+      const segs = location.pathname.split('/').filter(Boolean);
+      const chName = segs[2] === 'c' ? decodeURIComponent(segs[3] || '') : '';
+      const rootID = segs[4] === 't' ? decodeURIComponent(segs[5] || '') : '';
+      const ch = channels.find((c) => c.name === chName)
+        || channels.find((c) => c.name === 'general') || channels[0];
+      if (ch && (!current || current.id !== ch.id)) await selectChannel(ch);
+      if (rootID) {
+        try { await openThread(rootID); }
+        catch (e) { closeThread(); }
+      }
+      if (!rootID && openThreadRoot) closeThread();
+    } finally { navFromURL = false; }
+  };
+
+  window.addEventListener('popstate', () => { if (me) applyURL(); });
+
+  const closeThread = (push = true) => {
+    const had = openThreadRoot !== null;
+    $('thread-panel').classList.add('hidden');
+    openThreadRoot = null;
+    if (had && push) syncURL(true);
+  };
 
   const selectChannel = async (ch) => {
     // a thread belongs to its channel; leaving the channel closes it, else a
     // reply would post against a root in another channel (server 400)
-    if (current && ch.id !== current.id) closeThread();
+    // close without a push; the channel-change push below covers this transition
+    if (current && ch.id !== current.id) closeThread(false);
+    const changed = !current || current.id !== ch.id;
     current = ch;
+    syncURL(changed); // refreshes replace, real navigation pushes
     $('channel-title').textContent = '# ' + ch.name;
     $('channel-topic').innerHTML = ch.topic ? linkify(ch.topic) : '';
     renderChannels();
@@ -371,10 +414,12 @@
   };
 
   const openThread = async (rootID) => {
+    const changed = openThreadRoot !== rootID;
     openThreadRoot = rootID;
     $('thread-panel').classList.remove('hidden');
     const out = await api('/api/v1/threads/' + rootID);
     if (openThreadRoot !== rootID) return; // stale response
+    syncURL(changed);
     const box = $('thread-messages');
     box.innerHTML = '';
     out.messages.forEach((m) => box.appendChild(msgEl(m, true)));
@@ -509,7 +554,8 @@
     $('join-view').classList.add('hidden');
     $('chat-view').classList.remove('hidden');
     await refreshRoom();
-    await selectChannel(channels.find((c) => c.name === 'general') || channels[0]);
+    await applyURL();
+    syncURL(false); // normalize the address bar without a history entry
     eventLoop();
   };
 
