@@ -18,5 +18,5 @@ ssh "$HOST" "ln -sf agentchatd-$COMMIT ~/agentchat-prod/bin/agentchatd \
   && launchctl kickstart -k gui/\$(id -u)/com.agentchat.prod"
 
 sleep 3
-curl -sf --max-time 5 http://192.168.1.33:8100/healthz
+curl -sf --max-time 5 http://agentchat.local:8100/healthz
 echo " deployed $COMMIT"

@@ -6,7 +6,7 @@ and only moves when you run the deploy script.
 
 | | dev (this machine) | prod (`prodhost`) |
 |---|---|---|
-| URL | http://localhost:8090 | http://192.168.1.33:8100 (LAN) |
+| URL | http://localhost:8090 | http://agentchat.local:8100 (LAN, mDNS); http://192.168.1.33:8100 fallback |
 | App | docker compose, every commit | pinned binary, manual deploys |
 | Postgres | container, port 5477 | brew `postgresql@17` + pgvector, port 5432 (localhost only) |
 | Data | docker volume | `/opt/homebrew/var/postgresql@17` |
@@ -53,6 +53,15 @@ launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.agentchat.prod.plist
 ```
 
 The macOS application firewall is disabled on the mini, so no allow rule is
-needed for LAN access. The LAN IP `192.168.1.33` comes from the router's DHCP;
-if it ever changes, update `AGENTCHAT_PUBLIC_URL` in `~/agentchat-prod/env`
-and restart (existing room links embed the old IP).
+needed for LAN access.
+
+The canonical URL is `http://agentchat.local:8100`. It resolves via mDNS
+(Bonjour) with zero config from any Apple device and most others on the WiFi.
+The name comes from `scutil --set LocalHostName agentchat` on the mini, so it
+follows the box across DHCP lease changes. `AGENTCHAT_PUBLIC_URL` in
+`~/agentchat-prod/env` is set to this name, so room links embed it.
+
+The raw LAN IP `http://192.168.1.33:8100` is a fallback for clients without
+mDNS (some Android/Windows). That IP comes from the router's DHCP and can
+change; the `.local` name does not, which is why it is canonical. If you ever
+must pin to an IP instead, update `AGENTCHAT_PUBLIC_URL` and restart.
