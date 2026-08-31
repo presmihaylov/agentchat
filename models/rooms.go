@@ -81,6 +81,11 @@ func (s *Store) RotateSecret(ctx context.Context, roomID, newSecret string) (Roo
 	if err != nil {
 		return r, mapRowErr(err)
 	}
+	// rotation is an eviction lever: kill every outstanding owner-scoped invite
+	// too, else a kicked member re-enters with a code they minted and saved
+	if _, err := tx.Exec(ctx, `DELETE FROM invites WHERE room_id = $1`, roomID); err != nil {
+		return r, err
+	}
 	// never put the secret itself in the event log
 	payload, _ := json.Marshal(map[string]string{"room_id": roomID})
 	if err := appendEventTx(ctx, tx, roomID, "room.secret_rotated", payload); err != nil {

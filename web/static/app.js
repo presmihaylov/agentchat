@@ -71,8 +71,9 @@
       const re = new RegExp('@(' + targets.map(escRe).join('|') + ')(?![\\w-])', 'g');
       html = html.replace(re, (m) => '<strong class="mention">' + esc(m) + '</strong>');
     }
-    // ALLOW_DATA_ATTR:false so markdown can't inject data-act and hijack the msg click handler
-    return DOMPurify.sanitize(html, { FORBID_TAGS: ['style', 'form', 'input'], FORBID_ATTR: ['onerror', 'onclick'], ALLOW_DATA_ATTR: false });
+    // ALLOW_DATA_ATTR:false so markdown can't inject data-act and hijack the msg click handler;
+    // SANITIZE_NAMED_PROPS namespaces any user id/name so markdown can't DOM-clobber our elements
+    return DOMPurify.sanitize(html, { FORBID_TAGS: ['style', 'form', 'input'], FORBID_ATTR: ['onerror', 'onclick'], ALLOW_DATA_ATTR: false, SANITIZE_NAMED_PROPS: true });
   };
 
   const fmtTime = (iso) => {
@@ -504,6 +505,24 @@
 
   // ---------- live updates ----------
 
+  const msgNode = (id) =>
+    [...document.querySelectorAll('#messages .msg')].find((n) => n.dataset.id === id);
+
+  // replace one rendered channel-message node in place — avoids the full
+  // selectChannel refetch that wipes #messages and yanks the reader to the bottom
+  const replaceMsgNode = (m) => {
+    const old = msgNode(m.id);
+    if (old && current && m.channel_id === current.id) old.replaceWith(msgEl(m, false));
+  };
+
+  // a thread reply changed a root's reply bar; refetch just that one message
+  const refreshRootBar = async (rootID) => {
+    try {
+      const m = await api('/api/v1/messages/' + rootID);
+      replaceMsgNode(m);
+    } catch (e) { /* root deleted in the meantime */ }
+  };
+
   const applyEvent = async (ev) => {
     const t = ev.type;
     if (t === 'message.created') {
@@ -517,22 +536,39 @@
         const nearBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 120;
         box.appendChild(msgEl(m, false));
         if (nearBottom) box.scrollTop = box.scrollHeight;
-        if (m.author_id !== me.id) markRead(current); // viewing counts as reading
+        // a hidden tab is not "viewing": marking read here would silently erase
+        // the unread count and the new-messages divider for messages never seen
+        if (m.author_id !== me.id && !document.hidden) markRead(current);
       }
-      if (!m.thread_root_id && m.author_id !== me.id && (!current || m.channel_id !== current.id)) {
+      if (!m.thread_root_id && m.author_id !== me.id && (!current || m.channel_id !== current.id || document.hidden)) {
         const ch = channels.find((c) => c.id === m.channel_id);
         if (ch) { ch.unread_count = (ch.unread_count || 0) + 1; renderChannels(); }
       }
       if (m.thread_root_id && m.thread_root_id === openThreadRoot) openThread(openThreadRoot);
-      if (m.thread_root_id && current && m.channel_id === current.id) selectChannel(current); // refresh reply counts
+      if (m.thread_root_id && current && m.channel_id === current.id) {
+        await refreshRootBar(m.thread_root_id); // just the root's reply bar, not the whole channel
+        loadThreads(); // tree + reply-bar unread glow
+      }
       return;
     }
-    if (t === 'message.edited' || t === 'message.deleted') {
-      if (current) await selectChannel(current);
+    if (t === 'message.edited') {
+      const m = ev.payload;
+      replaceMsgNode(m);
       if (openThreadRoot) {
         try { await openThread(openThreadRoot); }
-        catch (e) { $('thread-panel').classList.add('hidden'); openThreadRoot = null; }
+        catch (e) { closeThread(); }
       }
+      return;
+    }
+    if (t === 'message.deleted') {
+      const id = ev.payload.message_id;
+      msgNode(id)?.remove();
+      if (openThreadRoot === id) closeThread();
+      else if (openThreadRoot) {
+        try { await openThread(openThreadRoot); } // a reply was deleted
+        catch (e) { closeThread(); }
+      }
+      loadThreads();
       return;
     }
     // everything else changes room structure or people — refresh the sidebar
@@ -804,7 +840,12 @@
     uploadPending(new File([file], file.name || 'pasted-image.png', { type: file.type }));
   });
 
-  window.addEventListener('focus', () => { unreadMentions = 0; setTitle(); });
+  window.addEventListener('focus', () => {
+    unreadMentions = 0;
+    setTitle();
+    // returning to the tab counts as reading what is on screen now
+    if (me && current) markRead(current);
+  });
 
   // ---------- create workspace (onboarding at /create) ----------
 

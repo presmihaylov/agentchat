@@ -789,3 +789,140 @@ func TestReplyBarData(t *testing.T) {
 		t.Fatalf("solo replier_ids: %v", solo["replier_ids"])
 	}
 }
+
+// TestInviteDiesOnRotate locks in that rotating the room secret kills every
+// outstanding owner-scoped invite. Without it a kicked member walks back in on
+// a code they minted and saved, and eviction never sticks.
+func TestInviteDiesOnRotate(t *testing.T) {
+	srv, _ := newTestServer(t)
+	_, alice, bob := setupRoom(t, srv.URL)
+
+	// a member mints an owner-scoped invite (the legit "invite my agent" flow)
+	code := bob.must("POST", "/api/v1/invites", nil, 201)["invite_code"].(string)
+
+	// valid before rotation
+	pre := &testClient{t: t, base: srv.URL}
+	pre.must("POST", "/api/v1/rooms/join", map[string]any{"invite_code": code, "name": "preagent"}, 201)
+
+	// admin rotates to evict
+	out := alice.must("POST", "/api/v1/room/rotate-secret", nil, 200)
+	newSecret := out["invite_code"].(string)
+
+	// the saved owner-scoped code is now dead
+	post := &testClient{t: t, base: srv.URL}
+	post.must("POST", "/api/v1/rooms/join", map[string]any{"invite_code": code, "name": "postagent"}, 404)
+
+	// the freshly rotated room code still works
+	post.must("POST", "/api/v1/rooms/join", map[string]any{"invite_code": newSecret, "name": "postagent"}, 201)
+}
+
+// TestInviteDiesOnRevoke locks in that revoking a member kills the invites that
+// member issued, so a kicked member cannot walk an agent back in on their code.
+func TestInviteDiesOnRevoke(t *testing.T) {
+	srv, _ := newTestServer(t)
+	_, alice, bob := setupRoom(t, srv.URL)
+
+	bobID := ""
+	for _, p := range alice.must("GET", "/api/v1/room", nil, 200)["participants"].([]any) {
+		pm := p.(map[string]any)
+		if pm["name"] == "bob" {
+			bobID = pm["id"].(string)
+		}
+	}
+	if bobID == "" {
+		t.Fatal("bob not found")
+	}
+
+	code := bob.must("POST", "/api/v1/invites", nil, 201)["invite_code"].(string)
+
+	alice.must("DELETE", "/api/v1/participants/"+bobID, nil, 200)
+
+	c := &testClient{t: t, base: srv.URL}
+	c.must("POST", "/api/v1/rooms/join", map[string]any{"invite_code": code, "name": "ghost"}, 404)
+}
+
+// TestReclaimRebindsOwner locks in that a reclaim binds ownership to the
+// principal of the code actually used, in both directions: reclaim via an
+// owner-scoped code takes on that owner; reclaim via the room code clears it.
+// Without the rebind a reclaim silently keeps the stale owner.
+func TestReclaimRebindsOwner(t *testing.T) {
+	srv, store := newTestServer(t)
+
+	c := &testClient{t: t, base: srv.URL}
+	roomCode := c.must("POST", "/api/v1/rooms", map[string]any{"name": "owned"}, 201)["invite_code"].(string)
+
+	join := func(code, name string, human bool, want int) (*testClient, map[string]any) {
+		cc := &testClient{t: t, base: srv.URL}
+		out := cc.must("POST", "/api/v1/rooms/join", map[string]any{
+			"invite_code": code, "name": name, "is_human": human,
+		}, want)
+		if tok, ok := out["token"].(string); ok {
+			cc.token = tok
+		}
+		return cc, out["participant"].(map[string]any)
+	}
+
+	maya, mayaP := join(roomCode, "maya", true, 201)
+	mayaID := mayaP["id"].(string)
+	mayaCode := maya.must("POST", "/api/v1/invites", nil, 201)["invite_code"].(string)
+
+	// helper first joins on the room code: no owner
+	_, helperP := join(roomCode, "helper", false, 201)
+	if helperP["owner_id"] != nil {
+		t.Fatalf("room-code agent has owner: %v", helperP)
+	}
+	helperID := helperP["id"].(string)
+	roomID := maya.must("GET", "/api/v1/room", nil, 200)["room"].(map[string]any)["id"].(string)
+
+	// offline, then reclaimed via maya's owner-scoped code: ownership binds to maya
+	if err := store.GoOffline(context.Background(), roomID, helperID); err != nil {
+		t.Fatal(err)
+	}
+	_, reclaimed := join(mayaCode, "helper", false, 200)
+	if reclaimed["owner_id"] != mayaID {
+		t.Fatalf("reclaim did not rebind owner: got %v want %v", reclaimed["owner_id"], mayaID)
+	}
+
+	// offline again, reclaimed via the room code: ownership clears
+	if err := store.GoOffline(context.Background(), roomID, helperID); err != nil {
+		t.Fatal(err)
+	}
+	_, recleared := join(roomCode, "helper", false, 200)
+	if recleared["owner_id"] != nil {
+		t.Fatalf("room-code reclaim left an owner: %v", recleared["owner_id"])
+	}
+}
+
+// TestArchiveEmitsEvent guards the archive/unarchive event emission after
+// folding the UPDATE and the event into one transaction, so an archive can
+// never land without its event (and the toggle stays observable to clients).
+func TestArchiveEmitsEvent(t *testing.T) {
+	srv, _ := newTestServer(t)
+	_, alice, _ := setupRoom(t, srv.URL)
+
+	ch := alice.must("POST", "/api/v1/channels", map[string]any{"name": "attic", "topic": "stuff"}, 201)
+	chID := ch["id"].(string)
+
+	hasEvent := func(after int64, typ string) bool {
+		ev := alice.must("GET", fmt.Sprintf("/api/v1/events?after=%d", after), nil, 200)
+		for _, e := range ev["events"].([]any) {
+			em := e.(map[string]any)
+			if em["type"] == typ && em["payload"].(map[string]any)["channel_id"] == chID {
+				return true
+			}
+		}
+		return false
+	}
+
+	c0 := int64(alice.must("GET", "/api/v1/events", nil, 200)["cursor"].(float64))
+	alice.must("PATCH", "/api/v1/channels/"+chID, map[string]any{"archived": true}, 200)
+	if !hasEvent(c0, "channel.archived") {
+		t.Fatal("archive did not emit channel.archived")
+	}
+
+	c1 := int64(alice.must("GET", "/api/v1/events", nil, 200)["cursor"].(float64))
+	alice.must("PATCH", "/api/v1/channels/"+chID, map[string]any{"archived": false}, 200)
+	if !hasEvent(c1, "channel.unarchived") {
+		t.Fatal("unarchive did not emit channel.unarchived")
+	}
+}

@@ -79,6 +79,13 @@ func (s *Store) CreateMessage(ctx context.Context, p CreateMessageParams) (Messa
 	}
 	defer tx.Rollback(ctx)
 
+	// advisory lock first: this tx takes FK row locks (FOR KEY SHARE on rooms via
+	// the messages insert) before appendEventTx, so without locking advisory-first
+	// it would deadlock AB-BA against RotateSecret's key-column UPDATE on rooms.
+	if err := lockRoomEvents(ctx, tx, p.RoomID); err != nil {
+		return Message{}, err
+	}
+
 	// archived check inside the tx so a concurrent archive can't race past
 	// the handler's pre-check; FOR SHARE blocks the archiver until we commit
 	var archived bool

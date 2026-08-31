@@ -332,6 +332,13 @@ func (s *Server) handleUploadAttachment(w http.ResponseWriter, r *http.Request, 
 		writeErr(w, http.StatusBadRequest, "invalid multipart form (5MB max): "+err.Error())
 		return
 	}
+	// ParseMultipartForm spills parts over the memory limit to temp files on
+	// disk; without this they leak until process exit
+	defer func() {
+		if r.MultipartForm != nil {
+			_ = r.MultipartForm.RemoveAll()
+		}
+	}()
 	file, header, err := r.FormFile("file")
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, `multipart field "file" is required`)

@@ -14,6 +14,11 @@ func (s *Store) CreateChannel(ctx context.Context, roomID, name, topic, createdB
 	}
 	defer tx.Rollback(ctx)
 
+	// advisory-first: the insert takes FK row locks on rooms before appendEventTx
+	if err := lockRoomEvents(ctx, tx, roomID); err != nil {
+		return c, err
+	}
+
 	err = tx.QueryRow(ctx,
 		`INSERT INTO channels (room_id, name, topic, created_by) VALUES ($1, $2, $3, $4)
 		 RETURNING id, room_id, name, topic, created_by, archived, created_at`,
@@ -138,7 +143,17 @@ func (s *Store) DeleteChannel(ctx context.Context, roomID, id string) error {
 }
 
 func (s *Store) SetChannelArchived(ctx context.Context, roomID, id string, archived bool) error {
-	res, err := s.pool.Exec(ctx,
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	// advisory-first: the UPDATE takes an FK row lock on rooms before appendEventTx
+	if err := lockRoomEvents(ctx, tx, roomID); err != nil {
+		return err
+	}
+	res, err := tx.Exec(ctx,
 		`UPDATE channels SET archived = $3 WHERE room_id = $1 AND id = $2`, roomID, id, archived)
 	if err != nil {
 		return err
@@ -150,5 +165,10 @@ func (s *Store) SetChannelArchived(ctx context.Context, roomID, id string, archi
 	if !archived {
 		typ = "channel.unarchived"
 	}
-	return s.AppendEvent(ctx, roomID, typ, map[string]string{"channel_id": id})
+	// same tx as the UPDATE: a crash between them must not archive silently
+	payload, _ := json.Marshal(map[string]string{"channel_id": id})
+	if err := appendEventTx(ctx, tx, roomID, typ, payload); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }

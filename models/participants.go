@@ -57,7 +57,9 @@ func (s *Store) CreateParticipant(ctx context.Context, roomID, name, avatar, des
 // ReclaimParticipant re-binds an existing identity to a fresh token: same id,
 // role, and history; the old token stops working. Only an offline identity can
 // be re-claimed. Revoked identities stay locked out.
-func (s *Store) ReclaimParticipant(ctx context.Context, roomID, name string, tokenHash []byte) (Participant, error) {
+// ownerID rebinds ownership to the principal of the code actually used, so a
+// rejoin with an owner-scoped code finally stamps the badge (nil = room code).
+func (s *Store) ReclaimParticipant(ctx context.Context, roomID, name string, tokenHash []byte, ownerID *string) (Participant, error) {
 	var p Participant
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -88,8 +90,8 @@ func (s *Store) ReclaimParticipant(ctx context.Context, roomID, name string, tok
 	}
 
 	if _, err := tx.Exec(ctx,
-		`UPDATE participants SET token_hash = $2, last_seen_at = now() WHERE id = $1`,
-		id, tokenHash); err != nil {
+		`UPDATE participants SET token_hash = $2, last_seen_at = now(), owner_id = $3 WHERE id = $1`,
+		id, tokenHash, ownerID); err != nil {
 		return p, err
 	}
 
@@ -193,6 +195,11 @@ func (s *Store) UpdateProfile(ctx context.Context, roomID, id string, name, avat
 	}
 	defer tx.Rollback(ctx)
 
+	// advisory-first: the update takes an FK row lock on rooms before appendEventTx
+	if err := lockRoomEvents(ctx, tx, roomID); err != nil {
+		return Participant{}, err
+	}
+
 	tag, err := tx.Exec(ctx,
 		`UPDATE participants SET
 		    name = COALESCE($3, name),
@@ -228,6 +235,11 @@ func (s *Store) SetAvatarAttachment(ctx context.Context, roomID, id string, atta
 		return Participant{}, err
 	}
 	defer tx.Rollback(ctx)
+
+	// advisory-first: the update takes an FK row lock on rooms before appendEventTx
+	if err := lockRoomEvents(ctx, tx, roomID); err != nil {
+		return Participant{}, err
+	}
 
 	res, err := tx.Exec(ctx,
 		`UPDATE participants SET avatar_attachment_id = $3
@@ -330,6 +342,13 @@ func (s *Store) Revoke(ctx context.Context, roomID, id string) error {
 
 	if _, err := tx.Exec(ctx,
 		`UPDATE participants SET revoked = true WHERE room_id = $1 AND id = $2`,
+		roomID, id); err != nil {
+		return err
+	}
+	// invalidate any invite codes this participant minted; the NOT i.revoked
+	// guard in RoomByAnySecret covers the rest, this makes the codes disappear
+	if _, err := tx.Exec(ctx,
+		`DELETE FROM invites WHERE room_id = $1 AND issuer_id = $2`,
 		roomID, id); err != nil {
 		return err
 	}

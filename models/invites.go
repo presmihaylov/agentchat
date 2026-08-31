@@ -29,7 +29,7 @@ func (s *Store) RoomByAnySecret(ctx context.Context, secret string) (Room, *stri
 		 FROM invites v
 		 JOIN rooms r ON r.id = v.room_id
 		 JOIN participants i ON i.id = v.issuer_id
-		 WHERE v.secret = $1`,
+		 WHERE v.secret = $1 AND NOT i.revoked`,
 		secret,
 	).Scan(&r.ID, &r.Slug, &r.Secret, &r.Name, &r.CreatedAt, &owner)
 	if err != nil {
