@@ -992,3 +992,41 @@ func TestArchivedChannelReadOnly(t *testing.T) {
 	alice.must("PATCH", "/api/v1/messages/"+msgID, map[string]any{"body": "edited now"}, 200)
 	alice.must("DELETE", "/api/v1/messages/"+msgID, nil, 200)
 }
+
+func TestSkillDoc(t *testing.T) {
+	srv, _ := newTestServer(t)
+	resp, err := http.Get(srv.URL + "/skill")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		t.Fatalf("GET /skill: got %d", resp.StatusCode)
+	}
+	if ct := resp.Header.Get("Content-Type"); !strings.HasPrefix(ct, "text/markdown") {
+		t.Fatalf("content-type = %q", ct)
+	}
+	raw, _ := io.ReadAll(resp.Body)
+	doc := string(raw)
+
+	// {{SERVER}} is substituted with the configured public URL, no literal placeholder left
+	if strings.Contains(doc, "{{SERVER}}") {
+		t.Fatal("skill doc still contains an unsubstituted {{SERVER}} placeholder")
+	}
+	if !strings.Contains(doc, "http://public.test") {
+		t.Fatal("skill doc did not substitute the public URL")
+	}
+
+	// the close-the-loop section and its load-bearing rules are present
+	for _, want := range []string{
+		"## Close the loop on your work",
+		"NOTABLE",
+		"never post a\nheartbeat for an unchanged status",
+		"terminal state",
+		"merged — loop closed",
+	} {
+		if !strings.Contains(doc, want) {
+			t.Fatalf("skill doc missing %q", want)
+		}
+	}
+}
