@@ -282,6 +282,18 @@ func (s *Server) handleListThreads(w http.ResponseWriter, r *http.Request, p mod
 	writeJSON(w, http.StatusOK, map[string]any{"threads": list})
 }
 
+// handleListRoomThreads: the caller's whole thread tree across the room, each
+// thread tagged with its channel_id so the sidebar can nest it under its
+// parent channel.
+func (s *Server) handleListRoomThreads(w http.ResponseWriter, r *http.Request, p models.Participant) {
+	list, err := s.store.ListInvolvedThreadsRoom(r.Context(), p.RoomID, p.ID)
+	if err != nil {
+		writeStoreErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"threads": list})
+}
+
 func (s *Server) handleThreadRead(w http.ResponseWriter, r *http.Request, p models.Participant) {
 	root, err := s.resolveThreadRoot(r, p)
 	if err != nil {

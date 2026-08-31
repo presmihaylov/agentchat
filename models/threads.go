@@ -5,9 +5,10 @@ import (
 	"time"
 )
 
-// ThreadSummary is one row of a participant's per-channel thread tree.
+// ThreadSummary is one row of a participant's thread tree.
 type ThreadSummary struct {
 	RootID      string     `json:"root_id"`
+	ChannelID   string     `json:"channel_id"`
 	Body        string     `json:"body"`
 	AuthorID    string     `json:"author_id"`
 	AuthorName  string     `json:"author_name"`
@@ -17,37 +18,59 @@ type ThreadSummary struct {
 	Muted       bool       `json:"muted"`
 	LastReadAt  *time.Time `json:"last_read_at,omitempty"`
 	UnreadCount int64      `json:"unread_count"`
+	// UnreadMentions counts the unread replies that @mention the viewer
+	// (direct or broadcast); the sidebar leaf badges this, glow otherwise.
+	UnreadMentions int64 `json:"unread_mentions"`
 }
 
-// ListInvolvedThreads returns the channel's threads the participant is part
-// of: started, replied in, or mentioned anywhere in. Newest activity first.
-// Unread counts replies from others after the thread's read marker (join time
-// when the thread was never opened).
+// ListInvolvedThreads returns the channel's threads the participant is part of.
 func (s *Store) ListInvolvedThreads(ctx context.Context, roomID, channelID, participantID string) ([]ThreadSummary, error) {
+	return s.involvedThreads(ctx, roomID, participantID, &channelID)
+}
+
+// ListInvolvedThreadsRoom is ListInvolvedThreads across every channel in the
+// room, each row tagged with its channel_id so the sidebar can nest threads
+// under their parent channel (Discord-style).
+func (s *Store) ListInvolvedThreadsRoom(ctx context.Context, roomID, participantID string) ([]ThreadSummary, error) {
+	return s.involvedThreads(ctx, roomID, participantID, nil)
+}
+
+// involvedThreads lists the threads the participant is part of (started,
+// replied in, or mentioned anywhere in), newest activity first. A nil
+// channelID spans the whole room; a non-nil one scopes to that channel.
+// Unread counts replies from others after the thread's read marker (join
+// time when the thread was never opened).
+func (s *Store) involvedThreads(ctx context.Context, roomID, participantID string, channelID *string) ([]ThreadSummary, error) {
 	rows, err := s.pool.Query(ctx,
 		`WITH involved AS (
 		   SELECT DISTINCT COALESCE(m.thread_root_id, m.id) AS root_id
 		   FROM messages m
-		   LEFT JOIN mentions mn ON mn.message_id = m.id AND mn.participant_id = $3
-		   WHERE m.room_id = $1 AND m.channel_id = $2
-		     AND (m.author_id = $3 OR mn.participant_id IS NOT NULL)
+		   LEFT JOIN mentions mn ON mn.message_id = m.id AND mn.participant_id = $2
+		   WHERE m.room_id = $1 AND ($3::uuid IS NULL OR m.channel_id = $3::uuid)
+		     AND (m.author_id = $2 OR mn.participant_id IS NOT NULL)
 		 )
-		 SELECT r.id, r.body, r.author_id, ap.name, r.created_at,
+		 SELECT r.id, r.channel_id, r.body, r.author_id, ap.name, r.created_at,
 		        (SELECT count(*) FROM messages c WHERE c.thread_root_id = r.id) AS reply_count,
 		        (SELECT max(c.created_at) FROM messages c WHERE c.thread_root_id = r.id) AS last_reply_at,
 		        COALESCE(ts.muted, false),
 		        ts.last_read_at,
 		        (SELECT count(*) FROM messages c WHERE c.thread_root_id = r.id
-		           AND c.author_id <> $3
-		           AND c.created_at > COALESCE(ts.last_read_at, p.created_at)) AS unread
+		           AND c.author_id <> $2
+		           AND c.created_at > COALESCE(ts.last_read_at, p.created_at)) AS unread,
+		        (SELECT count(*) FROM messages c WHERE c.thread_root_id = r.id
+		           AND c.author_id <> $2
+		           AND c.created_at > COALESCE(ts.last_read_at, p.created_at)
+		           AND (c.is_broadcast OR EXISTS (
+		                SELECT 1 FROM mentions mn2
+		                WHERE mn2.message_id = c.id AND mn2.participant_id = $2))) AS unread_mentions
 		 FROM involved i
 		 JOIN messages r ON r.id = i.root_id
 		 JOIN participants ap ON ap.id = r.author_id
-		 JOIN participants p ON p.id = $3
-		 LEFT JOIN thread_states ts ON ts.root_id = r.id AND ts.participant_id = $3
+		 JOIN participants p ON p.id = $2
+		 LEFT JOIN thread_states ts ON ts.root_id = r.id AND ts.participant_id = $2
 		 WHERE EXISTS (SELECT 1 FROM messages c WHERE c.thread_root_id = r.id)
 		 ORDER BY COALESCE((SELECT max(c.created_at) FROM messages c WHERE c.thread_root_id = r.id), r.created_at) DESC`,
-		roomID, channelID, participantID)
+		roomID, participantID, channelID)
 	if err != nil {
 		return nil, err
 	}
@@ -56,8 +79,8 @@ func (s *Store) ListInvolvedThreads(ctx context.Context, roomID, channelID, part
 	out := []ThreadSummary{}
 	for rows.Next() {
 		var t ThreadSummary
-		if err := rows.Scan(&t.RootID, &t.Body, &t.AuthorID, &t.AuthorName, &t.CreatedAt,
-			&t.ReplyCount, &t.LastReplyAt, &t.Muted, &t.LastReadAt, &t.UnreadCount); err != nil {
+		if err := rows.Scan(&t.RootID, &t.ChannelID, &t.Body, &t.AuthorID, &t.AuthorName, &t.CreatedAt,
+			&t.ReplyCount, &t.LastReplyAt, &t.Muted, &t.LastReadAt, &t.UnreadCount, &t.UnreadMentions); err != nil {
 			return nil, err
 		}
 		out = append(out, t)

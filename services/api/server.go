@@ -113,6 +113,7 @@ func (s *Server) routes() {
 	m.HandleFunc("GET /api/v1/messages/{id}", s.authed(s.handleGetMessage))
 	m.HandleFunc("PATCH /api/v1/messages/{id}", s.authed(s.handleEditMessage))
 	m.HandleFunc("DELETE /api/v1/messages/{id}", s.authed(s.handleDeleteMessage))
+	m.HandleFunc("GET /api/v1/threads", s.authed(s.handleListRoomThreads))
 	m.HandleFunc("GET /api/v1/threads/{id}", s.authed(s.handleGetThread))
 	m.HandleFunc("GET /api/v1/channels/{id}/threads", s.authed(s.handleListThreads))
 	m.HandleFunc("POST /api/v1/threads/{id}/read", s.authed(s.handleThreadRead))

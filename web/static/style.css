@@ -69,10 +69,13 @@ button { cursor: pointer; }
 .unread-divider { display: flex; align-items: center; gap: 8px; margin: 10px 0; color: #e0666b; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; }
 .unread-divider::before, .unread-divider::after { content: ''; flex: 1; border-top: 1px solid #e0666b55; }
 .unread-divider span { flex: none; }
-#thread-list .t-icon { flex: none; font-size: 12px; }
-#thread-list .t-snippet { overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1; }
-#thread-list .t-count { flex: none; color: var(--dim); font-size: 11px; }
-#thread-list li.muted { opacity: .5; }
+/* Thread leaves nest under their parent channel: indented, with a branch guide. */
+#channel-list li.thread-leaf { margin-left: 16px; padding-left: 12px; border-left: 1px solid var(--border); border-radius: 0 6px 6px 0; font-size: 13px; }
+#channel-list li.thread-leaf .t-icon { flex: none; font-size: 11px; opacity: .8; }
+#channel-list li.thread-leaf .t-snippet { overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1; color: var(--dim); }
+#channel-list li.thread-leaf.unread .t-snippet { color: #fff; }
+#channel-list li.thread-leaf .t-count { flex: none; }
+#channel-list li.thread-leaf.muted { opacity: .5; }
 .owner-badge { flex: none; margin: 0 6px; padding: 0 6px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel2); color: var(--dim); font-size: 10px; line-height: 15px; white-space: nowrap; }
 #me-footer { margin-top: auto; padding: 10px 16px; border-top: 1px solid var(--border); font-size: 13px; color: var(--dim); display: flex; align-items: center; gap: 7px; cursor: pointer; }
 

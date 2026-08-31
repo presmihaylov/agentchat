@@ -654,6 +654,72 @@ func TestThreadTree(t *testing.T) {
 	}
 }
 
+// TestRoomThreads: the room-wide thread endpoint returns the caller's involved
+// threads across every channel, each tagged with its channel_id, and per-thread
+// unread_mentions follows the mention-only rule (direct + broadcast).
+func TestRoomThreads(t *testing.T) {
+	srv, _ := newTestServer(t)
+	defer srv.Close()
+	_, alice, bob := setupRoom(t, srv.URL)
+
+	chanID := func(name string) string {
+		out := alice.must("GET", "/api/v1/channels", nil, 200)
+		for _, raw := range out["channels"].([]any) {
+			ch := raw.(map[string]any)
+			if ch["name"] == name {
+				return ch["id"].(string)
+			}
+		}
+		t.Fatalf("channel %s not found", name)
+		return ""
+	}
+	roomThreads := func(c *testClient) map[string]map[string]any {
+		out := c.must("GET", "/api/v1/threads", nil, 200)
+		byRoot := map[string]map[string]any{}
+		for _, raw := range out["threads"].([]any) {
+			th := raw.(map[string]any)
+			byRoot[th["root_id"].(string)] = th
+		}
+		return byRoot
+	}
+
+	alice.must("POST", "/api/v1/channels", map[string]any{"name": "proj"}, 201)
+	generalID, projID := chanID("general"), chanID("proj")
+
+	// thread A in general: bob replies (involved), then alice @mentions bob in it
+	rootA := alice.must("POST", "/api/v1/channels/general/messages", map[string]any{"body": "topic A"}, 201)
+	bob.must("POST", "/api/v1/channels/general/messages",
+		map[string]any{"body": "bob in A", "thread_root_id": rootA["id"]}, 201)
+	alice.must("POST", "/api/v1/channels/general/messages",
+		map[string]any{"body": "hey @bob", "thread_root_id": rootA["id"]}, 201)
+
+	// thread B in proj: bob replies; alice adds a plain reply (unread, no mention)
+	rootB := alice.must("POST", "/api/v1/channels/proj/messages", map[string]any{"body": "topic B"}, 201)
+	bob.must("POST", "/api/v1/channels/proj/messages",
+		map[string]any{"body": "bob in B", "thread_root_id": rootB["id"]}, 201)
+	alice.must("POST", "/api/v1/channels/proj/messages",
+		map[string]any{"body": "plain follow-up", "thread_root_id": rootB["id"]}, 201)
+
+	ts := roomThreads(bob)
+	if len(ts) != 2 {
+		t.Fatalf("bob room threads = %d, want 2 (one per channel)", len(ts))
+	}
+	a, b := ts[rootA["id"].(string)], ts[rootB["id"].(string)]
+	if a == nil || b == nil {
+		t.Fatalf("missing a thread: %v", ts)
+	}
+	if a["channel_id"] != generalID || b["channel_id"] != projID {
+		t.Fatalf("channel tags wrong: A=%v (want %v) B=%v (want %v)", a["channel_id"], generalID, b["channel_id"], projID)
+	}
+	// A has a direct @bob -> 1 mention; B is plain -> 0 mentions (but still unread)
+	if a["unread_mentions"].(float64) != 1 {
+		t.Fatalf("thread A unread_mentions=%v, want 1", a["unread_mentions"])
+	}
+	if b["unread_mentions"].(float64) != 0 || b["unread_count"].(float64) == 0 {
+		t.Fatalf("thread B mentions=%v unread=%v, want 0/>0", b["unread_mentions"], b["unread_count"])
+	}
+}
+
 func TestReclaimIdentity(t *testing.T) {
 	srv, store := newTestServer(t)
 	secret, alice, bob := setupRoom(t, srv.URL)
