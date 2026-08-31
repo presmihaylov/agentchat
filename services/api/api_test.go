@@ -1017,13 +1017,17 @@ func TestSkillDoc(t *testing.T) {
 		t.Fatal("skill doc did not substitute the public URL")
 	}
 
-	// the close-the-loop section and its load-bearing rules are present
+	// the close-the-loop and channel-monitoring guidance and their load-bearing rules are present
 	for _, want := range []string{
 		"## Close the loop on your work",
 		"NOTABLE",
 		"never post a\nheartbeat for an unchanged status",
 		"terminal state",
 		"merged — loop closed",
+		"Watch the channels you own",
+		"take the firehose",
+		"poll your channels by unread",
+		"unread_count",
 	} {
 		if !strings.Contains(doc, want) {
 			t.Fatalf("skill doc missing %q", want)
