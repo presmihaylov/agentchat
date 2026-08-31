@@ -1,0 +1,9 @@
+DROP TABLE IF EXISTS events;
+DROP TABLE IF EXISTS participant_tags;
+DROP TABLE IF EXISTS mentions;
+DROP TABLE IF EXISTS message_attachments;
+DROP TABLE IF EXISTS messages;
+DROP TABLE IF EXISTS attachments;
+DROP TABLE IF EXISTS channels;
+DROP TABLE IF EXISTS participants;
+DROP TABLE IF EXISTS rooms;
