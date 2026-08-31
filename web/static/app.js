@@ -371,7 +371,8 @@
     ul.innerHTML = '';
     channels.forEach((ch) => {
       const li = document.createElement('li');
-      li.textContent = '# ' + ch.name + (ch.archived ? ' (archived)' : '');
+      const sigil = ch.private ? '🔒 ' : '# ';
+      li.textContent = sigil + ch.name + (ch.archived ? ' (archived)' : '');
       if (ch.archived) li.classList.add('archived');
       if (current && ch.id === current.id) li.classList.add('active');
       // Any unread glows the channel name; only @mentions get a numeric badge.
@@ -388,9 +389,10 @@
       if (ch.name !== 'general') {
         li.oncontextmenu = (ev) => {
           ev.preventDefault();
-          openContextMenu(ev.clientX, ev.clientY, [
-            { label: 'Leave channel', danger: true, run: () => leaveChannel(ch) },
-          ]);
+          const items = [];
+          if (ch.private) items.push({ label: 'Add people', run: () => addPeople(ch) });
+          items.push({ label: 'Leave channel', danger: true, run: () => leaveChannel(ch) });
+          openContextMenu(ev.clientX, ev.clientY, items);
         };
       }
       ul.appendChild(li);
@@ -1407,8 +1409,19 @@
   $('new-channel').onclick = async () => {
     const name = prompt('Channel name (lowercase, a-z 0-9 - _):');
     if (!name) return;
-    try { await api('/api/v1/channels', { method: 'POST', body: { name: name.trim() } }); }
+    const priv = confirm('Make this channel private? Private channels are invite-only and hidden from browse.');
+    try { await api('/api/v1/channels', { method: 'POST', body: { name: name.trim(), private: priv } }); }
     catch (e) { alert(e.message); }
+  };
+
+  // Add a participant to a private channel (any member can). The server resolves
+  // the name or id and emits channel.member_joined so the new member sees it.
+  const addPeople = async (ch) => {
+    const who = prompt('Add who? (participant name or id)');
+    if (!who) return;
+    try {
+      await api('/api/v1/channels/' + ch.id + '/members', { method: 'POST', body: { participant: who.trim() } });
+    } catch (e) { alert(e.message); }
   };
 
   // Browse view: the public channels you are not in yet, each with a Join button.

@@ -8,7 +8,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
-func (s *Store) CreateChannel(ctx context.Context, roomID, name, topic, createdBy string) (Channel, error) {
+func (s *Store) CreateChannel(ctx context.Context, roomID, name, topic, createdBy string, private bool) (Channel, error) {
 	var c Channel
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -22,10 +22,10 @@ func (s *Store) CreateChannel(ctx context.Context, roomID, name, topic, createdB
 	}
 
 	err = tx.QueryRow(ctx,
-		`INSERT INTO channels (room_id, name, topic, created_by) VALUES ($1, $2, $3, $4)
-		 RETURNING id, room_id, name, topic, created_by, archived, created_at`,
-		roomID, name, topic, createdBy,
-	).Scan(&c.ID, &c.RoomID, &c.Name, &c.Topic, &c.CreatedBy, &c.Archived, &c.CreatedAt)
+		`INSERT INTO channels (room_id, name, topic, created_by, private) VALUES ($1, $2, $3, $4, $5)
+		 RETURNING id, room_id, name, topic, created_by, archived, private, created_at`,
+		roomID, name, topic, createdBy, private,
+	).Scan(&c.ID, &c.RoomID, &c.Name, &c.Topic, &c.CreatedBy, &c.Archived, &c.Private, &c.CreatedAt)
 	if err != nil {
 		if isUniqueViolation(err) {
 			return c, ErrConflict
@@ -134,7 +134,7 @@ func (s *Store) setMembership(ctx context.Context, roomID, channelID, participan
 
 func (s *Store) ListChannels(ctx context.Context, roomID string) ([]Channel, error) {
 	rows, err := s.pool.Query(ctx,
-		`SELECT id, room_id, name, topic, created_by, archived, created_at
+		`SELECT id, room_id, name, topic, created_by, archived, private, created_at
 		 FROM channels WHERE room_id = $1 ORDER BY created_at ASC`, roomID)
 	if err != nil {
 		return nil, err
@@ -144,7 +144,7 @@ func (s *Store) ListChannels(ctx context.Context, roomID string) ([]Channel, err
 	out := []Channel{}
 	for rows.Next() {
 		var c Channel
-		if err := rows.Scan(&c.ID, &c.RoomID, &c.Name, &c.Topic, &c.CreatedBy, &c.Archived, &c.CreatedAt); err != nil {
+		if err := rows.Scan(&c.ID, &c.RoomID, &c.Name, &c.Topic, &c.CreatedBy, &c.Archived, &c.Private, &c.CreatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, c)
@@ -157,7 +157,7 @@ func (s *Store) ListChannels(ctx context.Context, roomID string) ([]Channel, err
 // never marked a channel read is their own join time, not the room's birth.
 func (s *Store) ListChannelsUnread(ctx context.Context, roomID, participantID string) ([]Channel, error) {
 	rows, err := s.pool.Query(ctx,
-		`SELECT c.id, c.room_id, c.name, c.topic, c.created_by, c.archived, c.created_at,
+		`SELECT c.id, c.room_id, c.name, c.topic, c.created_by, c.archived, c.private, c.created_at,
 		        r.last_read_at,
 		        (SELECT count(*) FROM messages m
 		         WHERE m.channel_id = c.id AND m.thread_root_id IS NULL
@@ -183,7 +183,7 @@ func (s *Store) ListChannelsUnread(ctx context.Context, roomID, participantID st
 	out := []Channel{}
 	for rows.Next() {
 		var c Channel
-		if err := rows.Scan(&c.ID, &c.RoomID, &c.Name, &c.Topic, &c.CreatedBy, &c.Archived,
+		if err := rows.Scan(&c.ID, &c.RoomID, &c.Name, &c.Topic, &c.CreatedBy, &c.Archived, &c.Private,
 			&c.CreatedAt, &c.LastReadAt, &c.UnreadCount, &c.UnreadMentions); err != nil {
 			return nil, err
 		}
@@ -193,15 +193,15 @@ func (s *Store) ListChannelsUnread(ctx context.Context, roomID, participantID st
 }
 
 // BrowsableChannels lists the channels the caller can join but has not joined:
-// every non-archived channel in the room they are not already a member of, with
-// a live member count. FR #2 will exclude private channels here; for now every
-// channel is public. Sorted by name so the browse list reads alphabetically.
+// every non-archived, non-private channel in the room they are not already a
+// member of, with a live member count. Private channels are invite-only and
+// never appear here. Sorted by name so the browse list reads alphabetically.
 func (s *Store) BrowsableChannels(ctx context.Context, roomID, participantID string) ([]Channel, error) {
 	rows, err := s.pool.Query(ctx,
-		`SELECT c.id, c.room_id, c.name, c.topic, c.created_by, c.archived, c.created_at,
+		`SELECT c.id, c.room_id, c.name, c.topic, c.created_by, c.archived, c.private, c.created_at,
 		        (SELECT count(*) FROM channel_members m WHERE m.channel_id = c.id) AS member_count
 		 FROM channels c
-		 WHERE c.room_id = $1 AND NOT c.archived
+		 WHERE c.room_id = $1 AND NOT c.archived AND NOT c.private
 		   AND NOT EXISTS (SELECT 1 FROM channel_members cm
 		                   WHERE cm.channel_id = c.id AND cm.participant_id = $2)
 		 ORDER BY c.name ASC`, roomID, participantID)
@@ -215,7 +215,7 @@ func (s *Store) BrowsableChannels(ctx context.Context, roomID, participantID str
 		var c Channel
 		var count int64
 		if err := rows.Scan(&c.ID, &c.RoomID, &c.Name, &c.Topic, &c.CreatedBy,
-			&c.Archived, &c.CreatedAt, &count); err != nil {
+			&c.Archived, &c.Private, &c.CreatedAt, &count); err != nil {
 			return nil, err
 		}
 		c.MemberCount = &count
@@ -238,18 +238,18 @@ func (s *Store) MarkChannelRead(ctx context.Context, participantID, channelID st
 func (s *Store) ChannelByID(ctx context.Context, roomID, id string) (Channel, error) {
 	var c Channel
 	err := s.pool.QueryRow(ctx,
-		`SELECT id, room_id, name, topic, created_by, archived, created_at
+		`SELECT id, room_id, name, topic, created_by, archived, private, created_at
 		 FROM channels WHERE room_id = $1 AND id = $2`, roomID, id,
-	).Scan(&c.ID, &c.RoomID, &c.Name, &c.Topic, &c.CreatedBy, &c.Archived, &c.CreatedAt)
+	).Scan(&c.ID, &c.RoomID, &c.Name, &c.Topic, &c.CreatedBy, &c.Archived, &c.Private, &c.CreatedAt)
 	return c, mapRowErr(err)
 }
 
 func (s *Store) ChannelByName(ctx context.Context, roomID, name string) (Channel, error) {
 	var c Channel
 	err := s.pool.QueryRow(ctx,
-		`SELECT id, room_id, name, topic, created_by, archived, created_at
+		`SELECT id, room_id, name, topic, created_by, archived, private, created_at
 		 FROM channels WHERE room_id = $1 AND name = $2`, roomID, name,
-	).Scan(&c.ID, &c.RoomID, &c.Name, &c.Topic, &c.CreatedBy, &c.Archived, &c.CreatedAt)
+	).Scan(&c.ID, &c.RoomID, &c.Name, &c.Topic, &c.CreatedBy, &c.Archived, &c.Private, &c.CreatedAt)
 	return c, mapRowErr(err)
 }
 

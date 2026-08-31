@@ -1462,3 +1462,65 @@ func TestChannelMembership(t *testing.T) {
 	bob.must("GET", "/api/v1/channels/secret/messages", nil, 403)
 	bob.must("POST", "/api/v1/channels/general/leave", nil, 409)
 }
+
+// TestPrivateChannels is the FR #2 boundary suite: a private channel is
+// invite-only, hidden from browse, un-self-joinable; a member adds others,
+// only an admin removes them, and #general membership stays pinned.
+func TestPrivateChannels(t *testing.T) {
+	srv, _ := newTestServer(t)
+	secret, alice, bob := setupRoom(t, srv.URL)
+
+	// a third member, carol, joins the room (member role, not admin)
+	carol := &testClient{t: t, base: srv.URL}
+	cj := carol.must("POST", "/api/v1/rooms/join",
+		map[string]any{"invite_code": secret, "name": "carol", "description": "carol the test agent"}, 201)
+	carol.token = cj["token"].(string)
+
+	// alice creates a private #war-room and is auto-joined as its creator
+	ch := alice.must("POST", "/api/v1/channels",
+		map[string]any{"name": "war-room", "topic": "ops", "private": true}, 201)
+	if ch["private"] != true {
+		t.Fatalf("created channel private = %v, want true", ch["private"])
+	}
+	warID := ch["id"].(string)
+	alice.must("POST", "/api/v1/channels/war-room/messages", map[string]any{"body": "opening"}, 201)
+
+	// --- private channels never appear in browse ---
+	for _, raw := range bob.must("GET", "/api/v1/channels/browse", nil, 200)["channels"].([]any) {
+		if raw.(map[string]any)["id"] == warID {
+			t.Fatal("browse leaked a private channel")
+		}
+	}
+
+	// --- bob cannot add himself; every content path is gated ---
+	bob.must("POST", "/api/v1/channels/war-room/join", nil, 403)
+	bob.must("POST", "/api/v1/channels/war-room/messages", map[string]any{"body": "hi"}, 403)
+	bob.must("GET", "/api/v1/channels/war-room/messages", nil, 403)
+	for _, raw := range bob.must("GET", "/api/v1/channels", nil, 200)["channels"].([]any) {
+		if raw.(map[string]any)["id"] == warID {
+			t.Fatal("bob's channel list leaked the private channel")
+		}
+	}
+
+	// --- a non-member cannot add people to it (must be a member first) ---
+	bob.must("POST", "/api/v1/channels/war-room/members", map[string]any{"participant": "carol"}, 403)
+
+	// --- a member (alice) adds bob; bob can now read and post ---
+	alice.must("POST", "/api/v1/channels/war-room/members", map[string]any{"participant": "bob"}, 200)
+	if n := len(bob.must("GET", "/api/v1/channels/war-room/messages", nil, 200)["messages"].([]any)); n != 1 {
+		t.Fatalf("after add bob sees %d messages, want 1", n)
+	}
+	bob.must("POST", "/api/v1/channels/war-room/messages", map[string]any{"body": "in"}, 201)
+
+	// --- any member can add others: bob (member, not admin) adds carol ---
+	bob.must("POST", "/api/v1/channels/war-room/members", map[string]any{"participant": "carol"}, 200)
+	carol.must("GET", "/api/v1/channels/war-room/messages", nil, 200)
+
+	// --- removing others is admin-only ---
+	bob.must("DELETE", "/api/v1/channels/war-room/members/carol", nil, 403)
+	alice.must("DELETE", "/api/v1/channels/war-room/members/carol", nil, 200)
+	carol.must("GET", "/api/v1/channels/war-room/messages", nil, 403)
+
+	// --- #general membership is pinned: nobody can be removed from it ---
+	alice.must("DELETE", "/api/v1/channels/general/members/bob", nil, 409)
+}

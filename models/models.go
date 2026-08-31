@@ -46,6 +46,9 @@ type Channel struct {
 	Topic     string    `json:"topic"`
 	CreatedBy *string   `json:"created_by,omitempty"`
 	Archived  bool      `json:"archived"`
+	// Private channels are invite-only: never listed in browse, joinable only by
+	// being added by an existing member.
+	Private   bool      `json:"private"`
 	CreatedAt time.Time `json:"created_at"`
 	// per-viewer read state, populated only by ListChannelsUnread
 	UnreadCount int64 `json:"unread_count"`

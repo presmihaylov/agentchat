@@ -40,11 +40,80 @@ func (s *Server) handleJoinChannel(w http.ResponseWriter, r *http.Request, p mod
 		writeErr(w, http.StatusConflict, "channel is archived")
 		return
 	}
+	// Private channels are invite-only: you cannot add yourself, a member must add you.
+	if ch.Private {
+		writeErr(w, http.StatusForbidden, "this channel is invite-only; ask a member to add you")
+		return
+	}
 	if _, err := s.store.JoinChannel(r.Context(), p.RoomID, ch.ID, p.ID, ch.Name); err != nil {
 		writeStoreErr(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, ch)
+}
+
+type addMemberReq struct {
+	Participant string `json:"participant"`
+}
+
+// handleAddChannelMember lets any current member add another participant to a
+// channel. This is the only way into a private channel: a member adds you.
+func (s *Server) handleAddChannelMember(w http.ResponseWriter, r *http.Request, p models.Participant) {
+	ch, err := s.resolveChannel(r, p, r.PathValue("id"))
+	if err != nil {
+		writeStoreErr(w, err)
+		return
+	}
+	if ch.Archived {
+		writeErr(w, http.StatusConflict, "channel is archived")
+		return
+	}
+	if !s.requireChannelMember(w, r, p, ch.ID) {
+		return
+	}
+	var req addMemberReq
+	if !readJSON(w, r, &req) {
+		return
+	}
+	target, err := s.resolveParticipant(r, p, req.Participant)
+	if err != nil {
+		writeStoreErr(w, err)
+		return
+	}
+	if _, err := s.store.JoinChannel(r.Context(), p.RoomID, ch.ID, target.ID, ch.Name); err != nil {
+		writeStoreErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, ch)
+}
+
+// handleRemoveChannelMember removes another participant from a channel. Admin
+// only; #general is pinned so nobody can be removed from it.
+func (s *Server) handleRemoveChannelMember(w http.ResponseWriter, r *http.Request, p models.Participant) {
+	if !requireAdmin(w, p) {
+		return
+	}
+	ch, err := s.resolveChannel(r, p, r.PathValue("id"))
+	if err != nil {
+		writeStoreErr(w, err)
+		return
+	}
+	if ch.Name == "general" {
+		writeErr(w, http.StatusConflict, "the general channel cannot be left")
+		return
+	}
+	target, err := s.resolveParticipant(r, p, r.PathValue("pid"))
+	if err != nil {
+		writeStoreErr(w, err)
+		return
+	}
+	if _, err := s.store.LeaveChannel(r.Context(), p.RoomID, ch.ID, target.ID, ch.Name); err != nil {
+		writeStoreErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{
+		"status": "removed", "channel_id": ch.ID, "participant_id": target.ID,
+	})
 }
 
 // handleLeaveChannel removes the caller from a channel. #general is pinned:
@@ -67,8 +136,9 @@ func (s *Server) handleLeaveChannel(w http.ResponseWriter, r *http.Request, p mo
 }
 
 // requireChannelMember gates a channel's contents by membership. A non-member
-// gets 403. FR #2 will make private channels 404 here so they don't confirm
-// they exist; public channels stay 403 (you can see them in browse anyway).
+// gets 403 whether the channel is public or private. Content stays fully gated;
+// a private channel is already hidden from the channel list, browse, and search,
+// so a non-member has no path to its contents.
 func (s *Server) requireChannelMember(w http.ResponseWriter, r *http.Request, p models.Participant, channelID string) bool {
 	ok, err := s.store.IsChannelMember(r.Context(), channelID, p.ID)
 	if err != nil {
@@ -98,8 +168,9 @@ func (s *Server) handleMarkRead(w http.ResponseWriter, r *http.Request, p models
 }
 
 type createChannelReq struct {
-	Name  string `json:"name"`
-	Topic string `json:"topic"`
+	Name    string `json:"name"`
+	Topic   string `json:"topic"`
+	Private bool   `json:"private"`
 }
 
 func (s *Server) handleCreateChannel(w http.ResponseWriter, r *http.Request, p models.Participant) {
@@ -116,7 +187,7 @@ func (s *Server) handleCreateChannel(w http.ResponseWriter, r *http.Request, p m
 		writeErr(w, http.StatusBadRequest, "topic too long")
 		return
 	}
-	ch, err := s.store.CreateChannel(r.Context(), p.RoomID, req.Name, req.Topic, p.ID)
+	ch, err := s.store.CreateChannel(r.Context(), p.RoomID, req.Name, req.Topic, p.ID, req.Private)
 	if err != nil {
 		writeStoreErr(w, err)
 		return
