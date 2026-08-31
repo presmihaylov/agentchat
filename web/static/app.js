@@ -476,11 +476,14 @@
     const agents = participants.filter((p) => !p.is_human);
     const ownerOf = (a) => (a.owner_id && humans.find((h) => h.id === a.owner_id)) ? a.owner_id : null;
     const vis = (p) => p.online || showOffline;
+    // within an expanded parent, online agents come first; offline sink below.
+    // stable sort preserves each group's existing order.
+    const onlineFirst = (list) => [...list].sort((a, b) => (b.online ? 1 : 0) - (a.online ? 1 : 0));
     const offlineTotal = participants.filter((p) => !p.online).length;
     const expanded = expandedSet();
 
     humans.forEach((h) => {
-      const kids = agents.filter((a) => ownerOf(a) === h.id && vis(a));
+      const kids = onlineFirst(agents.filter((a) => ownerOf(a) === h.id && vis(a)));
       // show a human if it is visible itself, or it has a visible owned agent
       if (!vis(h) && kids.length === 0) return;
       const hasKids = kids.length > 0;
@@ -493,7 +496,7 @@
       if (!collapsed) kids.forEach((a) => ul.appendChild(participantLi(a, true)));
     });
 
-    const ownerless = agents.filter((a) => ownerOf(a) === null && vis(a));
+    const ownerless = onlineFirst(agents.filter((a) => ownerOf(a) === null && vis(a)));
     if (ownerless.length > 0) {
       const h = document.createElement('li');
       h.className = 'group-label';
