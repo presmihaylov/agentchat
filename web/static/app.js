@@ -675,14 +675,58 @@
     catch (e) { alert(e.message); }
   };
 
+  // optimistic sends: the placeholder shows instantly, its server echo settles it
+  const pendingSends = [];
+
+  const optimisticEl = (body, rootID, att) => {
+    const m = {
+      id: 'tmp-' + Date.now() + '-' + pendingSends.length,
+      author_id: me.id, author_name: me.name,
+      body, created_at: new Date().toISOString(),
+      thread_root_id: rootID || null,
+      reply_count: 0, markers: [],
+      attachments: att ? [att] : [],
+    };
+    const el = msgEl(m, !!rootID);
+    el.classList.add('pending');
+    return el;
+  };
+
+  // drop the optimistic placeholder for one of my sends once its real copy lands
+  const settleMine = (m) => {
+    if (m.author_id !== me.id) return;
+    const i = pendingSends.findIndex((p) => p.rootID === (m.thread_root_id || null) && p.body === m.body);
+    if (i < 0) return;
+    pendingSends[i].node.remove();
+    pendingSends.splice(i, 1);
+  };
+
   const post = async (body, threadRootID) => {
+    const rootID = threadRootID || null;
+    const att = (pendingAttachment && !threadRootID) ? pendingAttachment : null;
     const payload = { body };
     if (threadRootID) payload.thread_root_id = threadRootID;
-    if (pendingAttachment && !threadRootID) {
-      payload.attachment_ids = [pendingAttachment.id];
+    if (att) payload.attachment_ids = [att.id];
+
+    // show the message immediately, before the server round-trip
+    const node = optimisticEl(body, rootID, att);
+    const rec = { body, rootID, node };
+    pendingSends.push(rec);
+    if (!rootID && current) {
+      const box = $('messages'); box.appendChild(node); box.scrollTop = box.scrollHeight;
+    } else if (rootID && rootID === openThreadRoot) {
+      const box = $('thread-messages'); box.appendChild(node); box.scrollTop = box.scrollHeight;
     }
-    await api(`/api/v1/channels/${current.id}/messages`, { method: 'POST', body: payload });
-    if (!threadRootID) { pendingAttachment = null; $('attach-pending').classList.add('hidden'); }
+    if (att) { pendingAttachment = null; $('attach-pending').classList.add('hidden'); }
+
+    try {
+      await api(`/api/v1/channels/${current.id}/messages`, { method: 'POST', body: payload });
+    } catch (e) {
+      const i = pendingSends.indexOf(rec);
+      if (i >= 0) pendingSends.splice(i, 1);
+      node.remove(); // roll back the placeholder; caller restores the draft
+      throw e;
+    }
   };
 
   // ---------- live updates ----------
@@ -714,6 +758,7 @@
         setTitle();
       }
       if (current && m.channel_id === current.id && !m.thread_root_id) {
+        settleMine(m); // clear my optimistic placeholder before the real append
         const box = $('messages');
         const nearBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 120;
         box.appendChild(msgEl(m, false));
@@ -732,7 +777,10 @@
           renderChannels();
         }
       }
-      if (m.thread_root_id && m.thread_root_id === openThreadRoot) openThread(openThreadRoot);
+      if (m.thread_root_id && m.thread_root_id === openThreadRoot) {
+        settleMine(m); // the rebuild wipes the placeholder node; drop its record too
+        openThread(openThreadRoot);
+      }
       if (m.thread_root_id && current && m.channel_id === current.id) {
         await refreshRootBar(m.thread_root_id); // just the root's reply bar, not the whole channel
         loadThreads(); // tree + reply-bar unread glow
@@ -853,7 +901,8 @@
     const input = $('composer-input');
     const text = input.value.trim();
     if ((!text && !pendingAttachment) || !current) return;
-    try { await post(text); input.value = ''; resetComposer(input); } catch (e) { alert(e.message); }
+    input.value = ''; resetComposer(input); // clear instantly; post shows the placeholder
+    try { await post(text); } catch (e) { input.value = text; autoGrow(input); alert(e.message); }
   });
 
   $('thread-composer').addEventListener('submit', async (ev) => {
@@ -861,7 +910,9 @@
     const input = $('thread-input');
     const text = input.value.trim();
     if (!text || !openThreadRoot) return;
-    try { await post(text, openThreadRoot); input.value = ''; resetComposer(input); } catch (e) { alert(e.message); }
+    const root = openThreadRoot;
+    input.value = ''; resetComposer(input); // clear instantly; post shows the placeholder
+    try { await post(text, root); } catch (e) { input.value = text; autoGrow(input); alert(e.message); }
   });
 
   // @-mention autocomplete: typing "@pre" pops matching participants + broadcasts.
