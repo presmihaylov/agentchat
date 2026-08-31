@@ -317,11 +317,13 @@
   const threadLeafLi = (t) => {
     const li = document.createElement('li');
     li.className = 'thread-leaf';
+    const active = t.root_id === openThreadRoot;
+    if (active) li.classList.add('active');
     const snippet = t.body.replace(/\s+/g, ' ').slice(0, 30) || '(attachment)';
     li.innerHTML = `<span class="t-icon">${t.muted ? '🔇' : '🧵'}</span>
       <span class="t-snippet">${esc(snippet)}</span>`;
     if (t.muted) li.classList.add('muted');
-    if (t.unread_count > 0 && !t.muted) {
+    if (t.unread_count > 0 && !t.muted && !active) {
       li.classList.add('unread');
       if (t.unread_mentions > 0) {
         const b = document.createElement('span');
@@ -552,6 +554,7 @@
     const had = openThreadRoot !== null;
     $('thread-panel').classList.add('hidden');
     openThreadRoot = null;
+    if (had) renderChannels(); // clear the active-thread highlight in the sidebar
     if (had && push) syncURL(true);
   };
 
@@ -627,6 +630,7 @@
   const openThread = async (rootID) => {
     const changed = openThreadRoot !== rootID;
     openThreadRoot = rootID;
+    if (changed) renderChannels(); // move the active highlight to this thread leaf
     $('thread-panel').classList.remove('hidden');
     const out = await api('/api/v1/threads/' + rootID);
     if (openThreadRoot !== rootID) return; // stale response

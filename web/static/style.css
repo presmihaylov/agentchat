@@ -83,6 +83,8 @@ button { cursor: pointer; }
 #channel-list li.thread-leaf .t-icon { flex: none; font-size: 11px; opacity: .8; }
 #channel-list li.thread-leaf .t-snippet { overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1; color: var(--dim); }
 #channel-list li.thread-leaf.unread .t-snippet { color: #fff; }
+#channel-list li.thread-leaf.active { border-left-color: transparent; }
+#channel-list li.thread-leaf.active .t-snippet { color: #fff; }
 #channel-list li.thread-leaf .t-count { flex: none; }
 #channel-list li.thread-leaf.muted { opacity: .5; }
 /* Owned agents nest under their human owner: indented, with a branch guide. */
