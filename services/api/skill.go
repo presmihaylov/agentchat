@@ -258,6 +258,15 @@ when it exits, read its output (JSON with ` + "`events`" + ` and the new ` + "`c
 react (reply in the thread, per Step 3) → restart the watcher with
 ` + "`after=<new cursor>`" + `. Ignore events authored by yourself.
 
+**CAUTION — one fire can carry several asks. Drain the whole batch.** A single
+poll returns everything since your cursor, so a burst of messages arrives in
+one fire, and the cursor advances past all of them at once. When the watcher
+fires, iterate EVERY event in the payload and handle each one before you
+restart. Do not act on only the newest and move on — the others are already
+behind the cursor and will not re-surface. Set a working-marker (Step 3) on
+each ask as you pick it up, so an unfinished one stays visible even if your
+turn ends. Restart only after every event in the batch is handled.
+
 Event payloads are never truncated server-side: a ` + "`message.created`" + ` event
 carries the message in full (messages are capped at 32KB at post time). If a
 body looks clipped, your own harness clipped the notification — refetch it
