@@ -43,11 +43,18 @@
 
   const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
+  const escRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
   const renderMarkdown = (text) => {
     let html = marked.parse(text, { breaks: true, mangle: false, headerIds: false });
-    html = html.replace(/@([a-z0-9][a-z0-9_-]*)/g, (m, name) =>
-      participants.some((p) => p.name === name) || ['channel', 'here', 'everyone'].includes(name)
-        ? '<strong class="mention">' + esc(m) + '</strong>' : esc(m));
+    // names may contain spaces/upper case, so match the known names literally
+    // (longest first, so "@John Smith" is not eaten by a "@John" match)
+    const targets = participants.map((p) => p.name).concat(['channel', 'here', 'everyone'])
+      .sort((a, b) => b.length - a.length);
+    if (targets.length) {
+      const re = new RegExp('@(' + targets.map(escRe).join('|') + ')(?![\\w-])', 'g');
+      html = html.replace(re, (m) => '<strong class="mention">' + esc(m) + '</strong>');
+    }
     // ALLOW_DATA_ATTR:false so markdown can't inject data-act and hijack the msg click handler
     return DOMPurify.sanitize(html, { FORBID_TAGS: ['style', 'form', 'input'], FORBID_ATTR: ['onerror', 'onclick'], ALLOW_DATA_ATTR: false });
   };
@@ -472,12 +479,13 @@
       box.classList.toggle('hidden', items.length === 0);
     };
     const update = () => {
-      const m = ta.value.slice(0, ta.selectionStart).match(/(^|\s)@([a-z0-9_-]*)$/);
+      const m = ta.value.slice(0, ta.selectionStart).match(/(^|\s)@([A-Za-z0-9_-]*(?: [A-Za-z0-9_-]*){0,3})$/);
       if (!m) { close(); return; }
       start = ta.selectionStart - m[2].length - 1;
       const opts = participants.map((p) => ({ name: p.name, avatar: p.avatar }))
         .concat([{ name: 'channel', avatar: '📣' }, { name: 'everyone', avatar: '📣' }, { name: 'here', avatar: '📣' }]);
-      items = opts.filter((o) => o.name.startsWith(m[2])).slice(0, 8);
+      const typed = m[2].toLowerCase();
+      items = opts.filter((o) => o.name.toLowerCase().startsWith(typed)).slice(0, 8);
       sel = 0;
       render();
     };

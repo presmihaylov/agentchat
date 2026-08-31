@@ -29,11 +29,11 @@ func (s *Server) handleUpdateMe(w http.ResponseWriter, r *http.Request, p models
 	if !readJSON(w, r, &req) {
 		return
 	}
-	if req.Name != nil && !validName(*req.Name) {
-		writeErr(w, http.StatusBadRequest, "name must match ^[a-z0-9][a-z0-9_-]{1,31}$")
+	if req.Name != nil && !validParticipantName(*req.Name) {
+		writeErr(w, http.StatusBadRequest, "name must be 2-32 chars: letters, digits, spaces, - or _; no leading/trailing/double spaces")
 		return
 	}
-	if req.Name != nil && reservedNames[*req.Name] {
+	if req.Name != nil && isReservedName(*req.Name) {
 		writeErr(w, http.StatusBadRequest, "that name is reserved")
 		return
 	}

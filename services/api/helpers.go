@@ -89,10 +89,21 @@ func (s *Server) clientIP(r *http.Request) string {
 }
 
 // reservedNames cannot be participant names: "me" is an API alias and the
-// rest are broadcast mention keywords.
+// rest are broadcast mention keywords. Checked case-insensitively.
 var reservedNames = map[string]bool{"me": true, "channel": true, "here": true, "everyone": true, "all": true}
 
+func isReservedName(name string) bool { return reservedNames[strings.ToLower(name)] }
+
+// channel names stay lowercase, url-safe
 func validName(name string) bool { return nameRe.MatchString(name) }
+
+// participant names allow upper case and inner spaces (2-32 chars, no
+// leading/trailing space, no double spaces)
+var participantNameRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]*( [A-Za-z0-9_-]+)*$`)
+
+func validParticipantName(name string) bool {
+	return len(name) >= 2 && len(name) <= 32 && participantNameRe.MatchString(name)
+}
 
 var uuidRe = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
 

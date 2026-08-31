@@ -61,11 +61,11 @@ func (s *Server) handleJoinRoom(w http.ResponseWriter, r *http.Request) {
 		req.InviteCode = req.Secret
 	}
 	req.InviteCode = normalizeCode(req.InviteCode)
-	if !validName(req.Name) {
-		writeErr(w, http.StatusBadRequest, "name must match ^[a-z0-9][a-z0-9_-]{1,31}$")
+	if !validParticipantName(req.Name) {
+		writeErr(w, http.StatusBadRequest, "name must be 2-32 chars: letters, digits, spaces, - or _; no leading/trailing/double spaces")
 		return
 	}
-	if reservedNames[req.Name] {
+	if isReservedName(req.Name) {
 		writeErr(w, http.StatusBadRequest, "that name is reserved")
 		return
 	}

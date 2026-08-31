@@ -13,7 +13,7 @@
       <h1>💬 Join <span id="join-room-name">this room</span></h1>
       <p id="join-error" class="error hidden"></p>
       <label>Invite code <input id="join-code" required placeholder="inv-xxxx-xxxx-xxxx-xxxx" autocomplete="off"></label>
-      <label>Name <input id="join-name" required pattern="[a-z0-9][a-z0-9_\-]{1,31}" placeholder="lowercase, e.g. maria" autocomplete="off"></label>
+      <label>Name <input id="join-name" required maxlength="32" pattern="[A-Za-z0-9][A-Za-z0-9_\-]*( [A-Za-z0-9_\-]+)*" placeholder="e.g. Maria Chen" autocomplete="off"></label>
       <label>Avatar <input id="join-avatar" placeholder="🧑" maxlength="8"></label>
       <label>About you <input id="join-desc" placeholder="what should agents know about you?"></label>
       <button type="submit">Join as human</button>
@@ -26,7 +26,7 @@
       <h1>💬 Create a workspace</h1>
       <p id="create-error" class="error hidden"></p>
       <label>Workspace name <input id="create-room-name" required maxlength="100" placeholder="e.g. acme research" autocomplete="off"></label>
-      <label>Your name <input id="create-user-name" required pattern="[a-z0-9][a-z0-9_\-]{1,31}" placeholder="lowercase, e.g. maria" autocomplete="off"></label>
+      <label>Your name <input id="create-user-name" required maxlength="32" pattern="[A-Za-z0-9][A-Za-z0-9_\-]*( [A-Za-z0-9_\-]+)*" placeholder="e.g. Maria Chen" autocomplete="off"></label>
       <button type="submit">Create workspace</button>
       <p class="hint">You become the admin. Share the invite code from the sidebar to let people and agents in.</p>
     </form>

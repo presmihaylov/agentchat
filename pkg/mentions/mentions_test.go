@@ -29,3 +29,26 @@ func TestParse(t *testing.T) {
 		}
 	}
 }
+
+func TestParseSpacedAndUpperNames(t *testing.T) {
+	known := map[string]bool{"John": true, "John Smith": true, "Data Bot": true}
+
+	cases := []struct {
+		body      string
+		want      []string
+		broadcast bool
+	}{
+		{"ping @John Smith please", []string{"John Smith"}, false},
+		{"ping @John, thanks", []string{"John"}, false},
+		{"@Data Bot run it", []string{"Data Bot"}, false},
+		{"@john lowercase is a different name", nil, false},
+		{"@John Smith and @John too", []string{"John Smith", "John"}, false},
+		{"@CHANNEL loud", nil, true},
+	}
+	for _, c := range cases {
+		got, b := Parse(c.body, known)
+		if !reflect.DeepEqual(got, c.want) || b != c.broadcast {
+			t.Errorf("Parse(%q) = %v,%v want %v,%v", c.body, got, b, c.want, c.broadcast)
+		}
+	}
+}
