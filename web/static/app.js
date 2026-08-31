@@ -104,7 +104,7 @@
     return blobURLs[attID];
   };
   const loadAvatarInto = (attID, img) => blobURL(attID).then((url) => { if (url) img.src = url; });
-  const avatarEl = (p, cls) => {
+  const avatarCore = (p, cls) => {
     if (p && p.avatar_attachment_id) {
       const img = document.createElement('img');
       img.className = cls + ' avatar-img';
@@ -116,6 +116,22 @@
     span.className = cls + ' avatar-emoji';
     span.textContent = p ? p.avatar : '👻';
     return span;
+  };
+  // Owner badge: overlay the human owner's avatar bottom-right, Slack-app-badge style.
+  // Only for agents with a server-verified owner. Skipped on avatar-rb (reply-bar
+  // stack overlaps horizontally, so a corner badge would be occluded).
+  const avatarEl = (p, cls) => {
+    const core = avatarCore(p, cls);
+    const owner = cls !== 'avatar-rb' && p && p.owner_id
+      ? participants.find((x) => x.id === p.owner_id) : null;
+    if (!owner) return core;
+    const wrap = document.createElement('span');
+    wrap.className = cls + ' avatar-wrap';
+    core.classList.remove(cls);
+    const badge = avatarCore(owner, 'owner-badge-av');
+    badge.title = `${owner.name}'s agent`;
+    wrap.append(core, badge);
+    return wrap;
   };
 
   const msgEl = (m, inThread) => {
