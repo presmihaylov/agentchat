@@ -39,6 +39,8 @@ button { cursor: pointer; }
 #sidebar li .desc-preview { color: var(--dim); font-size: 11px; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 #sidebar li.offline { opacity: .55; }
 #sidebar li.offline-toggle { color: var(--dim); font-size: 11px; text-transform: uppercase; margin-top: 4px; }
+#sidebar li.group-label { color: var(--dim); font-size: 10px; text-transform: uppercase; letter-spacing: .06em; cursor: default; margin-top: 6px; }
+#sidebar li.group-label:hover { background: none; }
 
 /* participant profile popup */
 #profile-modal { position: fixed; inset: 0; background: rgba(0,0,0,.55); display: flex; align-items: center; justify-content: center; z-index: 30; }

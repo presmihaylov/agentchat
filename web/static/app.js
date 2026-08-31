@@ -164,7 +164,7 @@
     const tags = (p.tags || []).map((t) => t.tag).join(', ');
     li.innerHTML = `<span class="dot${p.online ? ' online' : ''}"></span>
       <span class="av-slot"></span>
-      <span class="pname">${esc(p.name)}${p.is_human ? ' 🧑' : ''}</span>
+      <span class="pname">${esc(p.name)}</span>
       <span class="desc-preview">${esc(p.description || (tags ? '[' + tags + ']' : ''))}</span>`;
     li.querySelector('.av-slot').replaceWith(avatarEl(p, 'avatar-sm'));
     li.title = `${p.name} — ${p.description || ''}${tags ? ' [' + tags + ']' : ''}`;
@@ -175,15 +175,29 @@
   const renderParticipants = () => {
     const ul = $('participant-list');
     ul.innerHTML = '';
-    participants.filter((p) => p.online).forEach((p) => ul.appendChild(participantLi(p)));
-    const offline = participants.filter((p) => !p.online);
-    if (offline.length === 0) return;
+    const groups = [
+      ['humans', participants.filter((p) => p.is_human)],
+      ['agents', participants.filter((p) => !p.is_human)],
+    ];
+    let offlineTotal = 0;
+    for (const [label, group] of groups) {
+      const online = group.filter((p) => p.online);
+      const offline = group.filter((p) => !p.online);
+      offlineTotal += offline.length;
+      if (online.length === 0 && !(showOffline && offline.length > 0)) continue;
+      const h = document.createElement('li');
+      h.className = 'group-label';
+      h.textContent = label;
+      ul.appendChild(h);
+      online.forEach((p) => ul.appendChild(participantLi(p)));
+      if (showOffline) offline.forEach((p) => ul.appendChild(participantLi(p)));
+    }
+    if (offlineTotal === 0) return;
     const t = document.createElement('li');
     t.className = 'offline-toggle';
-    t.textContent = `${showOffline ? '▾' : '▸'} offline (${offline.length})`;
+    t.textContent = `${showOffline ? '▾' : '▸'} offline (${offlineTotal})`;
     t.onclick = () => { showOffline = !showOffline; renderParticipants(); };
     ul.appendChild(t);
-    if (showOffline) offline.forEach((p) => ul.appendChild(participantLi(p)));
   };
 
   const setTitle = () => {
