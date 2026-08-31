@@ -69,7 +69,10 @@
       .sort((a, b) => b.length - a.length);
     if (targets.length) {
       const re = new RegExp('@(' + targets.map(escRe).join('|') + ')(?![\\w-])', 'g');
-      html = html.replace(re, (m) => '<strong class="mention">' + esc(m) + '</strong>');
+      // a broadcast keyword or my own name targets me — style those stronger
+      const meTargets = new Set([me.name, 'channel', 'here', 'everyone']);
+      html = html.replace(re, (m, name) =>
+        `<strong class="mention${meTargets.has(name) ? ' mention-me' : ''}">${esc(m)}</strong>`);
     }
     // ALLOW_DATA_ATTR:false so markdown can't inject data-act and hijack the msg click handler;
     // SANITIZE_NAMED_PROPS namespaces any user id/name so markdown can't DOM-clobber our elements
@@ -184,7 +187,6 @@
     const el = document.createElement('div');
     el.className = 'msg';
     el.dataset.id = m.id;
-    if ((m.mentions || []).includes(me.name)) el.classList.add('mentioned');
     if (m.is_broadcast) el.classList.add('broadcast');
 
     const canEdit = m.author_id === me.id;

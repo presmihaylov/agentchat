@@ -157,8 +157,12 @@ button { cursor: pointer; }
 .msg-marker .mk-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .msg-marker .mk-text strong { color: var(--text); font-weight: 600; }
 .msg-marker .mk-status { color: var(--accent); }
-.msg.mentioned { background: var(--mention); }
-.msg.broadcast { background: var(--broadcast); }
+/* Mentions highlight the token itself, not the whole message. A plain chip for
+   anyone; a stronger accent pill when the target is YOU (your name or a
+   @channel/@here/@everyone broadcast). Shared by feed, thread, composer preview. */
+.mention { font-weight: 600; color: var(--accent); background: rgba(74, 158, 218, .12);
+  padding: 0 3px; border-radius: 4px; }
+.mention-me { color: #fff; background: var(--accent); }
 .msg .edited { font-size: 11px; color: var(--dim); }
 .msg-actions { display: none; position: absolute; top: -10px; right: 8px; background: var(--panel); border: 1px solid var(--border); border-radius: 6px; }
 .msg-actions button { background: none; border: 0; color: var(--dim); padding: 3px 7px; font-size: 12px; }
