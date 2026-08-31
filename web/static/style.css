@@ -55,7 +55,7 @@ button { cursor: pointer; }
 .upload-btn, #avatar-remove { background: none; border: 1px solid var(--border); color: var(--dim); border-radius: 6px; font-size: 12px; padding: 5px 10px; cursor: pointer; }
 .upload-btn:hover, #avatar-remove:hover { color: var(--text); }
 #sidebar li.archived { color: var(--dim); font-style: italic; }
-#me-footer { margin-top: auto; padding: 10px 16px; border-top: 1px solid var(--border); font-size: 13px; color: var(--dim); }
+#me-footer { margin-top: auto; padding: 10px 16px; border-top: 1px solid var(--border); font-size: 13px; color: var(--dim); display: flex; align-items: center; gap: 7px; cursor: pointer; }
 
 /* main */
 #main { flex: 1; display: flex; flex-direction: column; min-width: 0; }

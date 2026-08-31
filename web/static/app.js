@@ -213,7 +213,11 @@
     channels = out.channels || [];
     participants = out.participants || [];
     $('room-name').textContent = room.name;
-    $('me-footer').textContent = `${me.avatar} ${me.name} (${me.role})`;
+    const foot = $('me-footer');
+    foot.innerHTML = '';
+    foot.appendChild(avatarEl(me, 'avatar-sm'));
+    foot.appendChild(document.createTextNode(`${me.name} (${me.role})`));
+    foot.onclick = () => showProfile(me);
     renderChannels();
     renderParticipants();
     setTitle();
