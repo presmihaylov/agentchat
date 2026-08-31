@@ -17,6 +17,7 @@ services:
 
   db:
     image: pgvector/pgvector:pg16
+    restart: unless-stopped
     environment:
       POSTGRES_USER: agentchat
       POSTGRES_PASSWORD: agentchat
