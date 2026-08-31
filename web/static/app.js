@@ -17,6 +17,7 @@
   let joinURL = null;
   let inviteCode = null;
   let channels = [];
+  let groups = [];           // personal sidebar sections (channel groups)
   let participants = [];
   let current = null;        // current channel object
   let openThreadRoot = null; // message id of the open thread
@@ -366,39 +367,137 @@
     return li;
   };
 
+  // One channel row (with its nested thread leaves appended right beneath it).
+  const appendChannel = (ul, ch) => {
+    const li = document.createElement('li');
+    const sigil = ch.private ? '🔒 ' : '# ';
+    li.textContent = sigil + ch.name + (ch.archived ? ' (archived)' : '');
+    if (ch.archived) li.classList.add('archived');
+    if (current && ch.id === current.id) li.classList.add('active');
+    // Any unread glows the channel name; only @mentions get a numeric badge.
+    if (ch.unread_count > 0 && !(current && ch.id === current.id)) {
+      li.classList.add('unread');
+      if (ch.unread_mentions > 0) {
+        const b = document.createElement('span');
+        b.className = 'unread-badge';
+        b.textContent = ch.unread_mentions > 99 ? '99+' : String(ch.unread_mentions);
+        li.appendChild(b);
+      }
+    }
+    li.onclick = () => selectChannel(ch);
+    li.oncontextmenu = (ev) => {
+      ev.preventDefault();
+      const items = [];
+      if (ch.private) items.push({ label: 'Add people', run: () => addPeople(ch) });
+      items.push({ label: 'Move to section…', run: () => openMoveMenu(ev.clientX, ev.clientY, ch) });
+      // #general is pinned: it can be organized into a section but never left.
+      if (ch.name !== 'general') items.push({ label: 'Leave channel', danger: true, run: () => leaveChannel(ch) });
+      openContextMenu(ev.clientX, ev.clientY, items);
+    };
+    ul.appendChild(li);
+    threads.filter((t) => t.channel_id === ch.id).forEach((t) => ul.appendChild(threadLeafLi(t)));
+  };
+
+  const groupOf = () => {
+    const map = {};
+    groups.forEach((g) => (g.channel_ids || []).forEach((cid) => { map[cid] = g.id; }));
+    return map;
+  };
+
   const renderChannels = () => {
     const ul = $('channel-list');
     ul.innerHTML = '';
-    channels.forEach((ch) => {
-      const li = document.createElement('li');
-      const sigil = ch.private ? '🔒 ' : '# ';
-      li.textContent = sigil + ch.name + (ch.archived ? ' (archived)' : '');
-      if (ch.archived) li.classList.add('archived');
-      if (current && ch.id === current.id) li.classList.add('active');
-      // Any unread glows the channel name; only @mentions get a numeric badge.
-      if (ch.unread_count > 0 && !(current && ch.id === current.id)) {
-        li.classList.add('unread');
-        if (ch.unread_mentions > 0) {
-          const b = document.createElement('span');
-          b.className = 'unread-badge';
-          b.textContent = ch.unread_mentions > 99 ? '99+' : String(ch.unread_mentions);
-          li.appendChild(b);
-        }
+    const placement = groupOf();
+
+    // ungrouped channels first, in their normal order
+    channels.filter((ch) => !placement[ch.id]).forEach((ch) => appendChannel(ul, ch));
+
+    // then each personal section, in order
+    groups.forEach((g) => {
+      const members = (g.channel_ids || []).map((cid) => channels.find((c) => c.id === cid)).filter(Boolean);
+      const header = document.createElement('li');
+      header.className = 'section-header' + (g.collapsed ? ' collapsed' : '');
+      // a collapsed section rolls up its members' attention: glow on any unread,
+      // a numeric badge for the total unread @mentions inside it.
+      const unread = members.some((c) => c.unread_count > 0 && !(current && current.id === c.id));
+      const mentions = members.reduce((n, c) => n + (c.unread_mentions || 0), 0);
+      if (g.collapsed && unread) header.classList.add('unread');
+      header.innerHTML = `<span class="sec-chevron">${g.collapsed ? '▸' : '▾'}</span><span class="sec-name">${esc(g.name)}</span>`;
+      if (g.collapsed && mentions > 0) {
+        const b = document.createElement('span');
+        b.className = 'unread-badge';
+        b.textContent = mentions > 99 ? '99+' : String(mentions);
+        header.appendChild(b);
       }
-      li.onclick = () => selectChannel(ch);
-      if (ch.name !== 'general') {
-        li.oncontextmenu = (ev) => {
-          ev.preventDefault();
-          const items = [];
-          if (ch.private) items.push({ label: 'Add people', run: () => addPeople(ch) });
-          items.push({ label: 'Leave channel', danger: true, run: () => leaveChannel(ch) });
-          openContextMenu(ev.clientX, ev.clientY, items);
-        };
-      }
-      ul.appendChild(li);
-      // nest this channel's involved threads as leaves right beneath it
-      threads.filter((t) => t.channel_id === ch.id).forEach((t) => ul.appendChild(threadLeafLi(t)));
+      header.onclick = () => toggleGroup(g);
+      header.oncontextmenu = (ev) => {
+        ev.preventDefault();
+        openContextMenu(ev.clientX, ev.clientY, [
+          { label: 'Rename section', run: () => renameGroup(g) },
+          { label: 'Delete section', danger: true, run: () => deleteGroup(g) },
+        ]);
+      };
+      ul.appendChild(header);
+      if (!g.collapsed) members.forEach((ch) => appendChannel(ul, ch));
     });
+  };
+
+  const fetchGroups = async () => {
+    try { groups = (await api('/api/v1/channel-groups')).groups || []; }
+    catch (e) { groups = []; }
+  };
+
+  // Collapse/expand is optimistic: flip locally and re-render, then persist.
+  const toggleGroup = async (g) => {
+    g.collapsed = !g.collapsed;
+    renderChannels();
+    try { await api('/api/v1/channel-groups/' + g.id, { method: 'PATCH', body: { collapsed: g.collapsed } }); }
+    catch (e) { /* next refresh corrects the flag */ }
+  };
+
+  const moveChannel = async (ch, groupID) => {
+    try {
+      await api('/api/v1/channels/' + ch.id + '/group', { method: 'PUT', body: { group_id: groupID } });
+      await fetchGroups();
+      renderChannels();
+    } catch (e) { alert(e.message); }
+  };
+
+  const openMoveMenu = (x, y, ch) => {
+    const placement = groupOf();
+    const items = groups
+      .filter((g) => placement[ch.id] !== g.id)
+      .map((g) => ({ label: g.name, run: () => moveChannel(ch, g.id) }));
+    items.push({ label: '＋ New section…', run: () => createSectionAndMove(ch) });
+    if (placement[ch.id]) items.push({ label: 'Remove from section', danger: true, run: () => moveChannel(ch, null) });
+    openContextMenu(x, y, items);
+  };
+
+  const createSectionAndMove = async (ch) => {
+    const name = prompt('New section name:');
+    if (!name || !name.trim()) return;
+    try {
+      const g = await api('/api/v1/channel-groups', { method: 'POST', body: { name: name.trim() } });
+      await moveChannel(ch, g.id);
+    } catch (e) { alert(e.message); }
+  };
+
+  const renameGroup = async (g) => {
+    const name = prompt('Rename section:', g.name);
+    if (!name || !name.trim() || name.trim() === g.name) return;
+    try {
+      await api('/api/v1/channel-groups/' + g.id, { method: 'PATCH', body: { name: name.trim() } });
+      await fetchGroups();
+      renderChannels();
+    } catch (e) { alert(e.message); }
+  };
+
+  const deleteGroup = async (g) => {
+    try {
+      await api('/api/v1/channel-groups/' + g.id, { method: 'DELETE' });
+      await fetchGroups();
+      renderChannels();
+    } catch (e) { alert(e.message); }
   };
 
   // Reply bars in the open channel view share the thread tree's unread state.
@@ -536,6 +635,7 @@
     inviteCode = out.invite_code || null;
     channels = out.channels || [];
     participants = out.participants || [];
+    await fetchGroups();
     $('room-name').textContent = room.name;
     const foot = $('me-footer');
     foot.innerHTML = '';

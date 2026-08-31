@@ -1524,3 +1524,67 @@ func TestPrivateChannels(t *testing.T) {
 	// --- #general membership is pinned: nobody can be removed from it ---
 	alice.must("DELETE", "/api/v1/channels/general/members/bob", nil, 409)
 }
+
+// TestChannelGroups is the FR #3 suite: personal sidebar sections. Groups are
+// per-participant, hold channels, collapse, and never leak across participants.
+func TestChannelGroups(t *testing.T) {
+	srv, _ := newTestServer(t)
+	_, alice, bob := setupRoom(t, srv.URL)
+
+	// alice creates a section and a channel to place in it
+	g := alice.must("POST", "/api/v1/channel-groups", map[string]any{"name": "Work"}, 201)
+	groupID := g["id"].(string)
+	if len(g["channel_ids"].([]any)) != 0 {
+		t.Fatal("new section should start empty")
+	}
+	alice.must("POST", "/api/v1/channels", map[string]any{"name": "proj"}, 201)
+
+	// duplicate section name is a conflict
+	alice.must("POST", "/api/v1/channel-groups", map[string]any{"name": "Work"}, 409)
+
+	// --- place #proj into the section; it shows in the group's channel_ids ---
+	alice.must("PUT", "/api/v1/channels/proj/group", map[string]any{"group_id": groupID}, 200)
+	got := alice.must("GET", "/api/v1/channel-groups", nil, 200)["groups"].([]any)
+	if len(got) != 1 {
+		t.Fatalf("alice has %d sections, want 1", len(got))
+	}
+	work := got[0].(map[string]any)
+	ids := work["channel_ids"].([]any)
+	if len(ids) != 1 {
+		t.Fatalf("Work holds %d channels, want 1", len(ids))
+	}
+
+	// --- sections are personal: bob sees none of alice's ---
+	if n := len(bob.must("GET", "/api/v1/channel-groups", nil, 200)["groups"].([]any)); n != 0 {
+		t.Fatalf("bob sees %d of alice's sections, want 0", n)
+	}
+	// bob cannot rename or delete alice's section (scoped to owner)
+	bob.must("PATCH", "/api/v1/channel-groups/"+groupID, map[string]any{"name": "Hijack"}, 404)
+	bob.must("DELETE", "/api/v1/channel-groups/"+groupID, nil, 404)
+
+	// --- collapse + rename persist ---
+	alice.must("PATCH", "/api/v1/channel-groups/"+groupID, map[string]any{"collapsed": true, "name": "Projects"}, 200)
+	work = alice.must("GET", "/api/v1/channel-groups", nil, 200)["groups"].([]any)[0].(map[string]any)
+	if work["collapsed"] != true || work["name"] != "Projects" {
+		t.Fatalf("update did not persist: %+v", work)
+	}
+
+	// --- moving a channel needs membership: bob is not in #proj ---
+	bg := bob.must("POST", "/api/v1/channel-groups", map[string]any{"name": "Bobs"}, 201)
+	bob.must("PUT", "/api/v1/channels/proj/group", map[string]any{"group_id": bg["id"].(string)}, 403)
+
+	// --- remove #proj from its section (group_id null) leaves it ungrouped ---
+	alice.must("PUT", "/api/v1/channels/proj/group", map[string]any{"group_id": nil}, 200)
+	work = alice.must("GET", "/api/v1/channel-groups", nil, 200)["groups"].([]any)[0].(map[string]any)
+	if len(work["channel_ids"].([]any)) != 0 {
+		t.Fatal("section should be empty after removing the channel")
+	}
+
+	// --- deleting a section keeps the channel (it just becomes ungrouped) ---
+	alice.must("PUT", "/api/v1/channels/proj/group", map[string]any{"group_id": groupID}, 200)
+	alice.must("DELETE", "/api/v1/channel-groups/"+groupID, nil, 200)
+	if n := len(alice.must("GET", "/api/v1/channel-groups", nil, 200)["groups"].([]any)); n != 0 {
+		t.Fatalf("alice still has %d sections after delete, want 0", n)
+	}
+	alice.must("GET", "/api/v1/channels/proj/messages", nil, 200) // channel survives
+}

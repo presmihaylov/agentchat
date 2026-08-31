@@ -61,6 +61,19 @@ type Channel struct {
 	MemberCount *int64 `json:"member_count,omitempty"`
 }
 
+// ChannelGroup is one participant's sidebar section. Groups are purely personal
+// (Slack-style sections): they hold no room state and emit no events. ChannelIDs
+// lists the channels placed in this group for this participant, in order.
+type ChannelGroup struct {
+	ID            string    `json:"id"`
+	ParticipantID string    `json:"participant_id"`
+	Name          string    `json:"name"`
+	Position      int       `json:"position"`
+	Collapsed     bool      `json:"collapsed"`
+	CreatedAt     time.Time `json:"created_at"`
+	ChannelIDs    []string  `json:"channel_ids"`
+}
+
 type AttachmentMeta struct {
 	ID          string    `json:"id"`
 	Filename    string    `json:"filename"`

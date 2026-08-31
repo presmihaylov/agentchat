@@ -76,6 +76,12 @@ button { cursor: pointer; }
 /* Unread with no @mention: bold + a soft accent glow on the name, no number. */
 #sidebar li.unread { font-weight: 700; color: #fff; text-shadow: 0 0 9px rgba(74, 158, 218, .5); }
 .unread-badge { margin-left: auto; background: var(--accent); color: #fff; font-size: 11px; font-weight: 700; border-radius: 10px; padding: 0 7px; line-height: 17px; flex: none; }
+/* Channel-group sections: a collapsible header above the channels it holds. */
+#channel-list li.section-header { color: var(--dim); font-size: 10px; text-transform: uppercase; letter-spacing: .06em; margin-top: 8px; font-weight: 700; }
+#channel-list li.section-header .sec-chevron { flex: none; font-size: 9px; width: 10px; opacity: .8; }
+#channel-list li.section-header .sec-name { overflow: hidden; text-overflow: ellipsis; }
+/* A collapsed section with unread members glows like an unread channel. */
+#channel-list li.section-header.unread { color: #fff; text-shadow: 0 0 9px rgba(74, 158, 218, .5); }
 .unread-divider { display: flex; align-items: center; gap: 8px; margin: 10px 0; color: #e0666b; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; }
 .unread-divider::before, .unread-divider::after { content: ''; flex: 1; border-top: 1px solid #e0666b55; }
 .unread-divider span { flex: none; }
