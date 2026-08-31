@@ -277,13 +277,27 @@ func (s *Store) AddTag(ctx context.Context, roomID, participantID, tag, taggedBy
 	}
 	defer tx.Rollback(ctx)
 
-	_, err = tx.Exec(ctx,
+	res, err := tx.Exec(ctx,
 		`INSERT INTO participant_tags (participant_id, tag, tagged_by)
 		 SELECT $1, $2, $3 WHERE EXISTS (SELECT 1 FROM participants WHERE id = $1 AND room_id = $4)
 		 ON CONFLICT DO NOTHING`,
 		participantID, tag, taggedBy, roomID)
 	if err != nil {
 		return err
+	}
+	if res.RowsAffected() == 0 {
+		// either the participant is gone (404) or the tag already exists (no-op,
+		// no duplicate event either way)
+		var exists bool
+		if err := tx.QueryRow(ctx,
+			`SELECT EXISTS (SELECT 1 FROM participants WHERE id = $1 AND room_id = $2)`,
+			participantID, roomID).Scan(&exists); err != nil {
+			return err
+		}
+		if !exists {
+			return ErrNotFound
+		}
+		return nil
 	}
 
 	payload, _ := json.Marshal(map[string]string{

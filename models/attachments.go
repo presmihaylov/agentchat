@@ -21,3 +21,16 @@ func (s *Store) AttachmentByID(ctx context.Context, roomID, id string) (Attachme
 	).Scan(&a.ID, &a.Filename, &a.ContentType, &a.SizeBytes, &a.CreatedAt, &a.RoomID, &a.UploaderID, &a.Data)
 	return a, mapRowErr(err)
 }
+
+// DeleteOrphanAttachments removes uploads over a day old that no message
+// references; 24h leaves plenty of slack between upload and post.
+func (s *Store) DeleteOrphanAttachments(ctx context.Context) (int64, error) {
+	res, err := s.pool.Exec(ctx,
+		`DELETE FROM attachments a
+		 WHERE a.created_at < now() - interval '24 hours'
+		   AND NOT EXISTS (SELECT 1 FROM message_attachments ma WHERE ma.attachment_id = a.id)`)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected(), nil
+}

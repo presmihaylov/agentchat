@@ -2,6 +2,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -19,7 +20,7 @@ Setup:
   join <secret-or-url> --name NAME         join a room, save identity to a profile
 Chat:
   post <channel> <text> [--thread MSG_ID] [--attach FILE]... [--broadcast]
-  messages <channel> [--limit N] [--before RFC3339]
+  messages <channel> [--limit N] [--before RFC3339] [--before-id MSG_ID]
   thread <message-id>
   upload <file> | download <attachment-id> [-o FILE]
 Room:
@@ -74,9 +75,21 @@ func newFlags(cmd string) *flags {
 }
 
 // parse handles flags placed before or after positional args.
+// A bare "--" stops flag parsing: everything after it is positional, so
+// message bodies starting with "-" don't get eaten as flags.
 func (f *flags) parse(args []string) []string {
 	positional := []string{}
 	rest := args
+	for i, a := range rest {
+		if a == "--" {
+			out := f.parseLoop(rest[:i], positional)
+			return append(out, rest[i+1:]...)
+		}
+	}
+	return f.parseLoop(rest, positional)
+}
+
+func (f *flags) parseLoop(rest, positional []string) []string {
 	for {
 		if err := f.fs.Parse(rest); err != nil {
 			os.Exit(2)
@@ -398,6 +411,10 @@ func cmdChannelCreate(args []string) error {
 	if err := c.do("POST", "/api/v1/channels", map[string]any{"name": pos[0], "topic": *topic}, &out); err != nil {
 		return err
 	}
+	if *f.rawJSON {
+		printJSON(out)
+		return nil
+	}
 	fmt.Printf("created #%s\n", out["name"])
 	return nil
 }
@@ -493,6 +510,7 @@ func cmdMessages(args []string) error {
 	f := newFlags("messages")
 	limit := f.fs.Int("limit", 50, "max messages")
 	before := f.fs.String("before", "", "only messages before this RFC3339 time")
+	beforeID := f.fs.String("before-id", "", "only messages strictly older than this message id (stable pagination cursor)")
 	pos := f.parse(args)
 	if len(pos) < 1 {
 		return fmt.Errorf("usage: messages <channel>")
@@ -505,6 +523,9 @@ func cmdMessages(args []string) error {
 	q.Set("limit", fmt.Sprint(*limit))
 	if *before != "" {
 		q.Set("before", *before)
+	}
+	if *beforeID != "" {
+		q.Set("before_id", *beforeID)
 	}
 	channel := url.PathEscape(strings.TrimPrefix(pos[0], "#"))
 	out := map[string]any{}
@@ -578,17 +599,16 @@ func cmdDownload(args []string) error {
 	if err != nil {
 		return err
 	}
-	w := os.Stdout
-	if *out != "" {
-		file, err := os.Create(*out)
-		if err != nil {
-			return err
-		}
-		defer file.Close()
-		w = file
+	if *out == "" {
+		_, err = c.download(pos[0], os.Stdout)
+		return err
 	}
-	_, err = c.download(pos[0], w)
-	return err
+	// buffer first so a failed download doesn't truncate an existing file
+	var buf bytes.Buffer
+	if _, err := c.download(pos[0], &buf); err != nil {
+		return err
+	}
+	return os.WriteFile(*out, buf.Bytes(), 0o644)
 }
 
 func cmdTag(args []string, add bool) error {
@@ -602,10 +622,11 @@ func cmdTag(args []string, add bool) error {
 		return err
 	}
 	target := url.PathEscape(strings.TrimPrefix(pos[0], "@"))
+	tag := strings.ToLower(strings.TrimSpace(pos[1]))
 	if add {
-		err = c.do("POST", "/api/v1/participants/"+target+"/tags", map[string]any{"tag": pos[1]}, nil)
+		err = c.do("POST", "/api/v1/participants/"+target+"/tags", map[string]any{"tag": tag}, nil)
 	} else {
-		err = c.do("DELETE", "/api/v1/participants/"+target+"/tags/"+url.PathEscape(pos[1]), nil, nil)
+		err = c.do("DELETE", "/api/v1/participants/"+target+"/tags/"+url.PathEscape(tag), nil, nil)
 	}
 	if err != nil {
 		return err

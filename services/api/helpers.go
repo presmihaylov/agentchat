@@ -37,6 +37,8 @@ func writeStoreErr(w http.ResponseWriter, err error) {
 		writeErr(w, http.StatusForbidden, "forbidden")
 	case errors.Is(err, models.ErrLastAdmin):
 		writeErr(w, http.StatusConflict, err.Error())
+	case errors.Is(err, models.ErrArchived):
+		writeErr(w, http.StatusConflict, err.Error())
 	default:
 		slog.Error("internal error", "err", err)
 		writeErr(w, http.StatusInternalServerError, "internal error")
@@ -59,13 +61,17 @@ func bearerToken(r *http.Request) string {
 	if t, ok := strings.CutPrefix(h, "Bearer "); ok {
 		return t
 	}
-	// convenience for the web UI's EventSource-less fetch flows
-	return r.URL.Query().Get("token")
+	return ""
 }
 
-func clientIP(r *http.Request) string {
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		return strings.TrimSpace(strings.Split(xff, ",")[0])
+// clientIP keys the rate limiter. X-Forwarded-For is client-controlled, so it
+// is only honored when the operator says a trusted proxy sets it — otherwise
+// forged headers would give every request a fresh bucket.
+func (s *Server) clientIP(r *http.Request) string {
+	if s.cfg.TrustProxy {
+		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+			return strings.TrimSpace(strings.Split(xff, ",")[0])
+		}
 	}
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
@@ -73,6 +79,10 @@ func clientIP(r *http.Request) string {
 	}
 	return host
 }
+
+// reservedNames cannot be participant names: "me" is an API alias and the
+// rest are broadcast mention keywords.
+var reservedNames = map[string]bool{"me": true, "channel": true, "here": true, "everyone": true, "all": true}
 
 func validName(name string) bool { return nameRe.MatchString(name) }
 

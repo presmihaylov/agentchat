@@ -45,7 +45,8 @@
     html = html.replace(/@([a-z0-9][a-z0-9_-]*)/g, (m, name) =>
       participants.some((p) => p.name === name) || ['channel', 'here', 'everyone'].includes(name)
         ? '<strong class="mention">' + esc(m) + '</strong>' : esc(m));
-    return DOMPurify.sanitize(html, { FORBID_TAGS: ['style', 'form', 'input'], FORBID_ATTR: ['onerror', 'onclick'] });
+    // ALLOW_DATA_ATTR:false so markdown can't inject data-act and hijack the msg click handler
+    return DOMPurify.sanitize(html, { FORBID_TAGS: ['style', 'form', 'input'], FORBID_ATTR: ['onerror', 'onclick'], ALLOW_DATA_ATTR: false });
   };
 
   const fmtTime = (iso) => {
@@ -72,8 +73,9 @@
     if (canEdit) actions.push('<button data-act="edit" title="Edit">✏️</button>');
     if (canDelete) actions.push('<button data-act="delete" title="Delete">🗑</button>');
 
+    // fetch-with-header + blob keeps the token out of URLs (logs, history, referrers)
     const atts = (m.attachments || []).map((a) =>
-      `<a class="attachment" href="/api/v1/attachments/${a.id}?token=${encodeURIComponent(token)}">📄 ${esc(a.filename)}</a>`).join(' ');
+      `<button class="attachment" data-att="${esc(a.id)}" data-name="${esc(a.filename)}">📄 ${esc(a.filename)}</button>`).join(' ');
 
     const threadPill = (!inThread && m.reply_count > 0)
       ? `<button class="thread-pill" data-act="thread">${m.reply_count} repl${m.reply_count === 1 ? 'y' : 'ies'} →</button>` : '';
@@ -90,7 +92,12 @@
       <div class="msg-actions">${actions.join('')}</div>`;
 
     el.addEventListener('click', (ev) => {
-      const act = ev.target.dataset && ev.target.dataset.act;
+      const attBtn = ev.target.closest('button.attachment');
+      if (attBtn && el.contains(attBtn)) { downloadAttachment(attBtn.dataset.att, attBtn.dataset.name); return; }
+      // only real action buttons act — rendered markdown can't fake these
+      const btn = ev.target.closest('.msg-actions button, button.thread-pill');
+      if (!btn || !el.contains(btn)) return;
+      const act = btn.dataset.act;
       if (act === 'thread') openThread(m.thread_root_id || m.id);
       if (act === 'edit') editMessage(m);
       if (act === 'delete') deleteMessage(m);
@@ -164,6 +171,19 @@
     box.innerHTML = '';
     out.messages.forEach((m) => box.appendChild(msgEl(m, true)));
     box.scrollTop = box.scrollHeight;
+  };
+
+  const downloadAttachment = async (id, name) => {
+    try {
+      const resp = await fetch('/api/v1/attachments/' + id, { headers: { Authorization: 'Bearer ' + token } });
+      if (!resp.ok) throw new Error('download failed (HTTP ' + resp.status + ')');
+      const url = URL.createObjectURL(await resp.blob());
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = name || 'attachment';
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
+    } catch (e) { alert(e.message); }
   };
 
   const editMessage = async (m) => {

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"errors"
 	"net/http"
 	"strings"
 
@@ -107,8 +108,13 @@ func (s *Server) handleDeleteChannel(w http.ResponseWriter, r *http.Request, p m
 // resolveChannel accepts a channel id or a name (with or without '#').
 func (s *Server) resolveChannel(r *http.Request, p models.Participant, ref string) (models.Channel, error) {
 	ref = strings.TrimPrefix(ref, "#")
-	if ch, err := s.store.ChannelByName(r.Context(), p.RoomID, ref); err == nil {
+	ch, err := s.store.ChannelByName(r.Context(), p.RoomID, ref)
+	if err == nil {
 		return ch, nil
+	}
+	// only a clean miss falls through to id lookup; other errors must surface
+	if !errors.Is(err, models.ErrNotFound) {
+		return models.Channel{}, err
 	}
 	if !isUUID(ref) {
 		return models.Channel{}, models.ErrNotFound

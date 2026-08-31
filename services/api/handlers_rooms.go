@@ -13,7 +13,7 @@ type createRoomReq struct {
 }
 
 func (s *Server) handleCreateRoom(w http.ResponseWriter, r *http.Request) {
-	if !s.joinLimit.Allow(clientIP(r)) {
+	if !s.joinLimit.Allow(s.clientIP(r)) {
 		writeErr(w, http.StatusTooManyRequests, "slow down")
 		return
 	}
@@ -47,7 +47,7 @@ type joinRoomReq struct {
 }
 
 func (s *Server) handleJoinRoom(w http.ResponseWriter, r *http.Request) {
-	if !s.joinLimit.Allow(clientIP(r)) {
+	if !s.joinLimit.Allow(s.clientIP(r)) {
 		writeErr(w, http.StatusTooManyRequests, "slow down")
 		return
 	}
@@ -58,6 +58,10 @@ func (s *Server) handleJoinRoom(w http.ResponseWriter, r *http.Request) {
 	req.Secret = normalizeSecret(req.Secret)
 	if !validName(req.Name) {
 		writeErr(w, http.StatusBadRequest, "name must match ^[a-z0-9][a-z0-9_-]{1,31}$")
+		return
+	}
+	if reservedNames[req.Name] {
+		writeErr(w, http.StatusBadRequest, "that name is reserved")
 		return
 	}
 	if req.Avatar == "" {
@@ -92,7 +96,7 @@ func (s *Server) handleJoinRoom(w http.ResponseWriter, r *http.Request) {
 
 // handlePeekRoom lets holders of a secret see the room name before joining.
 func (s *Server) handlePeekRoom(w http.ResponseWriter, r *http.Request) {
-	if !s.joinLimit.Allow(clientIP(r)) {
+	if !s.joinLimit.Allow(s.clientIP(r)) {
 		writeErr(w, http.StatusTooManyRequests, "slow down")
 		return
 	}

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"errors"
 	"io"
 	"net/http"
 	"strconv"
@@ -51,6 +52,20 @@ func (s *Server) handlePostMessage(w http.ResponseWriter, r *http.Request, p mod
 		writeErr(w, http.StatusBadRequest, "too many attachments (10 max)")
 		return
 	}
+	seenAtt := map[string]bool{}
+	dedupedAtt := make([]string, 0, len(req.AttachmentIDs))
+	for _, aid := range req.AttachmentIDs {
+		if !isUUID(aid) {
+			writeErr(w, http.StatusBadRequest, "invalid attachment id: "+aid)
+			return
+		}
+		if seenAtt[aid] {
+			continue
+		}
+		seenAtt[aid] = true
+		dedupedAtt = append(dedupedAtt, aid)
+	}
+	req.AttachmentIDs = dedupedAtt
 
 	// replies always attach to the thread root, never nest
 	if req.ThreadRootID != nil {
@@ -123,7 +138,22 @@ func (s *Server) handleListMessages(w http.ResponseWriter, r *http.Request, p mo
 		}
 		before = &t
 	}
-	msgs, err := s.store.ListChannelMessages(r.Context(), p.RoomID, ch.ID, before, limit)
+	var beforeID *string
+	var beforeAt *time.Time
+	if bid := q.Get("before_id"); bid != "" {
+		if !isUUID(bid) {
+			writeErr(w, http.StatusNotFound, "before_id not found")
+			return
+		}
+		cursor, err := s.store.MessageByID(r.Context(), p.RoomID, bid)
+		if err != nil {
+			writeStoreErr(w, err)
+			return
+		}
+		beforeID = &cursor.ID
+		beforeAt = &cursor.CreatedAt
+	}
+	msgs, err := s.store.ListChannelMessages(r.Context(), p.RoomID, ch.ID, before, beforeID, beforeAt, limit)
 	if err != nil {
 		writeStoreErr(w, err)
 		return
@@ -222,6 +252,11 @@ func (s *Server) handleGetThread(w http.ResponseWriter, r *http.Request, p model
 func (s *Server) handleUploadAttachment(w http.ResponseWriter, r *http.Request, p models.Participant) {
 	r.Body = http.MaxBytesReader(w, r.Body, maxAttachmentBytes+64*1024)
 	if err := r.ParseMultipartForm(maxAttachmentBytes); err != nil {
+		var mbe *http.MaxBytesError
+		if errors.As(err, &mbe) {
+			writeErr(w, http.StatusRequestEntityTooLarge, "attachment exceeds 5MB")
+			return
+		}
 		writeErr(w, http.StatusBadRequest, "invalid multipart form (5MB max): "+err.Error())
 		return
 	}

@@ -20,6 +20,7 @@ var (
 	ErrNotFound  = errors.New("not found")
 	ErrConflict  = errors.New("already exists")
 	ErrForbidden = errors.New("forbidden")
+	ErrArchived  = errors.New("channel is archived")
 )
 
 type Store struct {

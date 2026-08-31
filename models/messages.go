@@ -68,6 +68,19 @@ func (s *Store) CreateMessage(ctx context.Context, p CreateMessageParams) (Messa
 	}
 	defer tx.Rollback(ctx)
 
+	// archived check inside the tx so a concurrent archive can't race past
+	// the handler's pre-check; FOR SHARE blocks the archiver until we commit
+	var archived bool
+	err = tx.QueryRow(ctx,
+		`SELECT archived FROM channels WHERE id = $1 AND room_id = $2 FOR SHARE`,
+		p.ChannelID, p.RoomID).Scan(&archived)
+	if err != nil {
+		return Message{}, mapRowErr(err)
+	}
+	if archived {
+		return Message{}, ErrArchived
+	}
+
 	var id string
 	err = tx.QueryRow(ctx,
 		`INSERT INTO messages (room_id, channel_id, thread_root_id, author_id, body, is_broadcast)
@@ -129,9 +142,10 @@ func (s *Store) MessageByID(ctx context.Context, roomID, id string) (Message, er
 	return m, mapRowErr(err)
 }
 
-// ListChannelMessages returns top-level messages, oldest first, at most limit,
-// strictly older than before when set.
-func (s *Store) ListChannelMessages(ctx context.Context, roomID, channelID string, before *time.Time, limit int) ([]Message, error) {
+// ListChannelMessages returns top-level messages, oldest first, at most limit.
+// before filters strictly older; beforeID (paired with beforeAt) is a tuple
+// cursor so pages don't skip or repeat messages sharing a timestamp.
+func (s *Store) ListChannelMessages(ctx context.Context, roomID, channelID string, before *time.Time, beforeID *string, beforeAt *time.Time, limit int) ([]Message, error) {
 	if limit <= 0 || limit > 200 {
 		limit = 50
 	}
@@ -139,8 +153,9 @@ func (s *Store) ListChannelMessages(ctx context.Context, roomID, channelID strin
 		messageSelect+`
 		 WHERE m.room_id = $1 AND m.channel_id = $2 AND m.thread_root_id IS NULL
 		   AND ($3::timestamptz IS NULL OR m.created_at < $3)
-		 ORDER BY m.created_at DESC LIMIT $4`,
-		roomID, channelID, before, limit)
+		   AND ($4::uuid IS NULL OR (m.created_at, m.id) < ($5::timestamptz, $4::uuid))
+		 ORDER BY m.created_at DESC, m.id DESC LIMIT $6`,
+		roomID, channelID, before, beforeID, beforeAt, limit)
 	if err != nil {
 		return nil, err
 	}

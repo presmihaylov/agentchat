@@ -17,7 +17,8 @@ const maxEmbedAttempts = 5
 // Claimed rows move to 'inflight'; crash recovery is ResetStaleEmbeddings.
 func (s *Store) ClaimPendingEmbeddings(ctx context.Context, limit int) ([]PendingMessage, error) {
 	rows, err := s.pool.Query(ctx,
-		`UPDATE messages SET embed_status = 'inflight', embed_attempts = embed_attempts + 1
+		`UPDATE messages SET embed_status = 'inflight', embed_attempts = embed_attempts + 1,
+		        embed_claimed_at = now()
 		 WHERE id IN (
 		     SELECT id FROM messages WHERE embed_status = 'pending'
 		     ORDER BY created_at ASC LIMIT $1
@@ -46,15 +47,21 @@ func (s *Store) SaveEmbedding(ctx context.Context, messageID string, embedding [
 	}
 	defer tx.Rollback(ctx)
 
+	// Guard on 'inflight': an edit re-queues the message as 'pending' and this
+	// vector is for the old body — drop it and let the next pass re-embed.
+	res, err := tx.Exec(ctx,
+		`UPDATE messages SET embed_status = 'done' WHERE id = $1 AND embed_status = 'inflight'`,
+		messageID)
+	if err != nil {
+		return err
+	}
+	if res.RowsAffected() == 0 {
+		return nil
+	}
 	_, err = tx.Exec(ctx,
 		`INSERT INTO message_embeddings (message_id, embedding) VALUES ($1, $2)
 		 ON CONFLICT (message_id) DO UPDATE SET embedding = EXCLUDED.embedding`,
 		messageID, pgvector.NewVector(embedding))
-	if err != nil {
-		return err
-	}
-	_, err = tx.Exec(ctx,
-		`UPDATE messages SET embed_status = 'done' WHERE id = $1`, messageID)
 	if err != nil {
 		return err
 	}
@@ -75,9 +82,13 @@ func (s *Store) ReleaseEmbeddings(ctx context.Context, messageIDs []string) erro
 	return err
 }
 
-// ResetStaleEmbeddings requeues rows stuck 'inflight' (e.g. after a crash).
+// ResetStaleEmbeddings requeues rows stuck 'inflight' for over 5 minutes
+// (crashed worker). The age filter keeps one instance's startup from stealing
+// another live instance's freshly claimed batch.
 func (s *Store) ResetStaleEmbeddings(ctx context.Context) error {
 	_, err := s.pool.Exec(ctx,
-		`UPDATE messages SET embed_status = 'pending' WHERE embed_status = 'inflight'`)
+		`UPDATE messages SET embed_status = 'pending'
+		 WHERE embed_status = 'inflight'
+		   AND (embed_claimed_at IS NULL OR embed_claimed_at < now() - interval '5 minutes')`)
 	return err
 }

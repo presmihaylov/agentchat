@@ -73,7 +73,30 @@ func (s *Store) SearchSemantic(ctx context.Context, roomID string, embedding []f
 		 WHERE m.room_id = $1%s
 		 ORDER BY e.embedding <=> $2 ASC LIMIT $%d`, clause, len(args))
 
-	return s.runSearch(ctx, sql, args)
+	// HNSW returns ef_search candidates BEFORE the WHERE filters apply; with
+	// strict filters the default 40 can starve to zero rows. SET LOCAL needs a tx.
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
+	if _, err := tx.Exec(ctx, `SET LOCAL hnsw.ef_search = 400`); err != nil {
+		return nil, err
+	}
+	res, err := s.runSearchTx(ctx, tx, sql, args)
+	if err != nil {
+		return nil, err
+	}
+	return res, tx.Commit(ctx)
+}
+
+func (s *Store) runSearchTx(ctx context.Context, tx pgx.Tx, sql string, args []any) ([]SearchResult, error) {
+	rows, err := tx.Query(ctx, sql, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return collectSearchResults(rows)
 }
 
 func (s *Store) runSearch(ctx context.Context, sql string, args []any) ([]SearchResult, error) {
@@ -82,7 +105,10 @@ func (s *Store) runSearch(ctx context.Context, sql string, args []any) ([]Search
 		return nil, err
 	}
 	defer rows.Close()
+	return collectSearchResults(rows)
+}
 
+func collectSearchResults(rows pgx.Rows) ([]SearchResult, error) {
 	out := []SearchResult{}
 	for rows.Next() {
 		r, err := scanSearchResult(rows)

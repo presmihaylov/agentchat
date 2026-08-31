@@ -50,7 +50,13 @@ func (s *Store) RoomBySecret(ctx context.Context, secret string) (Room, error) {
 // RotateSecret replaces the room's join secret, invalidating the old link.
 func (s *Store) RotateSecret(ctx context.Context, roomID, newSecret string) (Room, error) {
 	var r Room
-	err := s.pool.QueryRow(ctx,
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return r, err
+	}
+	defer tx.Rollback(ctx)
+
+	err = tx.QueryRow(ctx,
 		`UPDATE rooms SET secret = $2 WHERE id = $1
 		 RETURNING id, secret, name, created_at`,
 		roomID, newSecret,
@@ -59,12 +65,22 @@ func (s *Store) RotateSecret(ctx context.Context, roomID, newSecret string) (Roo
 		return r, mapRowErr(err)
 	}
 	// never put the secret itself in the event log
-	return r, s.AppendEvent(ctx, roomID, "room.secret_rotated", map[string]string{"room_id": roomID})
+	payload, _ := json.Marshal(map[string]string{"room_id": roomID})
+	if err := appendEventTx(ctx, tx, roomID, "room.secret_rotated", payload); err != nil {
+		return r, err
+	}
+	return r, tx.Commit(ctx)
 }
 
 func (s *Store) RenameRoom(ctx context.Context, roomID, name string) (Room, error) {
 	var r Room
-	err := s.pool.QueryRow(ctx,
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return r, err
+	}
+	defer tx.Rollback(ctx)
+
+	err = tx.QueryRow(ctx,
 		`UPDATE rooms SET name = $2 WHERE id = $1
 		 RETURNING id, secret, name, created_at`,
 		roomID, name,
@@ -72,7 +88,11 @@ func (s *Store) RenameRoom(ctx context.Context, roomID, name string) (Room, erro
 	if err != nil {
 		return r, mapRowErr(err)
 	}
-	return r, s.AppendEvent(ctx, roomID, "room.renamed", map[string]string{"room_id": roomID, "name": name})
+	payload, _ := json.Marshal(map[string]string{"room_id": roomID, "name": name})
+	if err := appendEventTx(ctx, tx, roomID, "room.renamed", payload); err != nil {
+		return r, err
+	}
+	return r, tx.Commit(ctx)
 }
 
 func (s *Store) RoomByID(ctx context.Context, id string) (Room, error) {

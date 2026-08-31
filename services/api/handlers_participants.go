@@ -1,6 +1,7 @@
 package api
 
 import (
+	"errors"
 	"net/http"
 	"strings"
 
@@ -29,6 +30,10 @@ func (s *Server) handleUpdateMe(w http.ResponseWriter, r *http.Request, p models
 	}
 	if req.Name != nil && !validName(*req.Name) {
 		writeErr(w, http.StatusBadRequest, "name must match ^[a-z0-9][a-z0-9_-]{1,31}$")
+		return
+	}
+	if req.Name != nil && reservedNames[*req.Name] {
+		writeErr(w, http.StatusBadRequest, "that name is reserved")
 		return
 	}
 	if req.Avatar != nil && len(*req.Avatar) > 300 {
@@ -74,8 +79,13 @@ func (s *Server) resolveParticipant(r *http.Request, me models.Participant, ref 
 	if ref == "me" || ref == me.ID {
 		return s.store.ParticipantByID(r.Context(), me.RoomID, me.ID)
 	}
-	if p, err := s.store.ParticipantByName(r.Context(), me.RoomID, ref); err == nil {
+	p, err := s.store.ParticipantByName(r.Context(), me.RoomID, ref)
+	if err == nil {
 		return p, nil
+	}
+	// only a clean miss falls through to id lookup; other errors must surface
+	if !errors.Is(err, models.ErrNotFound) {
+		return models.Participant{}, err
 	}
 	if !isUUID(ref) {
 		return models.Participant{}, models.ErrNotFound
@@ -129,7 +139,8 @@ func (s *Server) handleRemoveTag(w http.ResponseWriter, r *http.Request, p model
 		writeStoreErr(w, err)
 		return
 	}
-	if err := s.store.RemoveTag(r.Context(), p.RoomID, target.ID, r.PathValue("tag")); err != nil {
+	tag := strings.ToLower(strings.TrimSpace(r.PathValue("tag")))
+	if err := s.store.RemoveTag(r.Context(), p.RoomID, target.ID, tag); err != nil {
 		writeStoreErr(w, err)
 		return
 	}

@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -55,12 +56,36 @@ func run() error {
 		slog.Warn("OPENAI_API_KEY not set; semantic search disabled")
 	}
 
-	server := api.New(store, api.Config{PublicURL: publicURL, Embedder: embedder})
+	server := api.New(store, api.Config{
+		PublicURL:  publicURL,
+		Embedder:   embedder,
+		TrustProxy: os.Getenv("AGENTCHAT_TRUST_PROXY") == "true",
+	})
+
+	// unreferenced uploads (posted but never attached) get swept periodically
+	go func() {
+		ticker := time.NewTicker(time.Hour)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if n, err := store.DeleteOrphanAttachments(ctx); err != nil {
+					slog.Error("orphan attachment sweep failed", "err", err)
+				} else if n > 0 {
+					slog.Info("swept orphan attachments", "count", n)
+				}
+			}
+		}
+	}()
 
 	httpServer := &http.Server{
 		Addr:              ":" + port,
 		Handler:           server.Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
+		// long-polls watch this context so they end promptly on SIGTERM
+		BaseContext:       func(net.Listener) context.Context { return ctx },
 	}
 
 	go func() {

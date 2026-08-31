@@ -8,6 +8,12 @@ import (
 )
 
 func appendEventTx(ctx context.Context, tx pgx.Tx, roomID, typ string, payload json.RawMessage) error {
+	// Serialize event-writing transactions per room so seq order matches commit
+	// order — otherwise a long-poller's cursor can jump past a seq that commits
+	// late and that event is lost to every tailing client.
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext($1))`, roomID); err != nil {
+		return err
+	}
 	_, err := tx.Exec(ctx,
 		`INSERT INTO events (room_id, type, payload) VALUES ($1, $2, $3)`,
 		roomID, typ, payload)
@@ -20,10 +26,15 @@ func (s *Store) AppendEvent(ctx context.Context, roomID, typ string, payload any
 	if err != nil {
 		return err
 	}
-	_, err = s.pool.Exec(ctx,
-		`INSERT INTO events (room_id, type, payload) VALUES ($1, $2, $3)`,
-		roomID, typ, raw)
-	return err
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	if err := appendEventTx(ctx, tx, roomID, typ, raw); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
 
 // ListEvents returns events with seq > afterSeq, oldest first.

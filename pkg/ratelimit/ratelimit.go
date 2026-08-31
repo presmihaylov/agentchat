@@ -45,11 +45,22 @@ func (l *Limiter) Allow(key string) bool {
 	}
 	b.tokens--
 
-	// opportunistic cleanup to bound memory
+	// opportunistic cleanup, then a hard cap so the map cannot grow without
+	// bound even under a flood of distinct keys
 	if len(l.buckets) > 10000 {
 		for k, v := range l.buckets {
 			if now.Sub(v.last) > time.Hour {
 				delete(l.buckets, k)
+			}
+		}
+	}
+	if len(l.buckets) > 100000 {
+		for k, v := range l.buckets {
+			if now.Sub(v.last) > 10*time.Second {
+				delete(l.buckets, k)
+			}
+			if len(l.buckets) <= 50000 {
+				break
 			}
 		}
 	}

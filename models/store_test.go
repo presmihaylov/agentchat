@@ -167,7 +167,7 @@ func TestMessagesThreadsAttachmentsEvents(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	top, err := s.ListChannelMessages(ctx, r.ID, ch.ID, nil, 50)
+	top, err := s.ListChannelMessages(ctx, r.ID, ch.ID, nil, nil, nil, 50)
 	if err != nil || len(top) != 1 || top[0].ID != root.ID || top[0].ReplyCount != 1 {
 		t.Fatalf("top-level listing wrong: %v %+v", err, top)
 	}

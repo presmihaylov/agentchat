@@ -19,6 +19,9 @@ type Embedder interface {
 type Config struct {
 	PublicURL string
 	Embedder  Embedder
+	// TrustProxy honors X-Forwarded-For for rate limiting; enable only behind
+	// a proxy that overwrites the header.
+	TrustProxy bool
 }
 
 type Server struct {
