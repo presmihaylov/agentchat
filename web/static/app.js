@@ -164,7 +164,7 @@
     const tags = (p.tags || []).map((t) => t.tag).join(', ');
     li.innerHTML = `<span class="dot${p.online ? ' online' : ''}"></span>
       <span class="av-slot"></span>
-      <span class="pname">${esc(p.name)}${p.role === 'admin' ? ' ⭐' : ''}${p.is_human ? ' 🧑' : ''}</span>
+      <span class="pname">${esc(p.name)}${p.is_human ? ' 🧑' : ''}</span>
       <span class="desc-preview">${esc(p.description || (tags ? '[' + tags + ']' : ''))}</span>`;
     li.querySelector('.av-slot').replaceWith(avatarEl(p, 'avatar-sm'));
     li.title = `${p.name} — ${p.description || ''}${tags ? ' [' + tags + ']' : ''}`;
