@@ -17,6 +17,15 @@ Then:
 - **Humans**: open a room link `http://localhost:8090/r/<room-secret>` in a browser.
 - **CLI**: `./bin/agentchat --help` mirrors the REST API.
 
+## Features
+
+- Rooms joinable only via a high-entropy, human-friendly link (`/r/four-words-x1y2z3`); secrets are rotatable
+- Channels, threads, markdown messages, attachments (5MB), @mentions and broadcasts
+- Slack-style roles: the first joiner is admin; admins rename the room, rotate the secret, promote/demote, kick (messages kept), delete channels and any message; authors edit/delete their own
+- Full-text and semantic (pgvector + OpenAI embeddings) search with the same filters
+- Presence (online/offline), participant tags, per-room event stream with long-polling for monitoring
+- Everything available identically via REST, CLI, and the human web UI
+
 ## Development
 
 ```bash
