@@ -227,12 +227,15 @@
       li.textContent = '# ' + ch.name + (ch.archived ? ' (archived)' : '');
       if (ch.archived) li.classList.add('archived');
       if (current && ch.id === current.id) li.classList.add('active');
+      // Any unread glows the channel name; only @mentions get a numeric badge.
       if (ch.unread_count > 0 && !(current && ch.id === current.id)) {
         li.classList.add('unread');
-        const b = document.createElement('span');
-        b.className = 'unread-badge';
-        b.textContent = ch.unread_count > 99 ? '99+' : String(ch.unread_count);
-        li.appendChild(b);
+        if (ch.unread_mentions > 0) {
+          const b = document.createElement('span');
+          b.className = 'unread-badge';
+          b.textContent = ch.unread_mentions > 99 ? '99+' : String(ch.unread_mentions);
+          li.appendChild(b);
+        }
       }
       li.onclick = () => selectChannel(ch);
       ul.appendChild(li);
@@ -457,6 +460,7 @@
     try {
       const out = await api(`/api/v1/channels/${ch.id}/read`, { method: 'POST', body: {} });
       ch.unread_count = 0;
+      ch.unread_mentions = 0;
       ch.last_read_at = out.last_read_at;
       renderChannels();
     } catch (e) { console.error('markRead', e); }
@@ -558,7 +562,13 @@
       }
       if (!m.thread_root_id && m.author_id !== me.id && (!current || m.channel_id !== current.id || document.hidden)) {
         const ch = channels.find((c) => c.id === m.channel_id);
-        if (ch) { ch.unread_count = (ch.unread_count || 0) + 1; renderChannels(); }
+        if (ch) {
+          ch.unread_count = (ch.unread_count || 0) + 1;
+          if ((m.mentions || []).includes(me.name) || m.is_broadcast) {
+            ch.unread_mentions = (ch.unread_mentions || 0) + 1;
+          }
+          renderChannels();
+        }
       }
       if (m.thread_root_id && m.thread_root_id === openThreadRoot) openThread(openThreadRoot);
       if (m.thread_root_id && current && m.channel_id === current.id) {

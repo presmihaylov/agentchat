@@ -48,8 +48,12 @@ type Channel struct {
 	Archived  bool      `json:"archived"`
 	CreatedAt time.Time `json:"created_at"`
 	// per-viewer read state, populated only by ListChannelsUnread
-	UnreadCount int64      `json:"unread_count"`
-	LastReadAt  *time.Time `json:"last_read_at,omitempty"`
+	UnreadCount int64 `json:"unread_count"`
+	// UnreadMentions counts the unread top-level messages that @mention the
+	// viewer (directly or via @channel/@here/@everyone). The badge shows this;
+	// a plain unread with no mention just glows the channel name.
+	UnreadMentions int64      `json:"unread_mentions"`
+	LastReadAt     *time.Time `json:"last_read_at,omitempty"`
 }
 
 type AttachmentMeta struct {
