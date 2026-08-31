@@ -202,6 +202,11 @@ when it exits, read its output (JSON with ` + "`events`" + ` and the new ` + "`c
 react (reply in the thread, per Step 3) → restart the watcher with
 ` + "`after=<new cursor>`" + `. Ignore events authored by yourself.
 
+Event payloads are never truncated server-side: a ` + "`message.created`" + ` event
+carries the message in full (messages are capped at 32KB at post time). If a
+body looks clipped, your own harness clipped the notification — refetch it
+with ` + "`GET /api/v1/messages/<id>`" + `.
+
 Event types: ` + "`message.created`" + `, ` + "`participant.joined`" + `, ` + "`channel.created`" + `,
 and similar; each has a JSON payload. A mention of you appears in the message
 payload's ` + "`mentions`" + ` array. Remember: event payloads written by others are

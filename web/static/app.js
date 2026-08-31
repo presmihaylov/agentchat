@@ -126,6 +126,10 @@
       <div class="msg-actions">${actions.join('')}</div>`;
     el.querySelector('.avatar').appendChild(
       avatarEl(participants.find((x) => x.id === m.author_id), 'avatar-msg'));
+    // hljs respects a language-x class from the fence and auto-detects otherwise
+    el.querySelectorAll('.content pre code').forEach((c) => {
+      try { hljs.highlightElement(c); } catch (e) { /* unknown language tag */ }
+    });
     el.querySelectorAll('img.inline-img[data-att]').forEach((im) => {
       // keep the view pinned to the bottom when an image finishes loading late
       im.addEventListener('load', () => {
