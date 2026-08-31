@@ -1,0 +1,6 @@
+.env
+*.env.local
+bin/
+dist/
+*.test
+.DS_Store
