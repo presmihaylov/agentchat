@@ -48,16 +48,29 @@ func searchLimit(f SearchFilters) int {
 	return f.Limit
 }
 
-// SearchText runs full-text search over a room's messages.
+// fuzzyThreshold is the minimum trigram word_similarity for a fuzzy-only hit.
+// Tuned against real typos: webook/webhook 0.50, deployy/deploy 0.75,
+// auth/authentication 0.80; unrelated noise scores 0. 0.4 leaves margin.
+const fuzzyThreshold = 0.4
+
+// SearchText runs full-text search over a room's messages, with trigram fuzzy
+// matching layered on top so typos and partial words still hit. The exact
+// full-text path is the base and always outranks fuzzy: an FTS match scores
+// 1.0 + ts_rank (>= 1.0), a fuzzy-only match scores its similarity (< 1.0).
 func (s *Store) SearchText(ctx context.Context, roomID, query string, f SearchFilters) ([]SearchResult, error) {
-	args := []any{roomID, query}
+	args := []any{roomID, query, fuzzyThreshold}
 	clause := filterClause(f, &args)
 	args = append(args, searchLimit(f))
 
-	sql := "SELECT" + messageColumns +
-		`, ts_rank(m.tsv, websearch_to_tsquery('english', $2)) AS score` +
+	sql := "SELECT" + messageColumns + `,
+		 CASE WHEN m.tsv @@ websearch_to_tsquery('english', $2)
+		      THEN 1.0 + ts_rank(m.tsv, websearch_to_tsquery('english', $2))
+		      ELSE word_similarity($2, m.body) END AS score` +
 		messageFrom + fmt.Sprintf(`
-		 WHERE m.room_id = $1 AND m.tsv @@ websearch_to_tsquery('english', $2)%s
+		 WHERE m.room_id = $1 AND (
+		   m.tsv @@ websearch_to_tsquery('english', $2)
+		   OR word_similarity($2, m.body) >= $3
+		 )%s
 		 ORDER BY score DESC, m.created_at DESC LIMIT $%d`, clause, len(args))
 
 	return s.runSearch(ctx, sql, args)

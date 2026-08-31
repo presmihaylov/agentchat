@@ -1063,7 +1063,6 @@
 
   // ---------- search ----------
 
-  let searchMode = 'text';
   let semanticEnabled = null; // null until the first probe resolves
   let searchSeq = 0;          // drops stale async results when the query moves on
   let searchTimer = null;
@@ -1080,6 +1079,8 @@
   // one-shot probe of the semantic endpoint. When the provider is missing the
   // handler answers 503 before it validates q, so a blank query cheaply tells
   // enabled (400, q required) from disabled (503) without spending an embedding.
+  // Knowing it up front lets us grey the semantic section instead of firing a
+  // doomed embedding request on the first keystroke.
   const probeSemantic = async () => {
     if (semanticEnabled !== null) return;
     try {
@@ -1088,28 +1089,7 @@
     } catch (e) {
       semanticEnabled = e.status !== 503; // only 503 means truly off; treat transient errors as on
     }
-    applySemanticAvailability();
-  };
-  const applySemanticAvailability = () => {
-    const btn = $('mode-semantic');
-    const hint = $('search-hint');
-    if (semanticEnabled === false) {
-      btn.classList.add('disabled');
-      hint.textContent = 'Semantic search is off on this server (no embeddings provider configured).';
-      hint.classList.remove('hidden');
-      if (searchMode === 'semantic') setMode('text');
-      return;
-    }
-    btn.classList.remove('disabled');
-    hint.classList.add('hidden');
-  };
-
-  const setMode = (mode) => {
-    if (mode === 'semantic' && semanticEnabled === false) return;
-    searchMode = mode;
-    $('mode-text').classList.toggle('active', mode === 'text');
-    $('mode-semantic').classList.toggle('active', mode === 'semantic');
-    runSearch();
+    if ($('search-input').value.trim()) runSearch(); // repaint now that we know the semantic state
   };
 
   const scheduleSearch = () => {
@@ -1117,24 +1097,72 @@
     searchTimer = setTimeout(runSearch, 220);
   };
 
-  const runSearch = async () => {
+  // One query, two sections in one panel. Text is instant and paints first;
+  // semantic round-trips an embedding, so it lazy-loads under a loading row and
+  // is deduped against the text hits when it lands. A server with no embeddings
+  // provider shows a greyed "off" note in place of the semantic list.
+  const runSearch = () => {
     const q = $('search-input').value.trim();
     const box = $('search-results');
     const seq = ++searchSeq;
     if (!q) { box.innerHTML = ''; return; }
-    // semantic must round-trip an embedding, so show a loading row while it
-    // resolves lazily; text is instant and paints as soon as it returns
-    if (searchMode === 'semantic') box.innerHTML = '<div class="search-loading">Searching by meaning…</div>';
-    const path = searchMode === 'semantic' ? '/api/v1/search/semantic' : '/api/v1/search';
-    try {
-      const out = await api(path + '?q=' + encodeURIComponent(q) + '&limit=25');
-      if (seq !== searchSeq) return; // a newer keystroke already superseded this
-      renderResults(out.results || []);
-    } catch (e) {
-      if (seq !== searchSeq) return;
-      // the endpoint went dark since the probe: fall back to text and mark it off
-      if (e.status === 503) { semanticEnabled = false; applySemanticAvailability(); setMode('text'); return; }
-      box.innerHTML = '<div class="search-empty">Search failed: ' + esc(e.message) + '</div>';
+
+    const state = { seq, text: 'pending', sem: semanticEnabled === false ? 'off' : 'pending' };
+    paintSearch(state);
+
+    api('/api/v1/search?q=' + encodeURIComponent(q) + '&limit=25')
+      .then((out) => { if (seq === searchSeq) { state.text = out.results || []; paintSearch(state); } })
+      .catch((e) => { if (seq === searchSeq) { state.text = { err: e.message }; paintSearch(state); } });
+
+    if (semanticEnabled !== false) {
+      api('/api/v1/search/semantic?q=' + encodeURIComponent(q) + '&limit=25')
+        .then((out) => { if (seq === searchSeq) { state.sem = out.results || []; paintSearch(state); } })
+        .catch((e) => {
+          if (seq !== searchSeq) return;
+          state.sem = e.status === 503 ? (semanticEnabled = false, 'off') : { err: e.message };
+          paintSearch(state);
+        });
+    }
+  };
+
+  const searchSection = (label) => {
+    const h = document.createElement('div');
+    h.className = 'search-section';
+    h.textContent = label;
+    return h;
+  };
+  const searchNote = (cls, text) => {
+    const d = document.createElement('div');
+    d.className = cls;
+    d.textContent = text;
+    return d;
+  };
+
+  const paintSearch = (state) => {
+    if (state.seq !== searchSeq) return;
+    const box = $('search-results');
+    box.innerHTML = '';
+    const textIds = new Set(Array.isArray(state.text) ? state.text.map((r) => r.id) : []);
+
+    box.appendChild(searchSection('Text matches'));
+    if (state.text === 'pending') box.appendChild(searchNote('search-loading', 'Searching…'));
+    else if (state.text && state.text.err) box.appendChild(searchNote('search-empty', 'Search failed: ' + state.text.err));
+    else if (!state.text.length) box.appendChild(searchNote('search-empty', 'No text matches.'));
+    else state.text.forEach((r) => box.appendChild(searchHitRow(r)));
+
+    const semHead = searchSection('Semantic matches');
+    box.appendChild(semHead);
+    if (state.sem === 'off') {
+      semHead.classList.add('sec-off');
+      box.appendChild(searchNote('search-empty', 'Semantic search is off on this server (no embeddings provider configured).'));
+    } else if (state.sem === 'pending') {
+      box.appendChild(searchNote('search-loading', 'Searching by meaning…'));
+    } else if (state.sem && state.sem.err) {
+      box.appendChild(searchNote('search-empty', 'Semantic search failed: ' + state.sem.err));
+    } else {
+      const fresh = state.sem.filter((r) => !textIds.has(r.id)); // dedupe: a text hit never repeats here
+      if (!fresh.length) box.appendChild(searchNote('search-empty', 'No additional semantic matches.'));
+      else fresh.forEach((r) => box.appendChild(searchHitRow(r)));
     }
   };
 
@@ -1144,27 +1172,22 @@
   };
   const fmtSearchTime = (iso) => new Date(iso).toLocaleDateString([], { month: 'short', day: 'numeric' }) + ' ' + fmtTime(iso);
 
-  const renderResults = (results) => {
-    const box = $('search-results');
-    box.innerHTML = '';
-    if (!results.length) { box.innerHTML = '<div class="search-empty">No matches.</div>'; return; }
-    results.forEach((r) => {
-      const ch = channels.find((c) => c.id === r.channel_id);
-      const row = document.createElement('div');
-      row.className = 'search-hit-row';
-      const meta = document.createElement('div');
-      meta.className = 'sh-meta';
-      meta.innerHTML = `<span class="sh-channel">#${esc(ch ? ch.name : 'channel')}</span>` +
-        `<span class="sh-author">${esc(r.author_name)}</span>` +
-        `<span class="sh-time">${esc(fmtSearchTime(r.created_at))}</span>` +
-        (r.thread_root_id ? '<span class="sh-thread">in thread</span>' : '');
-      const snip = document.createElement('div');
-      snip.className = 'sh-snippet';
-      snip.textContent = snippet(r.body); // textContent, never markdown: search hits stay inert
-      row.append(meta, snip);
-      row.onclick = () => jumpToMessage(r);
-      box.appendChild(row);
-    });
+  const searchHitRow = (r) => {
+    const ch = channels.find((c) => c.id === r.channel_id);
+    const row = document.createElement('div');
+    row.className = 'search-hit-row';
+    const meta = document.createElement('div');
+    meta.className = 'sh-meta';
+    meta.innerHTML = `<span class="sh-channel">#${esc(ch ? ch.name : 'channel')}</span>` +
+      `<span class="sh-author">${esc(r.author_name)}</span>` +
+      `<span class="sh-time">${esc(fmtSearchTime(r.created_at))}</span>` +
+      (r.thread_root_id ? '<span class="sh-thread">in thread</span>' : '');
+    const snip = document.createElement('div');
+    snip.className = 'sh-snippet';
+    snip.textContent = snippet(r.body); // textContent, never markdown: search hits stay inert
+    row.append(meta, snip);
+    row.onclick = () => jumpToMessage(r);
+    return row;
   };
 
   // land the reader on the hit: switch channel, open its thread if it lives in
@@ -1190,8 +1213,6 @@
   $('search-close').onclick = closeSearch;
   $('search-modal').onclick = (ev) => { if (ev.target === $('search-modal')) closeSearch(); };
   $('search-input').addEventListener('input', scheduleSearch);
-  $('mode-text').onclick = () => setMode('text');
-  $('mode-semantic').onclick = () => setMode('semantic');
 
   document.addEventListener('keydown', (ev) => {
     if ((ev.metaKey || ev.ctrlKey) && (ev.key === 'k' || ev.key === 'K')) {

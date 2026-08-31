@@ -787,6 +787,71 @@ func TestMessageMarkers(t *testing.T) {
 	}
 }
 
+func TestFuzzySearch(t *testing.T) {
+	srv, _ := newTestServer(t)
+	defer srv.Close()
+	_, alice, _ := setupRoom(t, srv.URL)
+
+	bodies := func(res map[string]any) []string {
+		var out []string
+		for _, raw := range res["results"].([]any) {
+			out = append(out, raw.(map[string]any)["body"].(string))
+		}
+		return out
+	}
+	has := func(list []string, want string) bool {
+		for _, b := range list {
+			if b == want {
+				return true
+			}
+		}
+		return false
+	}
+
+	exact := alice.must("POST", "/api/v1/channels/general/messages",
+		map[string]any{"body": "please fix the webhook config before deploy"}, 201)
+	_ = exact
+	alice.must("POST", "/api/v1/channels/general/messages",
+		map[string]any{"body": "re-run the migration on staging"}, 201)
+	alice.must("POST", "/api/v1/channels/general/messages",
+		map[string]any{"body": "lunch options near the office"}, 201)
+
+	// regression: an exact full-text query still returns what it always did.
+	got := bodies(alice.must("GET", "/api/v1/search?q=webhook", nil, 200))
+	if !has(got, "please fix the webhook config before deploy") {
+		t.Fatalf("exact search lost its hit: %v", got)
+	}
+
+	// fuzzy: a typo still finds the word ("webook" -> "webhook").
+	got = bodies(alice.must("GET", "/api/v1/search?q=webook", nil, 200))
+	if !has(got, "please fix the webhook config before deploy") {
+		t.Fatalf("fuzzy typo search missed webhook: %v", got)
+	}
+
+	// fuzzy: a partial word still hits ("migra" -> "migration").
+	got = bodies(alice.must("GET", "/api/v1/search?q=migraton", nil, 200))
+	if !has(got, "re-run the migration on staging") {
+		t.Fatalf("fuzzy partial search missed migration: %v", got)
+	}
+
+	// noise stays out: an unrelated word does not drag in every message.
+	got = bodies(alice.must("GET", "/api/v1/search?q=xylophone", nil, 200))
+	if len(got) != 0 {
+		t.Fatalf("noise query returned matches: %v", got)
+	}
+
+	// ranking: exact beats fuzzy. Two messages, one exact one fuzzy for the same
+	// query; the exact match must rank first.
+	alice.must("POST", "/api/v1/channels/general/messages",
+		map[string]any{"body": "the payment service is slow"}, 201)
+	alice.must("POST", "/api/v1/channels/general/messages",
+		map[string]any{"body": "paymet gateway timeout"}, 201) // typo, fuzzy-only
+	ranked := bodies(alice.must("GET", "/api/v1/search?q=payment", nil, 200))
+	if len(ranked) < 2 || ranked[0] != "the payment service is slow" {
+		t.Fatalf("exact should outrank fuzzy, got %v", ranked)
+	}
+}
+
 // TestRoomThreads: the room-wide thread endpoint returns the caller's involved
 // threads across every channel, each tagged with its channel_id, and per-thread
 // unread_mentions follows the mention-only rule (direct + broadcast).

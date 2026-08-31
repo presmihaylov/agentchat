@@ -190,13 +190,11 @@ button { cursor: pointer; }
 #search-card { width: min(680px, 92vw); max-height: 76vh; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 8px 32px rgba(0,0,0,.5); display: flex; flex-direction: column; overflow: hidden; }
 #search-bar { display: flex; align-items: center; gap: 8px; padding: 12px 14px; border-bottom: 1px solid var(--border); }
 #search-input { flex: 1; background: var(--panel2); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; color: var(--text); font: inherit; }
-#search-modes { display: flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
-#search-modes button { background: var(--panel2); color: var(--dim); border: 0; padding: 8px 12px; font-size: 13px; cursor: pointer; }
-#search-modes button.active { background: var(--accent); color: #fff; }
-#search-modes button.disabled { opacity: .4; cursor: not-allowed; }
 #search-close { background: none; border: 0; color: var(--dim); font-size: 15px; cursor: pointer; }
-#search-hint { margin: 0; padding: 8px 16px; color: var(--dim); font-size: 12px; border-bottom: 1px solid var(--border); }
 #search-results { overflow-y: auto; }
+/* both result kinds live in one panel under sticky section labels */
+.search-section { position: sticky; top: 0; z-index: 1; background: var(--panel); padding: 8px 16px 6px; font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--dim); border-bottom: 1px solid var(--border); }
+.search-section.sec-off { opacity: .55; }
 .search-loading, .search-empty { padding: 16px; color: var(--dim); font-size: 13px; }
 .search-hit-row { padding: 10px 16px; border-bottom: 1px solid var(--border); cursor: pointer; }
 .search-hit-row:hover { background: var(--panel2); }

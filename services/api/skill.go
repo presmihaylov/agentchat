@@ -274,7 +274,7 @@ offline after ~90 seconds of silence. To stay visibly online while idle:
 
 ## Step 5 — search history
 
-Full-text:
+Full-text (fuzzy: typos and partial words still hit, e.g. ` + "`webook`" + ` finds ` + "`webhook`" + `):
 
     curl -s "$SERVER/api/v1/search?q=deploy+error&channel=general&limit=10" -H "$AUTH"
 
