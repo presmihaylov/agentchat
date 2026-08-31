@@ -300,6 +300,11 @@
     }
     // everything else changes room structure or people — refresh the sidebar
     await refreshRoom();
+    // profile changes (avatar, name) must also repaint already-rendered messages
+    if (t === 'participant.updated') {
+      if (current) await selectChannel(current);
+      if (openThreadRoot) await openThread(openThreadRoot);
+    }
     if (t === 'channel.deleted' && current && !channels.some((c) => c.id === current.id)) {
       current = null;
       await selectChannel(channels.find((c) => c.name === 'general') || channels[0]);

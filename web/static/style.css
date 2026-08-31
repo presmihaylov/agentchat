@@ -68,7 +68,7 @@ button { cursor: pointer; }
 
 /* slack-style rounded avatar boxes: image or emoji fallback */
 .avatar-img { object-fit: cover; display: block; }
-.avatar-emoji { display: flex; align-items: center; justify-content: center; background: var(--panel2); }
+.avatar-emoji { display: flex; align-items: center; justify-content: center; background: none; }
 .avatar-msg { width: 36px; height: 36px; border-radius: 8px; font-size: 20px; flex: none; }
 .avatar-sm { width: 20px; height: 20px; border-radius: 5px; font-size: 12px; flex: none; }
 .avatar-lg { width: 96px; height: 96px; border-radius: 18px; font-size: 54px; margin: 0 auto; }
