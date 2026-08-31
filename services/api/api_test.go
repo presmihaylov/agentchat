@@ -638,3 +638,48 @@ func TestThreadTree(t *testing.T) {
 		t.Fatalf("alice sees %d threads, want 1 (not involved in bob's)", n)
 	}
 }
+
+func TestReclaimIdentity(t *testing.T) {
+	srv, store := newTestServer(t)
+	secret, alice, bob := setupRoom(t, srv.URL)
+
+	pid := func(c *testClient, name string) (roomID, id string) {
+		t.Helper()
+		out := c.must("GET", "/api/v1/room", nil, 200)
+		roomID = out["room"].(map[string]any)["id"].(string)
+		for _, p := range out["participants"].([]any) {
+			pm := p.(map[string]any)
+			if pm["name"] == name {
+				return roomID, pm["id"].(string)
+			}
+		}
+		t.Fatalf("participant %q not found", name)
+		return "", ""
+	}
+	roomID, bobID := pid(alice, "bob")
+
+	// while bob is online, an invite code alone must not hijack him
+	c := &testClient{t: t, base: srv.URL}
+	c.must("POST", "/api/v1/rooms/join", map[string]any{"invite_code": secret, "name": "bob"}, 409)
+
+	// offline bob is reclaimable: same id, fresh token, old token dead
+	if err := store.GoOffline(context.Background(), roomID, bobID); err != nil {
+		t.Fatal(err)
+	}
+	out := c.must("POST", "/api/v1/rooms/join", map[string]any{"invite_code": secret, "name": "bob"}, 200)
+	if out["reclaimed"] != true {
+		t.Fatalf("want reclaimed=true, got %v", out)
+	}
+	if got := out["participant"].(map[string]any)["id"].(string); got != bobID {
+		t.Fatalf("reclaim changed identity: got %s want %s", got, bobID)
+	}
+	bob2 := &testClient{t: t, base: srv.URL, token: out["token"].(string)}
+	bob2.must("GET", "/api/v1/me", nil, 200)
+	if status, _ := bob.do("GET", "/api/v1/me", nil); status != 401 {
+		t.Fatalf("old token still works after reclaim: %d", status)
+	}
+
+	// a revoked identity stays locked out even when offline
+	alice.must("DELETE", "/api/v1/participants/"+bobID, nil, 200)
+	c.must("POST", "/api/v1/rooms/join", map[string]any{"invite_code": secret, "name": "bob"}, 409)
+}

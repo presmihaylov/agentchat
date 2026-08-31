@@ -9,6 +9,10 @@ import (
 
 var ErrLastAdmin = errors.New("a room must keep at least one admin")
 
+// ErrIdentityOnline guards re-claims: an invite code alone must not let a
+// stranger hijack an identity that is actively connected.
+var ErrIdentityOnline = errors.New("that identity is currently online")
+
 // CreateParticipant adds a member; the first participant in a room becomes admin.
 func (s *Store) CreateParticipant(ctx context.Context, roomID, name, avatar, description string, isHuman bool, tokenHash []byte) (Participant, error) {
 	var p Participant
@@ -48,6 +52,55 @@ func (s *Store) CreateParticipant(ctx context.Context, roomID, name, avatar, des
 		return p, err
 	}
 	return p, tx.Commit(ctx)
+}
+
+// ReclaimParticipant re-binds an existing identity to a fresh token: same id,
+// role, and history; the old token stops working. Only an offline identity can
+// be re-claimed. Revoked identities stay locked out.
+func (s *Store) ReclaimParticipant(ctx context.Context, roomID, name string, tokenHash []byte) (Participant, error) {
+	var p Participant
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return p, err
+	}
+	defer tx.Rollback(ctx)
+
+	// serialize with joins and other reclaims in this room
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext($1))`, roomID); err != nil {
+		return p, err
+	}
+
+	var id string
+	var revoked, online bool
+	err = tx.QueryRow(ctx,
+		`SELECT id, revoked, last_seen_at > now() - $3::interval
+		 FROM participants WHERE room_id = $1 AND name = $2`,
+		roomID, name, OnlineWindow.String(),
+	).Scan(&id, &revoked, &online)
+	if err != nil {
+		return p, mapRowErr(err)
+	}
+	if revoked {
+		return p, fmt.Errorf("identity %q was revoked from this room: %w", name, ErrConflict)
+	}
+	if online {
+		return p, ErrIdentityOnline
+	}
+
+	if _, err := tx.Exec(ctx,
+		`UPDATE participants SET token_hash = $2, last_seen_at = now() WHERE id = $1`,
+		id, tokenHash); err != nil {
+		return p, err
+	}
+
+	payload, _ := json.Marshal(map[string]any{"participant_id": id, "name": name})
+	if err := appendEventTx(ctx, tx, roomID, "participant.reclaimed", payload); err != nil {
+		return p, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return p, err
+	}
+	return s.ParticipantByID(ctx, roomID, id)
 }
 
 // ParticipantByTokenHash authenticates a request; revoked participants fail auth.

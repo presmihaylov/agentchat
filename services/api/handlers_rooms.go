@@ -1,6 +1,7 @@
 package api
 
 import (
+	"errors"
 	"net/http"
 	"strings"
 
@@ -89,6 +90,27 @@ func (s *Server) handleJoinRoom(w http.ResponseWriter, r *http.Request) {
 
 	token, hash := secrets.NewToken()
 	p, err := s.store.CreateParticipant(r.Context(), room.ID, req.Name, req.Avatar, req.Description, req.IsHuman, hash)
+	if errors.Is(err, models.ErrConflict) {
+		// same name = same identity: re-claim it with a fresh token so a
+		// restarted agent does not pile up orphan duplicates
+		p, err = s.store.ReclaimParticipant(r.Context(), room.ID, req.Name, hash)
+		if errors.Is(err, models.ErrIdentityOnline) {
+			writeErr(w, http.StatusConflict,
+				"that name is taken by a participant that is online right now; wait for it to go offline (~90s idle) or pick another name")
+			return
+		}
+		if err != nil {
+			writeStoreErr(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"token":       token,
+			"participant": p,
+			"room":        room,
+			"reclaimed":   true,
+		})
+		return
+	}
 	if err != nil {
 		writeStoreErr(w, err)
 		return
