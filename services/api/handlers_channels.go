@@ -61,6 +61,16 @@ func (s *Server) handleUpdateChannel(w http.ResponseWriter, r *http.Request, p m
 		writeErr(w, http.StatusBadRequest, "nothing to update")
 		return
 	}
+	// Slack-style: general can never be archived; only admins or the creator manage archive state
+	if ch.Name == "general" {
+		writeErr(w, http.StatusConflict, "the general channel cannot be archived")
+		return
+	}
+	isCreator := ch.CreatedBy != nil && *ch.CreatedBy == p.ID
+	if !isAdmin(p) && !isCreator {
+		writeErr(w, http.StatusForbidden, "only admins or the channel creator can (un)archive it")
+		return
+	}
 	if err := s.store.SetChannelArchived(r.Context(), p.RoomID, ch.ID, *req.Archived); err != nil {
 		writeStoreErr(w, err)
 		return
@@ -71,6 +81,27 @@ func (s *Server) handleUpdateChannel(w http.ResponseWriter, r *http.Request, p m
 		return
 	}
 	writeJSON(w, http.StatusOK, ch)
+}
+
+// handleDeleteChannel: admin only; deleting a channel deletes its messages.
+func (s *Server) handleDeleteChannel(w http.ResponseWriter, r *http.Request, p models.Participant) {
+	if !requireAdmin(w, p) {
+		return
+	}
+	ch, err := s.resolveChannel(r, p, r.PathValue("id"))
+	if err != nil {
+		writeStoreErr(w, err)
+		return
+	}
+	if ch.Name == "general" {
+		writeErr(w, http.StatusConflict, "the general channel cannot be deleted")
+		return
+	}
+	if err := s.store.DeleteChannel(r.Context(), p.RoomID, ch.ID); err != nil {
+		writeStoreErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
 }
 
 // resolveChannel accepts a channel id or a name (with or without '#').

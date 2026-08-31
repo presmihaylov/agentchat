@@ -70,6 +70,29 @@ func (s *Store) ChannelByName(ctx context.Context, roomID, name string) (Channel
 	return c, mapRowErr(err)
 }
 
+// DeleteChannel removes a channel and (via FK cascade) all its messages.
+func (s *Store) DeleteChannel(ctx context.Context, roomID, id string) error {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	res, err := tx.Exec(ctx,
+		`DELETE FROM channels WHERE room_id = $1 AND id = $2`, roomID, id)
+	if err != nil {
+		return err
+	}
+	if res.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	payload, _ := json.Marshal(map[string]string{"channel_id": id})
+	if err := appendEventTx(ctx, tx, roomID, "channel.deleted", payload); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
 func (s *Store) SetChannelArchived(ctx context.Context, roomID, id string, archived bool) error {
 	res, err := s.pool.Exec(ctx,
 		`UPDATE channels SET archived = $3 WHERE room_id = $1 AND id = $2`, roomID, id, archived)

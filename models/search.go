@@ -99,7 +99,7 @@ func scanSearchResult(rows pgx.Rows) (SearchResult, error) {
 	// same order as scanMessage plus trailing score
 	var attJSON, menJSON []byte
 	err := rows.Scan(&r.ID, &r.RoomID, &r.ChannelID, &r.ThreadRootID, &r.AuthorID, &r.AuthorName,
-		&r.Body, &r.IsBroadcast, &r.CreatedAt, &r.ReplyCount, &attJSON, &menJSON, &r.Score)
+		&r.Body, &r.IsBroadcast, &r.CreatedAt, &r.EditedAt, &r.ReplyCount, &attJSON, &menJSON, &r.Score)
 	if err != nil {
 		return r, err
 	}

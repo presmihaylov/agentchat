@@ -25,6 +25,8 @@ type Participant struct {
 	Avatar      string    `json:"avatar"`
 	Description string    `json:"description"`
 	IsHuman     bool      `json:"is_human"`
+	Role        string    `json:"role"`
+	Revoked     bool      `json:"revoked,omitempty"`
 	Online      bool      `json:"online"`
 	LastSeenAt  time.Time `json:"last_seen_at"`
 	CreatedAt   time.Time `json:"created_at"`
@@ -66,6 +68,7 @@ type Message struct {
 	Body         string           `json:"body"`
 	IsBroadcast  bool             `json:"is_broadcast"`
 	CreatedAt    time.Time        `json:"created_at"`
+	EditedAt     *time.Time       `json:"edited_at,omitempty"`
 	ReplyCount   int              `json:"reply_count"`
 	Attachments  []AttachmentMeta `json:"attachments"`
 	Mentions     []string         `json:"mentions"`

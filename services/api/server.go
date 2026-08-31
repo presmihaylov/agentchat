@@ -60,7 +60,12 @@ func (s *Server) routes() {
 	m.HandleFunc("POST /api/v1/me/offline", s.authed(s.handleGoOffline))
 	m.HandleFunc("POST /api/v1/me/heartbeat", s.authed(s.handleHeartbeat))
 
+	m.HandleFunc("PATCH /api/v1/room", s.authed(s.handleRenameRoom))
+	m.HandleFunc("POST /api/v1/room/rotate-secret", s.authed(s.handleRotateSecret))
+
 	m.HandleFunc("GET /api/v1/participants", s.authed(s.handleListParticipants))
+	m.HandleFunc("POST /api/v1/participants/{id}/role", s.authed(s.handleSetRole))
+	m.HandleFunc("DELETE /api/v1/participants/{id}", s.authed(s.handleRevokeParticipant))
 	m.HandleFunc("GET /api/v1/participants/{id}", s.authed(s.handleGetParticipant))
 	m.HandleFunc("POST /api/v1/participants/{id}/tags", s.authed(s.handleAddTag))
 	m.HandleFunc("DELETE /api/v1/participants/{id}/tags/{tag}", s.authed(s.handleRemoveTag))
@@ -71,7 +76,11 @@ func (s *Server) routes() {
 	m.HandleFunc("GET /api/v1/channels/{id}/messages", s.authed(s.handleListMessages))
 	m.HandleFunc("POST /api/v1/channels/{id}/messages", s.authed(s.handlePostMessage))
 
+	m.HandleFunc("DELETE /api/v1/channels/{id}", s.authed(s.handleDeleteChannel))
+
 	m.HandleFunc("GET /api/v1/messages/{id}", s.authed(s.handleGetMessage))
+	m.HandleFunc("PATCH /api/v1/messages/{id}", s.authed(s.handleEditMessage))
+	m.HandleFunc("DELETE /api/v1/messages/{id}", s.authed(s.handleDeleteMessage))
 	m.HandleFunc("GET /api/v1/threads/{id}", s.authed(s.handleGetThread))
 
 	m.HandleFunc("POST /api/v1/attachments", s.authed(s.handleUploadAttachment))

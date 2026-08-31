@@ -1,0 +1,2 @@
+ALTER TABLE participants DROP COLUMN IF EXISTS role, DROP COLUMN IF EXISTS revoked;
+ALTER TABLE messages DROP COLUMN IF EXISTS edited_at;

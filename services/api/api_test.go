@@ -313,3 +313,99 @@ func uploadFile(t *testing.T, base, token, name, content string) string {
 	}
 	return out["id"].(string)
 }
+
+// TestRolesAndModeration covers the Slack-style permission model end to end:
+// first-joiner admin, promote/demote, kick, last-admin guard, channel
+// archive/delete rules, message edit/delete rules, rename, secret rotation.
+func TestRolesAndModeration(t *testing.T) {
+	srv, _ := newTestServer(t)
+	secret, alice, bob := setupRoom(t, srv.URL)
+
+	// first joiner is admin, second is member
+	me := alice.must("GET", "/api/v1/me", nil, 200)
+	if me["role"] != "admin" {
+		t.Fatalf("alice role = %v, want admin", me["role"])
+	}
+	if bob.must("GET", "/api/v1/me", nil, 200)["role"] != "member" {
+		t.Fatal("bob should be a member")
+	}
+
+	// member cannot do admin things
+	bob.must("PATCH", "/api/v1/room", map[string]any{"name": "hijacked"}, 403)
+	bob.must("POST", "/api/v1/room/rotate-secret", nil, 403)
+	bob.must("POST", "/api/v1/participants/alice/role", map[string]any{"role": "member"}, 403)
+	bob.must("DELETE", "/api/v1/participants/alice", nil, 403)
+
+	// admin renames the room
+	room := alice.must("PATCH", "/api/v1/room", map[string]any{"name": "renamed room"}, 200)
+	if room["name"] != "renamed room" {
+		t.Fatalf("rename failed: %v", room)
+	}
+
+	// channel rules: bob creates one, carol (member) cannot archive it, bob (creator) can
+	cc := &testClient{t: t, base: srv.URL}
+	out := cc.must("POST", "/api/v1/rooms/join", map[string]any{"secret": secret, "name": "carol"}, 201)
+	cc.token = out["token"].(string)
+
+	bob.must("POST", "/api/v1/channels", map[string]any{"name": "bobs-place"}, 201)
+	cc.must("PATCH", "/api/v1/channels/bobs-place", map[string]any{"archived": true}, 403)
+	bob.must("PATCH", "/api/v1/channels/bobs-place", map[string]any{"archived": true}, 200)
+	alice.must("PATCH", "/api/v1/channels/bobs-place", map[string]any{"archived": false}, 200)
+
+	// general is protected from archive and delete, even for admins
+	alice.must("PATCH", "/api/v1/channels/general", map[string]any{"archived": true}, 409)
+	alice.must("DELETE", "/api/v1/channels/general", nil, 409)
+
+	// delete: member no, admin yes
+	bob.must("DELETE", "/api/v1/channels/bobs-place", nil, 403)
+	alice.must("DELETE", "/api/v1/channels/bobs-place", nil, 200)
+	alice.must("GET", "/api/v1/channels/bobs-place/messages", nil, 404)
+
+	// message edit/delete rules
+	msg := bob.must("POST", "/api/v1/channels/general/messages", map[string]any{"body": "draft one"}, 201)
+	msgID := msg["id"].(string)
+	alice.must("PATCH", "/api/v1/messages/"+msgID, map[string]any{"body": "not yours"}, 403)
+	edited := bob.must("PATCH", "/api/v1/messages/"+msgID, map[string]any{"body": "draft two"}, 200)
+	if edited["body"] != "draft two" || edited["edited_at"] == nil {
+		t.Fatalf("edit failed: %v", edited)
+	}
+	cc.must("DELETE", "/api/v1/messages/"+msgID, nil, 403) // carol: not author, not admin
+	alice.must("DELETE", "/api/v1/messages/"+msgID, nil, 200)
+	bob.must("GET", "/api/v1/messages/"+msgID, nil, 404)
+
+	// deleting a thread root removes its replies
+	root := bob.must("POST", "/api/v1/channels/general/messages", map[string]any{"body": "root"}, 201)
+	rootID := root["id"].(string)
+	reply := bob.must("POST", "/api/v1/channels/general/messages", map[string]any{"body": "reply", "thread_root_id": rootID}, 201)
+	bob.must("DELETE", "/api/v1/messages/"+rootID, nil, 200)
+	bob.must("GET", "/api/v1/messages/"+reply["id"].(string), nil, 404)
+
+	// promote bob, then last-admin guard: alice is protected only if she's the last admin
+	alice.must("POST", "/api/v1/participants/bob/role", map[string]any{"role": "admin"}, 200)
+	alice.must("POST", "/api/v1/participants/alice/role", map[string]any{"role": "member"}, 200)
+	// now bob is the only admin; demoting him must fail
+	bob.must("POST", "/api/v1/participants/bob/role", map[string]any{"role": "member"}, 409)
+
+	// kick: admin revokes carol; her token stops working, her messages survive
+	kicked := cc.must("POST", "/api/v1/channels/general/messages", map[string]any{"body": "carol was here"}, 201)
+	bob.must("DELETE", "/api/v1/participants/carol", nil, 200)
+	cc.must("GET", "/api/v1/me", nil, 401)
+	bob.must("GET", "/api/v1/messages/"+kicked["id"].(string), nil, 200)
+
+	// last admin cannot leave
+	bob.must("DELETE", "/api/v1/participants/me", nil, 409)
+	// a member can leave on their own
+	alice.must("DELETE", "/api/v1/participants/me", nil, 200)
+	alice.must("GET", "/api/v1/me", nil, 401)
+
+	// rotate secret: old secret dies, new one works
+	rot := bob.must("POST", "/api/v1/room/rotate-secret", nil, 200)
+	newSecret := rot["room"].(map[string]any)["secret"].(string)
+	if newSecret == secret {
+		t.Fatal("secret did not change")
+	}
+	dead := &testClient{t: t, base: srv.URL}
+	dead.must("POST", "/api/v1/rooms/join", map[string]any{"secret": secret, "name": "late"}, 404)
+	fresh := &testClient{t: t, base: srv.URL}
+	fresh.must("POST", "/api/v1/rooms/join", map[string]any{"secret": newSecret, "name": "late"}, 201)
+}

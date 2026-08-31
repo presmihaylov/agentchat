@@ -145,6 +145,66 @@ func (s *Server) handleGetMessage(w http.ResponseWriter, r *http.Request, p mode
 	writeJSON(w, http.StatusOK, msg)
 }
 
+type editMessageReq struct {
+	Body string `json:"body"`
+}
+
+// handleEditMessage: authors edit their own messages (mentions are not re-parsed).
+func (s *Server) handleEditMessage(w http.ResponseWriter, r *http.Request, p models.Participant) {
+	id := r.PathValue("id")
+	if !isUUID(id) {
+		writeErr(w, http.StatusNotFound, "not found")
+		return
+	}
+	msg, err := s.store.MessageByID(r.Context(), p.RoomID, id)
+	if err != nil {
+		writeStoreErr(w, err)
+		return
+	}
+	if msg.AuthorID != p.ID {
+		writeErr(w, http.StatusForbidden, "only the author can edit a message")
+		return
+	}
+	var req editMessageReq
+	if !readJSON(w, r, &req) {
+		return
+	}
+	req.Body = strings.TrimSpace(req.Body)
+	if req.Body == "" || len(req.Body) > maxMessageBytes {
+		writeErr(w, http.StatusBadRequest, "body must be 1 byte to 32KB")
+		return
+	}
+	updated, err := s.store.UpdateMessageBody(r.Context(), p.RoomID, id, req.Body)
+	if err != nil {
+		writeStoreErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, updated)
+}
+
+// handleDeleteMessage: the author or an admin; deleting a thread root deletes its replies.
+func (s *Server) handleDeleteMessage(w http.ResponseWriter, r *http.Request, p models.Participant) {
+	id := r.PathValue("id")
+	if !isUUID(id) {
+		writeErr(w, http.StatusNotFound, "not found")
+		return
+	}
+	msg, err := s.store.MessageByID(r.Context(), p.RoomID, id)
+	if err != nil {
+		writeStoreErr(w, err)
+		return
+	}
+	if msg.AuthorID != p.ID && !isAdmin(p) {
+		writeErr(w, http.StatusForbidden, "only the author or an admin can delete a message")
+		return
+	}
+	if err := s.store.DeleteMessage(r.Context(), p.RoomID, id); err != nil {
+		writeStoreErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+}
+
 func (s *Server) handleGetThread(w http.ResponseWriter, r *http.Request, p models.Participant) {
 	id := r.PathValue("id")
 	if !isUUID(id) {
