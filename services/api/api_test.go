@@ -926,3 +926,69 @@ func TestArchiveEmitsEvent(t *testing.T) {
 		t.Fatal("unarchive did not emit channel.unarchived")
 	}
 }
+
+// TestReclaimDropsToMember locks in that a reclaim never inherits role. An admin
+// who goes offline can otherwise be impersonated into admin: a member who knows
+// the name reclaims it via the room code and rides in with the old role. The
+// reclaimed identity must land as a plain member.
+func TestReclaimDropsToMember(t *testing.T) {
+	srv, store := newTestServer(t)
+
+	c := &testClient{t: t, base: srv.URL}
+	roomCode := c.must("POST", "/api/v1/rooms", map[string]any{"name": "takeover"}, 201)["invite_code"].(string)
+
+	join := func(code, name string, want int) (*testClient, map[string]any) {
+		cc := &testClient{t: t, base: srv.URL}
+		out := cc.must("POST", "/api/v1/rooms/join", map[string]any{
+			"invite_code": code, "name": name, "is_human": false,
+		}, want)
+		if tok, ok := out["token"].(string); ok {
+			cc.token = tok
+		}
+		return cc, out["participant"].(map[string]any)
+	}
+
+	// first joiner is admin
+	admin, adminP := join(roomCode, "boss", 201)
+	if adminP["role"] != "admin" {
+		t.Fatalf("first joiner not admin: %v", adminP)
+	}
+	adminID := adminP["id"].(string)
+	roomID := admin.must("GET", "/api/v1/room", nil, 200)["room"].(map[string]any)["id"].(string)
+
+	// admin goes offline; reclaiming the name via the room code rebinds the same
+	// identity but must NOT carry the admin role over
+	if err := store.GoOffline(context.Background(), roomID, adminID); err != nil {
+		t.Fatal(err)
+	}
+	_, reclaimed := join(roomCode, "boss", 200)
+	if reclaimed["id"] != adminID {
+		t.Fatalf("reclaim rebound a different identity: %v", reclaimed)
+	}
+	if reclaimed["role"] != "member" {
+		t.Fatalf("reclaim inherited role %v, want member (insider takeover path)", reclaimed["role"])
+	}
+}
+
+// TestArchivedChannelReadOnly locks in that an archived channel is fully
+// read-only: not just new posts, but edits and deletes of existing messages are
+// rejected too. Unarchiving restores write access.
+func TestArchivedChannelReadOnly(t *testing.T) {
+	srv, _ := newTestServer(t)
+	_, alice, _ := setupRoom(t, srv.URL)
+
+	chID := alice.must("POST", "/api/v1/channels", map[string]any{"name": "vault"}, 201)["id"].(string)
+	msgID := alice.must("POST", "/api/v1/channels/"+chID+"/messages", map[string]any{"body": "before archive"}, 201)["id"].(string)
+
+	alice.must("PATCH", "/api/v1/channels/"+chID, map[string]any{"archived": true}, 200)
+
+	// posts, edits, and deletes all rejected while archived
+	alice.must("POST", "/api/v1/channels/"+chID+"/messages", map[string]any{"body": "after"}, 409)
+	alice.must("PATCH", "/api/v1/messages/"+msgID, map[string]any{"body": "edited"}, 409)
+	alice.must("DELETE", "/api/v1/messages/"+msgID, nil, 409)
+
+	// unarchive restores write access; the message is editable and deletable again
+	alice.must("PATCH", "/api/v1/channels/"+chID, map[string]any{"archived": false}, 200)
+	alice.must("PATCH", "/api/v1/messages/"+msgID, map[string]any{"body": "edited now"}, 200)
+	alice.must("DELETE", "/api/v1/messages/"+msgID, nil, 200)
+}

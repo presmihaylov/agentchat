@@ -247,12 +247,42 @@ func collectMessages(rows pgx.Rows) ([]Message, error) {
 }
 
 // UpdateMessageBody edits a message in place; the edit also re-queues embedding.
+// assertChannelWritable resolves a message's channel and fails if it is
+// archived. FOR SHARE OF the channel row blocks a concurrent archive until the
+// caller's tx commits, closing the same race CreateMessage guards. Returns
+// ErrNotFound when the message does not exist, ErrArchived when it is read-only.
+func assertChannelWritable(ctx context.Context, tx pgx.Tx, roomID, messageID string) error {
+	var archived bool
+	err := tx.QueryRow(ctx,
+		`SELECT c.archived FROM messages m JOIN channels c ON c.id = m.channel_id
+		 WHERE m.id = $1 AND m.room_id = $2 FOR SHARE OF c`,
+		messageID, roomID).Scan(&archived)
+	if err != nil {
+		return mapRowErr(err)
+	}
+	if archived {
+		return ErrArchived
+	}
+	return nil
+}
+
 func (s *Store) UpdateMessageBody(ctx context.Context, roomID, id, body string) (Message, error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return Message{}, err
 	}
 	defer tx.Rollback(ctx)
+
+	// advisory-first, like CreateMessage: the UPDATE takes an FK key-share lock on
+	// rooms before appendEventTx, else it deadlocks AB-BA against RotateSecret.
+	if err := lockRoomEvents(ctx, tx, roomID); err != nil {
+		return Message{}, err
+	}
+	// archived channels are read-only: block edits too, not just new posts. FOR
+	// SHARE OF the channel blocks a concurrent archive until we commit.
+	if err := assertChannelWritable(ctx, tx, roomID, id); err != nil {
+		return Message{}, err
+	}
 
 	res, err := tx.Exec(ctx,
 		`UPDATE messages SET body = $3, edited_at = now(), embed_status = 'pending', embed_attempts = 0
@@ -286,6 +316,15 @@ func (s *Store) DeleteMessage(ctx context.Context, roomID, id string) error {
 		return err
 	}
 	defer tx.Rollback(ctx)
+
+	// advisory-first, like CreateMessage, to avoid the AB-BA deadlock vs RotateSecret.
+	if err := lockRoomEvents(ctx, tx, roomID); err != nil {
+		return err
+	}
+	// archived channels are read-only: block deletes too.
+	if err := assertChannelWritable(ctx, tx, roomID, id); err != nil {
+		return err
+	}
 
 	res, err := tx.Exec(ctx,
 		`DELETE FROM messages WHERE room_id = $1 AND id = $2`, roomID, id)

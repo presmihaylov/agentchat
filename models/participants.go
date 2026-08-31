@@ -54,9 +54,10 @@ func (s *Store) CreateParticipant(ctx context.Context, roomID, name, avatar, des
 	return p, tx.Commit(ctx)
 }
 
-// ReclaimParticipant re-binds an existing identity to a fresh token: same id,
-// role, and history; the old token stops working. Only an offline identity can
-// be re-claimed. Revoked identities stay locked out.
+// ReclaimParticipant re-binds an existing identity to a fresh token: same id
+// and history, but role always drops to member (see below). The old token stops
+// working. Only an offline identity can be re-claimed. Revoked identities stay
+// locked out.
 // ownerID rebinds ownership to the principal of the code actually used, so a
 // rejoin with an owner-scoped code finally stamps the badge (nil = room code).
 func (s *Store) ReclaimParticipant(ctx context.Context, roomID, name string, tokenHash []byte, ownerID *string) (Participant, error) {
@@ -89,8 +90,11 @@ func (s *Store) ReclaimParticipant(ctx context.Context, roomID, name string, tok
 		return p, ErrIdentityOnline
 	}
 
+	// reclaim never inherits role: reclaiming a name (even the room owner's, via a
+	// room code) drops to member, so an offline admin can't be impersonated into
+	// admin. An existing admin must re-grant the role explicitly.
 	if _, err := tx.Exec(ctx,
-		`UPDATE participants SET token_hash = $2, last_seen_at = now(), owner_id = $3 WHERE id = $1`,
+		`UPDATE participants SET token_hash = $2, last_seen_at = now(), owner_id = $3, role = 'member' WHERE id = $1`,
 		id, tokenHash, ownerID); err != nil {
 		return p, err
 	}
