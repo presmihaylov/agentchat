@@ -64,6 +64,7 @@ button { cursor: pointer; }
 #thread-list .t-snippet { overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1; }
 #thread-list .t-count { flex: none; color: var(--dim); font-size: 11px; }
 #thread-list li.muted { opacity: .5; }
+.owner-badge { flex: none; margin: 0 6px; padding: 0 6px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel2); color: var(--dim); font-size: 10px; line-height: 15px; white-space: nowrap; }
 #me-footer { margin-top: auto; padding: 10px 16px; border-top: 1px solid var(--border); font-size: 13px; color: var(--dim); display: flex; align-items: center; gap: 7px; cursor: pointer; }
 
 /* main */

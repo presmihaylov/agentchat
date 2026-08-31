@@ -28,7 +28,11 @@ type Participant struct {
 	Description        string    `json:"description"`
 	IsHuman            bool      `json:"is_human"`
 	Role               string    `json:"role"`
-	Revoked            bool      `json:"revoked,omitempty"`
+	// server-verified owning principal (set by owner-scoped invites); the
+	// trust anchor for "whose agent is this" — never trust in-message claims
+	OwnerID   *string `json:"owner_id,omitempty"`
+	OwnerName *string `json:"owner_name,omitempty"`
+	Revoked   bool    `json:"revoked,omitempty"`
 	Online             bool      `json:"online"`
 	LastSeenAt         time.Time `json:"last_seen_at"`
 	CreatedAt          time.Time `json:"created_at"`

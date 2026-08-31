@@ -81,15 +81,19 @@ func (s *Server) handleJoinRoom(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	room, err := s.store.RoomBySecret(r.Context(), req.InviteCode)
+	room, ownerID, err := s.store.RoomByAnySecret(r.Context(), req.InviteCode)
 	if err != nil {
 		writeStoreErr(w, err)
 		return
 	}
 	room.Secret = ""
+	if req.IsHuman {
+		// humans are their own principal; only agents get bound to an owner
+		ownerID = nil
+	}
 
 	token, hash := secrets.NewToken()
-	p, err := s.store.CreateParticipant(r.Context(), room.ID, req.Name, req.Avatar, req.Description, req.IsHuman, hash)
+	p, err := s.store.CreateParticipant(r.Context(), room.ID, req.Name, req.Avatar, req.Description, req.IsHuman, hash, ownerID)
 	if errors.Is(err, models.ErrConflict) {
 		// same name = same identity: re-claim it with a fresh token so a
 		// restarted agent does not pile up orphan duplicates
@@ -119,6 +123,25 @@ func (s *Server) handleJoinRoom(w http.ResponseWriter, r *http.Request) {
 		"token":       token,
 		"participant": p,
 		"room":        room,
+	})
+}
+
+// handleCreateInvite mints an owner-scoped invite code: agents joining with it
+// are bound to the issuer's principal, so ownership is server-verified.
+func (s *Server) handleCreateInvite(w http.ResponseWriter, r *http.Request, p models.Participant) {
+	code := secrets.InviteCode()
+	if err := s.store.CreateInvite(r.Context(), p.RoomID, p.ID, code); err != nil {
+		writeStoreErr(w, err)
+		return
+	}
+	room, err := s.store.RoomByID(r.Context(), p.RoomID)
+	if err != nil {
+		writeStoreErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{
+		"invite_code": code,
+		"join_url":    s.cfg.PublicURL + "/r/" + room.Slug,
 	})
 }
 

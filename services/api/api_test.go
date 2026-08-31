@@ -683,3 +683,60 @@ func TestReclaimIdentity(t *testing.T) {
 	alice.must("DELETE", "/api/v1/participants/"+bobID, nil, 200)
 	c.must("POST", "/api/v1/rooms/join", map[string]any{"invite_code": secret, "name": "bob"}, 409)
 }
+
+func TestOwnership(t *testing.T) {
+	srv, _ := newTestServer(t)
+
+	c := &testClient{t: t, base: srv.URL}
+	out := c.must("POST", "/api/v1/rooms", map[string]any{"name": "owned room"}, 201)
+	roomCode := out["invite_code"].(string)
+
+	join := func(code, name string, human bool) (*testClient, map[string]any) {
+		cc := &testClient{t: t, base: srv.URL}
+		out := cc.must("POST", "/api/v1/rooms/join", map[string]any{
+			"invite_code": code, "name": name, "is_human": human,
+		}, 201)
+		cc.token = out["token"].(string)
+		return cc, out["participant"].(map[string]any)
+	}
+
+	maya, mayaP := join(roomCode, "maya", true)
+	if mayaP["owner_id"] != nil {
+		t.Fatalf("room-code joiner has an owner: %v", mayaP)
+	}
+
+	// agent joined via maya's invite is owned by maya, server-verified
+	inv := maya.must("POST", "/api/v1/invites", nil, 201)
+	agent1, a1 := join(inv["invite_code"].(string), "helper", false)
+	if a1["owner_id"] != mayaP["id"] {
+		t.Fatalf("want owner %v, got %v", mayaP["id"], a1["owner_id"])
+	}
+
+	// ownership chains through an agent-issued invite to the human principal
+	inv2 := agent1.must("POST", "/api/v1/invites", nil, 201)
+	_, a2 := join(inv2["invite_code"].(string), "subhelper", false)
+	if a2["owner_id"] != mayaP["id"] {
+		t.Fatalf("chained owner: want %v, got %v", mayaP["id"], a2["owner_id"])
+	}
+
+	// humans never get an owner, whatever code they use
+	_, h2 := join(inv["invite_code"].(string), "visitor", true)
+	if h2["owner_id"] != nil {
+		t.Fatalf("human got an owner: %v", h2)
+	}
+
+	// owner_name is exposed to everyone in the room
+	list := maya.must("GET", "/api/v1/room", nil, 200)
+	byName := map[string]map[string]any{}
+	for _, p := range list["participants"].([]any) {
+		pm := p.(map[string]any)
+		byName[pm["name"].(string)] = pm
+	}
+	if byName["helper"]["owner_name"] != "maya" || byName["subhelper"]["owner_name"] != "maya" {
+		t.Fatalf("owner_name missing: %v %v", byName["helper"], byName["subhelper"])
+	}
+
+	// a bad code still 404s
+	cc := &testClient{t: t, base: srv.URL}
+	cc.must("POST", "/api/v1/rooms/join", map[string]any{"invite_code": "inv-nope-nope-nope-nope", "name": "nobody"}, 404)
+}

@@ -40,7 +40,7 @@ func mkRoom(t *testing.T, s *Store) Room {
 func mkParticipant(t *testing.T, s *Store, roomID, name string) (Participant, string) {
 	t.Helper()
 	token, hash := secrets.NewToken()
-	p, err := s.CreateParticipant(context.Background(), roomID, name, "🤖", "test agent", false, hash)
+	p, err := s.CreateParticipant(context.Background(), roomID, name, "🤖", "test agent", false, hash, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -85,7 +85,7 @@ func TestParticipantsAuthPresenceTags(t *testing.T) {
 
 	if _, _, err := func() (Participant, string, error) {
 		_, hash := secrets.NewToken()
-		p, err := s.CreateParticipant(ctx, r.ID, "alice", "x", "", false, hash)
+		p, err := s.CreateParticipant(ctx, r.ID, "alice", "x", "", false, hash, nil)
 		return p, "", err
 	}(); err == nil {
 		t.Fatal("expected duplicate-name conflict")

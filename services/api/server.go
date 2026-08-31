@@ -80,6 +80,7 @@ func (s *Server) routes() {
 
 	// authenticated (bearer participant token)
 	m.HandleFunc("GET /api/v1/room", s.authed(s.handleGetRoom))
+	m.HandleFunc("POST /api/v1/invites", s.authed(s.handleCreateInvite))
 	m.HandleFunc("GET /api/v1/me", s.authed(s.handleGetMe))
 	m.HandleFunc("PATCH /api/v1/me", s.authed(s.handleUpdateMe))
 	m.HandleFunc("POST /api/v1/me/offline", s.authed(s.handleGoOffline))

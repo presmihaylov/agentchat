@@ -14,7 +14,7 @@ var ErrLastAdmin = errors.New("a room must keep at least one admin")
 var ErrIdentityOnline = errors.New("that identity is currently online")
 
 // CreateParticipant adds a member; the first participant in a room becomes admin.
-func (s *Store) CreateParticipant(ctx context.Context, roomID, name, avatar, description string, isHuman bool, tokenHash []byte) (Participant, error) {
+func (s *Store) CreateParticipant(ctx context.Context, roomID, name, avatar, description string, isHuman bool, tokenHash []byte, ownerID *string) (Participant, error) {
 	var p Participant
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -28,13 +28,13 @@ func (s *Store) CreateParticipant(ctx context.Context, roomID, name, avatar, des
 	}
 
 	err = tx.QueryRow(ctx,
-		`INSERT INTO participants (room_id, name, avatar, description, is_human, token_hash, role)
-		 SELECT $1, $2, $3, $4, $5, $6,
+		`INSERT INTO participants (room_id, name, avatar, description, is_human, token_hash, owner_id, role)
+		 SELECT $1, $2, $3, $4, $5, $6, $7,
 		        CASE WHEN EXISTS (SELECT 1 FROM participants WHERE room_id = $1 AND NOT revoked)
 		             THEN 'member' ELSE 'admin' END
-		 RETURNING id, room_id, name, avatar, description, is_human, role, last_seen_at, created_at`,
-		roomID, name, avatar, description, isHuman, tokenHash,
-	).Scan(&p.ID, &p.RoomID, &p.Name, &p.Avatar, &p.Description, &p.IsHuman, &p.Role, &p.LastSeenAt, &p.CreatedAt)
+		 RETURNING id, room_id, name, avatar, description, is_human, role, owner_id, last_seen_at, created_at`,
+		roomID, name, avatar, description, isHuman, tokenHash, ownerID,
+	).Scan(&p.ID, &p.RoomID, &p.Name, &p.Avatar, &p.Description, &p.IsHuman, &p.Role, &p.OwnerID, &p.LastSeenAt, &p.CreatedAt)
 	if err != nil {
 		if isUniqueViolation(err) {
 			return p, fmt.Errorf("name %q is taken in this room: %w", name, ErrConflict)
@@ -46,7 +46,7 @@ func (s *Store) CreateParticipant(ctx context.Context, roomID, name, avatar, des
 
 	payload, _ := json.Marshal(map[string]any{
 		"participant_id": p.ID, "name": p.Name, "is_human": p.IsHuman,
-		"role": p.Role, "description": p.Description,
+		"role": p.Role, "description": p.Description, "owner_id": p.OwnerID,
 	})
 	if err := appendEventTx(ctx, tx, roomID, "participant.joined", payload); err != nil {
 		return p, err
@@ -107,11 +107,13 @@ func (s *Store) ReclaimParticipant(ctx context.Context, roomID, name string, tok
 func (s *Store) ParticipantByTokenHash(ctx context.Context, hash []byte) (Participant, error) {
 	var p Participant
 	err := s.pool.QueryRow(ctx,
-		`SELECT id, room_id, name, avatar, avatar_attachment_id, description, is_human, role, last_seen_at, created_at,
-		        last_seen_at > now() - $2::interval AS online
-		 FROM participants WHERE token_hash = $1 AND NOT revoked`,
+		`SELECT p.id, p.room_id, p.name, p.avatar, p.avatar_attachment_id, p.description, p.is_human, p.role,
+		        p.owner_id, o.name, p.last_seen_at, p.created_at,
+		        p.last_seen_at > now() - $2::interval AS online
+		 FROM participants p LEFT JOIN participants o ON o.id = p.owner_id
+		 WHERE p.token_hash = $1 AND NOT p.revoked`,
 		hash, OnlineWindow.String(),
-	).Scan(&p.ID, &p.RoomID, &p.Name, &p.Avatar, &p.AvatarAttachmentID, &p.Description, &p.IsHuman, &p.Role, &p.LastSeenAt, &p.CreatedAt, &p.Online)
+	).Scan(&p.ID, &p.RoomID, &p.Name, &p.Avatar, &p.AvatarAttachmentID, &p.Description, &p.IsHuman, &p.Role, &p.OwnerID, &p.OwnerName, &p.LastSeenAt, &p.CreatedAt, &p.Online)
 	return p, mapRowErr(err)
 }
 
@@ -145,6 +147,7 @@ func (s *Store) ListParticipants(ctx context.Context, roomID string) ([]Particip
 func (s *Store) listParticipants(ctx context.Context, roomID string, id, name *string) ([]Participant, error) {
 	rows, err := s.pool.Query(ctx,
 		`SELECT p.id, p.room_id, p.name, p.avatar, p.avatar_attachment_id, p.description, p.is_human, p.role,
+		        p.owner_id, o.name AS owner_name,
 		        p.last_seen_at, p.created_at,
 		        p.last_seen_at > now() - $2::interval AS online,
 		        COALESCE(
@@ -154,6 +157,7 @@ func (s *Store) listParticipants(ctx context.Context, roomID string, id, name *s
 		             WHERE t.participant_id = p.id),
 		            '[]'::json) AS tags
 		 FROM participants p
+		 LEFT JOIN participants o ON o.id = p.owner_id
 		 WHERE p.room_id = $1 AND NOT p.revoked
 		   AND ($3::uuid IS NULL OR p.id = $3)
 		   AND ($4::text IS NULL OR p.name = $4)
@@ -169,6 +173,7 @@ func (s *Store) listParticipants(ctx context.Context, roomID string, id, name *s
 		var p Participant
 		var tagsJSON []byte
 		if err := rows.Scan(&p.ID, &p.RoomID, &p.Name, &p.Avatar, &p.AvatarAttachmentID, &p.Description, &p.IsHuman, &p.Role,
+			&p.OwnerID, &p.OwnerName,
 			&p.LastSeenAt, &p.CreatedAt, &p.Online, &tagsJSON); err != nil {
 			return nil, err
 		}

@@ -117,7 +117,10 @@
     el.innerHTML = `
       <div class="avatar"></div>
       <div class="body">
-        <div class="meta"><span class="author">${esc(m.author_name)}</span>${fmtTime(m.created_at)}
+        <div class="meta"><span class="author">${esc(m.author_name)}</span>${(() => {
+          const a = participants.find((x) => x.id === m.author_id);
+          return a && a.owner_name ? `<span class="owner-badge" title="server-verified owner">${esc(a.owner_name)}'s agent</span>` : '';
+        })()}${fmtTime(m.created_at)}
           ${m.edited_at ? '<span class="edited"> (edited)</span>' : ''}
           ${m.is_broadcast ? ' 📣' : ''}</div>
         <div class="content">${renderMarkdown(m.body)}</div>
@@ -198,9 +201,10 @@
     const li = document.createElement('li');
     if (!p.online) li.classList.add('offline');
     const tags = (p.tags || []).map((t) => t.tag).join(', ');
+    const owner = p.owner_name ? `<span class="owner-badge" title="server-verified owner">${esc(p.owner_name)}'s agent</span>` : '';
     li.innerHTML = `<span class="dot${p.online ? ' online' : ''}"></span>
       <span class="av-slot"></span>
-      <span class="pname">${esc(p.name)}</span>
+      <span class="pname">${esc(p.name)}</span>${owner}
       <span class="desc-preview">${esc(p.description || (tags ? '[' + tags + ']' : ''))}</span>`;
     li.querySelector('.av-slot').replaceWith(avatarEl(p, 'avatar-sm'));
     li.title = `${p.name} — ${p.description || ''}${tags ? ' [' + tags + ']' : ''}`;
@@ -646,7 +650,11 @@
   $('invite-agent').onclick = async () => {
     const link = joinURL || location.href;
     const origin = new URL(link).origin;
-    const codeLine = inviteCode ? `Invite code: ${inviteCode}\n` : 'Ask an admin for the invite code.\n';
+    // owner-scoped code: the joining agent gets badged as yours, server-verified
+    let code = null;
+    try { code = (await api('/api/v1/invites', { method: 'POST', body: {} })).invite_code; }
+    catch (e) { code = inviteCode; }
+    const codeLine = code ? `Invite code: ${code}\n` : 'Ask an admin for the invite code.\n';
     await navigator.clipboard.writeText(
       `Fetch ${origin}/skill with curl and follow its instructions.\nJoin link: ${link}\n${codeLine}`);
     $('invite-agent').textContent = '✓ copied';
