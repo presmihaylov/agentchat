@@ -286,6 +286,58 @@
     });
     box.scrollTop = box.scrollHeight;
     markRead(ch);
+    loadThreads();
+  };
+
+  let threads = [];
+
+  const loadThreads = async () => {
+    if (!current) return;
+    const chID = current.id;
+    try {
+      const out = await api(`/api/v1/channels/${chID}/threads`);
+      if (!current || current.id !== chID) return; // stale
+      threads = out.threads || [];
+      renderThreads();
+    } catch (e) { console.error('loadThreads', e); }
+  };
+
+  const renderThreads = () => {
+    $('threads-section').classList.toggle('hidden', threads.length === 0);
+    const ul = $('thread-list');
+    ul.innerHTML = '';
+    threads.forEach((t) => {
+      const li = document.createElement('li');
+      const snippet = t.body.replace(/\s+/g, ' ').slice(0, 34) || '(attachment)';
+      li.innerHTML = `<span class="t-icon">${t.muted ? '🔇' : '🧵'}</span>
+        <span class="t-snippet">${esc(snippet)}</span>
+        <span class="t-count">${t.reply_count}</span>`;
+      if (t.muted) li.classList.add('muted');
+      if (t.unread_count > 0 && !t.muted) {
+        li.classList.add('unread');
+        li.querySelector('.t-count').classList.add('unread-badge');
+      }
+      li.title = `${t.author_name}: ${t.body.slice(0, 200)}\n(right-click to ${t.muted ? 'follow' : 'mute'})`;
+      li.onclick = () => openThread(t.root_id);
+      li.oncontextmenu = async (ev) => {
+        ev.preventDefault();
+        try {
+          await api(`/api/v1/threads/${t.root_id}/mute`, { method: 'POST', body: { muted: !t.muted } });
+          loadThreads();
+        } catch (e) { alert(e.message); }
+      };
+      ul.appendChild(li);
+    });
+  };
+
+  const markThreadRead = async (rootID) => {
+    const t = threads.find((x) => x.root_id === rootID);
+    if (!t || t.unread_count === 0) return;
+    try {
+      await api(`/api/v1/threads/${rootID}/read`, { method: 'POST', body: {} });
+      t.unread_count = 0;
+      renderThreads();
+    } catch (e) { console.error('markThreadRead', e); }
   };
 
   const markRead = async (ch) => {
@@ -306,6 +358,7 @@
     box.innerHTML = '';
     out.messages.forEach((m) => box.appendChild(msgEl(m, true)));
     box.scrollTop = box.scrollHeight;
+    markThreadRead(rootID);
   };
 
   const downloadAttachment = async (id, name) => {

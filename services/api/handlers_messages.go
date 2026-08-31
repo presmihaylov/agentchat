@@ -250,6 +250,73 @@ func (s *Server) handleGetThread(w http.ResponseWriter, r *http.Request, p model
 	writeJSON(w, http.StatusOK, map[string]any{"messages": msgs})
 }
 
+// resolveThreadRoot maps a message id (root or reply) to the thread's root.
+func (s *Server) resolveThreadRoot(r *http.Request, p models.Participant) (string, error) {
+	id := r.PathValue("id")
+	if !isUUID(id) {
+		return "", models.ErrNotFound
+	}
+	m, err := s.store.MessageByID(r.Context(), p.RoomID, id)
+	if err != nil {
+		return "", err
+	}
+	if m.ThreadRootID != nil {
+		return *m.ThreadRootID, nil
+	}
+	return m.ID, nil
+}
+
+// handleListThreads: the caller's thread tree for one channel — threads they
+// started, replied in, or were mentioned in.
+func (s *Server) handleListThreads(w http.ResponseWriter, r *http.Request, p models.Participant) {
+	ch, err := s.resolveChannel(r, p, r.PathValue("id"))
+	if err != nil {
+		writeStoreErr(w, err)
+		return
+	}
+	list, err := s.store.ListInvolvedThreads(r.Context(), p.RoomID, ch.ID, p.ID)
+	if err != nil {
+		writeStoreErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"threads": list})
+}
+
+func (s *Server) handleThreadRead(w http.ResponseWriter, r *http.Request, p models.Participant) {
+	root, err := s.resolveThreadRoot(r, p)
+	if err != nil {
+		writeStoreErr(w, err)
+		return
+	}
+	at, err := s.store.MarkThreadRead(r.Context(), p.ID, root)
+	if err != nil {
+		writeStoreErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"root_id": root, "last_read_at": at})
+}
+
+type threadMuteReq struct {
+	Muted bool `json:"muted"`
+}
+
+func (s *Server) handleThreadMute(w http.ResponseWriter, r *http.Request, p models.Participant) {
+	root, err := s.resolveThreadRoot(r, p)
+	if err != nil {
+		writeStoreErr(w, err)
+		return
+	}
+	var req threadMuteReq
+	if !readJSON(w, r, &req) {
+		return
+	}
+	if err := s.store.SetThreadMuted(r.Context(), p.ID, root, req.Muted); err != nil {
+		writeStoreErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"root_id": root, "muted": req.Muted})
+}
+
 func (s *Server) handleUploadAttachment(w http.ResponseWriter, r *http.Request, p models.Participant) {
 	if !s.uploadLimit.Allow("up:" + p.ID) {
 		writeErr(w, http.StatusTooManyRequests, "too many uploads, slow down")

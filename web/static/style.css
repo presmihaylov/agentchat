@@ -60,6 +60,10 @@ button { cursor: pointer; }
 .unread-divider { display: flex; align-items: center; gap: 8px; margin: 10px 0; color: #e0666b; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; }
 .unread-divider::before, .unread-divider::after { content: ''; flex: 1; border-top: 1px solid #e0666b55; }
 .unread-divider span { flex: none; }
+#thread-list .t-icon { flex: none; font-size: 12px; }
+#thread-list .t-snippet { overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1; }
+#thread-list .t-count { flex: none; color: var(--dim); font-size: 11px; }
+#thread-list li.muted { opacity: .5; }
 #me-footer { margin-top: auto; padding: 10px 16px; border-top: 1px solid var(--border); font-size: 13px; color: var(--dim); display: flex; align-items: center; gap: 7px; cursor: pointer; }
 
 /* main */

@@ -575,3 +575,66 @@ func TestUnreadCounts(t *testing.T) {
 		t.Fatalf("after root+reply: unread=%v, want 1 (thread replies don't count)", n)
 	}
 }
+
+func TestThreadTree(t *testing.T) {
+	srv, _ := newTestServer(t)
+	defer srv.Close()
+	_, alice, bob := setupRoom(t, srv.URL)
+
+	threadsOf := func(c *testClient) []map[string]any {
+		out := c.must("GET", "/api/v1/channels/general/threads", nil, 200)
+		list := []map[string]any{}
+		for _, raw := range out["threads"].([]any) {
+			list = append(list, raw.(map[string]any))
+		}
+		return list
+	}
+
+	root := alice.must("POST", "/api/v1/channels/general/messages", map[string]any{"body": "topic"}, 201)
+	rootID := root["id"].(string)
+	bob.must("POST", "/api/v1/channels/general/messages",
+		map[string]any{"body": "reply from bob", "thread_root_id": rootID}, 201)
+
+	// alice started it, bob replied — both are involved; alice has 1 unread
+	at, bt := threadsOf(alice), threadsOf(bob)
+	if len(at) != 1 || len(bt) != 1 {
+		t.Fatalf("thread counts: alice=%d bob=%d, want 1/1", len(at), len(bt))
+	}
+	if at[0]["unread_count"].(float64) != 1 || bt[0]["unread_count"].(float64) != 0 {
+		t.Fatalf("unread: alice=%v bob=%v, want 1/0", at[0]["unread_count"], bt[0]["unread_count"])
+	}
+
+	// reading clears the counter
+	alice.must("POST", "/api/v1/threads/"+rootID+"/read", nil, 200)
+	if n := threadsOf(alice)[0]["unread_count"].(float64); n != 0 {
+		t.Fatalf("after read: unread=%v, want 0", n)
+	}
+
+	// mute survives a plain reply...
+	alice.must("POST", "/api/v1/threads/"+rootID+"/mute", map[string]any{"muted": true}, 200)
+	bob.must("POST", "/api/v1/channels/general/messages",
+		map[string]any{"body": "another reply", "thread_root_id": rootID}, 201)
+	if th := threadsOf(alice)[0]; th["muted"].(bool) != true {
+		t.Fatalf("mute did not survive a plain reply")
+	}
+
+	// ...but a direct @mention breaks it
+	bob.must("POST", "/api/v1/channels/general/messages",
+		map[string]any{"body": "hey @alice look", "thread_root_id": rootID}, 201)
+	if th := threadsOf(alice)[0]; th["muted"].(bool) != false {
+		t.Fatalf("@mention did not break the mute")
+	}
+
+	// mute via a reply id resolves to the root
+	alice.must("POST", "/api/v1/threads/"+rootID+"/mute", map[string]any{"muted": false}, 200)
+
+	// an uninvolved thread stays out of the tree
+	other := &testClient{t: t, base: srv.URL}
+	_ = other
+	root2 := bob.must("POST", "/api/v1/channels/general/messages", map[string]any{"body": "bob only"}, 201)
+	bob.must("POST", "/api/v1/channels/general/messages",
+		map[string]any{"body": "bob solo reply", "thread_root_id": root2["id"]}, 201)
+	if n := len(threadsOf(alice)); n != 1 {
+		t.Fatalf("alice sees %d threads, want 1 (not involved in bob's)", n)
+	}
+}

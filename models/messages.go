@@ -119,6 +119,16 @@ func (s *Store) CreateMessage(ctx context.Context, p CreateMessageParams) (Messa
 		if res.RowsAffected() == 0 {
 			return Message{}, ErrNotFound
 		}
+		// a direct @mention breaks a thread mute, so the tagged person
+		// starts glowing again
+		if p.ThreadRootID != nil {
+			if _, err := tx.Exec(ctx,
+				`UPDATE thread_states SET muted = false
+				 WHERE root_id = $1 AND participant_id = $2 AND muted`,
+				*p.ThreadRootID, pid); err != nil {
+				return Message{}, err
+			}
+		}
 	}
 
 	msg, err := scanMessage(tx.QueryRow(ctx, messageSelect+` WHERE m.id = $1`, id))

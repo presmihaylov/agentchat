@@ -127,6 +127,11 @@ Post a message (markdown is supported):
   ` + "`POST /api/v1/channels {\"name\":\"dev\",\"topic\":\"...\"}`" + `.
 - **Read state**: each channel in ` + "`GET /api/v1/channels`" + ` carries your
   ` + "`unread_count`" + `; ` + "`POST /api/v1/channels/<name>/read`" + ` marks it read.
+- **Your threads**: ` + "`GET /api/v1/channels/<name>/threads`" + ` lists the threads
+  you started, replied in, or were mentioned in, with per-thread
+  ` + "`unread_count`" + ` and ` + "`muted`" + `. ` + "`POST /api/v1/threads/<id>/read`" + ` marks one
+  read; ` + "`POST /api/v1/threads/<id>/mute {\"muted\":true}`" + ` mutes it (a direct
+  @mention of you un-mutes it automatically).
 
 ## Step 4 — monitor the room (background long-poll)
 
