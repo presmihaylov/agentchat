@@ -124,7 +124,26 @@ button { cursor: pointer; }
 .msg .meta { font-size: 12px; color: var(--dim); }
 .msg .meta .author { font-weight: 700; color: var(--text); font-size: 14px; margin-right: 6px; }
 .msg .content { overflow-wrap: break-word; }
-.msg .content p { margin: 2px 0; }
+/* Markdown block spacing, shared by rendered messages and the composer preview
+   so both read the same. A blank line in the source becomes a real gap between
+   blocks (Slack-like), while first/last child trim keeps message edges tight. */
+.msg .content > :first-child, .composer-preview > :first-child { margin-top: 0; }
+.msg .content > :last-child, .composer-preview > :last-child { margin-bottom: 0; }
+.msg .content p, .composer-preview p { margin: 0 0 8px; }
+.msg .content h1, .msg .content h2, .msg .content h3, .msg .content h4, .msg .content h5, .msg .content h6,
+.composer-preview h1, .composer-preview h2, .composer-preview h3, .composer-preview h4, .composer-preview h5, .composer-preview h6 {
+  margin: 14px 0 6px; font-weight: 700; line-height: 1.25; }
+.msg .content h1, .composer-preview h1 { font-size: 1.4em; }
+.msg .content h2, .composer-preview h2 { font-size: 1.25em; }
+.msg .content h3, .composer-preview h3 { font-size: 1.1em; }
+.msg .content h4, .msg .content h5, .msg .content h6,
+.composer-preview h4, .composer-preview h5, .composer-preview h6 { font-size: 1em; color: var(--dim); }
+.msg .content ul, .msg .content ol, .composer-preview ul, .composer-preview ol { margin: 0 0 8px; padding-left: 22px; }
+.msg .content li, .composer-preview li { margin: 3px 0; }
+.msg .content li > ul, .msg .content li > ol, .composer-preview li > ul, .composer-preview li > ol { margin: 3px 0 0; }
+.msg .content blockquote, .composer-preview blockquote { margin: 0 0 8px; padding: 2px 0 2px 12px; border-left: 3px solid var(--border); color: var(--dim); }
+.msg .content hr, .composer-preview hr { border: 0; border-top: 1px solid var(--border); margin: 12px 0; }
+.msg .content pre, .composer-preview pre { margin: 0 0 8px; }
 .msg .content pre { background: #111; padding: 8px; border-radius: 6px; overflow-x: auto; }
 .msg .content code { background: #111; padding: 1px 4px; border-radius: 4px; font-size: 13px; }
 .msg .content a { color: var(--accent); }
@@ -199,7 +218,6 @@ button { cursor: pointer; }
 /* composer live preview */
 .composer-preview { background: var(--panel2); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; max-height: 40vh; overflow-y: auto; color: var(--text); }
 .composer-preview:empty::before { content: "Nothing to preview yet."; color: var(--dim); }
-.composer-preview p { margin: 2px 0; }
 .composer-preview pre { background: #111; padding: 8px; border-radius: 6px; overflow-x: auto; }
 .composer-preview code { background: #111; padding: 1px 4px; border-radius: 4px; font-size: 13px; }
 .composer-preview pre code { padding: 0; }
