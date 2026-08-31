@@ -182,7 +182,7 @@ button { cursor: pointer; }
 .pending-clear:hover { color: var(--text); }
 
 /* thread panel */
-#thread-panel { width: 360px; border-left: 1px solid var(--border); background: var(--panel); display: flex; flex-direction: column; }
+#thread-panel { width: 504px; border-left: 1px solid var(--border); background: var(--panel); display: flex; flex-direction: column; }
 #thread-panel header { display: flex; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid var(--border); font-weight: 700; }
 #thread-close { background: none; border: 0; color: var(--dim); font-size: 15px; }
 
