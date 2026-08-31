@@ -18,8 +18,10 @@ async function api(path, opts = {}) {
 
 (async () => {
   const created = await api('/api/v1/rooms', { method: 'POST', body: { name: 'ui smoke' } });
-  const secret = created.room.secret;
-  const agent = await api('/api/v1/rooms/join', { method: 'POST', body: { secret, name: 'smokebot', description: 'test agent' } });
+  const inviteCode = created.invite_code;
+  const slug = created.room.slug;
+  if (created.join_url.includes(inviteCode)) throw new Error('join_url leaks the invite code');
+  const agent = await api('/api/v1/rooms/join', { method: 'POST', body: { invite_code: inviteCode, name: 'smokebot', description: 'test agent' } });
 
   const browser = await puppeteer.launch({
     executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
@@ -31,13 +33,14 @@ async function api(path, opts = {}) {
   page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
   page.on('console', (m) => { if (m.type() === 'error') errors.push('console: ' + m.text()); });
 
-  await page.goto(SERVER + '/r/' + secret, { waitUntil: 'networkidle2' });
+  await page.goto(SERVER + '/r/' + slug, { waitUntil: 'networkidle2' });
 
   // join form visible, room name peeked
   await page.waitForSelector('#join-view:not(.hidden)', { timeout: 5000 });
   const peeked = await page.$eval('#join-room-name', (el) => el.textContent);
   if (!peeked.includes('ui smoke')) throw new Error('peek failed: ' + peeked);
 
+  await page.type('#join-code', inviteCode);
   await page.type('#join-name', 'humantester');
   await page.type('#join-desc', 'the human');
   await page.click('#join-form button[type=submit]');
@@ -78,6 +81,17 @@ async function api(path, opts = {}) {
   await page.waitForFunction(() => [...document.querySelectorAll('#messages .msg')].some((m) => m.textContent.includes('try me')), { timeout: 8000 });
   const pwned = await page.evaluate(() => window.PWNED === 1);
   if (pwned) throw new Error('XSS: onerror executed');
+
+  // onboarding: /create makes a fresh workspace and lands in its chat as admin
+  await page.goto(SERVER + '/create', { waitUntil: 'networkidle2' });
+  await page.waitForSelector('#create-view:not(.hidden)', { timeout: 5000 });
+  await page.type('#create-room-name', 'smoke onboarding');
+  await page.type('#create-user-name', 'founder');
+  await page.click('#create-form button[type=submit]');
+  await page.waitForSelector('#chat-view:not(.hidden)', { timeout: 8000 });
+  const newRoomName = await page.$eval('#room-name', (el) => el.textContent);
+  if (newRoomName !== 'smoke onboarding') throw new Error('onboarding room name: ' + newRoomName);
+  if (!page.url().startsWith(SERVER + '/r/')) throw new Error('onboarding did not land on /r/<slug>: ' + page.url());
 
   const realErrors = errors.filter((e) => !e.includes('favicon'));
   if (realErrors.length) throw new Error('page errors: ' + realErrors.join(' | '));

@@ -2,14 +2,17 @@
 (() => {
   'use strict';
 
-  const secret = decodeURIComponent(location.pathname.replace(/^\/r\//, '')).replace(/\/+$/, '');
-  const storeKey = 'agentchat:' + secret;
+  // the URL carries only the public slug; joining needs a separate invite code
+  const isCreatePage = location.pathname.replace(/\/+$/, '') === '/create';
+  const slug = isCreatePage ? '' : decodeURIComponent(location.pathname.replace(/^\/r\//, '')).replace(/\/+$/, '');
+  const storeKey = 'agentchat:' + slug;
   const $ = (id) => document.getElementById(id);
 
   let token = null;
   let me = null;
   let room = null;
   let joinURL = null;
+  let inviteCode = null;
   let channels = [];
   let participants = [];
   let current = null;        // current channel object
@@ -225,6 +228,7 @@
     const out = await api('/api/v1/room');
     room = out.room;
     joinURL = out.join_url;
+    inviteCode = out.invite_code || null;
     channels = out.channels || [];
     participants = out.participants || [];
     $('room-name').textContent = room.name;
@@ -375,12 +379,12 @@
   const showJoin = async () => {
     $('join-view').classList.remove('hidden');
     try {
-      const peek = await api('/api/v1/rooms/peek?secret=' + encodeURIComponent(secret));
+      const peek = await api('/api/v1/rooms/peek?slug=' + encodeURIComponent(slug));
       $('join-room-name').textContent = '“' + peek.name + '”';
     } catch (e) {
-      $('join-error').textContent = e.status === 404 ? 'This join link is not valid (the secret may have been rotated).' : e.message;
+      $('join-error').textContent = e.status === 404 ? 'This link does not point to a workspace.' : e.message;
       $('join-error').classList.remove('hidden');
-      $('join-form').querySelector('button').disabled = true;
+      $('join-form').querySelector('button[type=submit]').disabled = true;
     }
   };
 
@@ -399,7 +403,7 @@
       const out = await api('/api/v1/rooms/join', {
         method: 'POST',
         body: {
-          secret,
+          invite_code: $('join-code').value.trim(),
           name: $('join-name').value.trim(),
           avatar: $('join-avatar').value.trim() || '🧑',
           description: $('join-desc').value.trim(),
@@ -407,7 +411,10 @@
         },
       });
       token = out.token;
-      localStorage.setItem(storeKey, JSON.stringify({ token }));
+      // the code decides which room you join — follow its slug if it differs
+      const joinedSlug = (out.room && out.room.slug) || slug;
+      localStorage.setItem('agentchat:' + joinedSlug, JSON.stringify({ token }));
+      if (joinedSlug !== slug) { location.href = '/r/' + joinedSlug; return; }
       await enterChat();
     } catch (e) {
       $('join-error').textContent = e.message;
@@ -529,7 +536,9 @@
   };
 
   $('copy-link').onclick = async () => {
-    await navigator.clipboard.writeText(joinURL || location.href);
+    const link = joinURL || location.href;
+    // the link alone can't join — include the code when the caller may share it
+    await navigator.clipboard.writeText(inviteCode ? `${link}\ninvite code: ${inviteCode}` : link);
     $('copy-link').textContent = '✓ copied';
     setTimeout(() => { $('copy-link').textContent = '🔗 copy invite'; }, 1500);
   };
@@ -537,8 +546,9 @@
   $('invite-agent').onclick = async () => {
     const link = joinURL || location.href;
     const origin = new URL(link).origin;
+    const codeLine = inviteCode ? `Invite code: ${inviteCode}\n` : 'Ask an admin for the invite code.\n';
     await navigator.clipboard.writeText(
-      `Fetch ${origin}/skill with curl and follow its instructions.\nJoin link: ${link}\n`);
+      `Fetch ${origin}/skill with curl and follow its instructions.\nJoin link: ${link}\n${codeLine}`);
     $('invite-agent').textContent = '✓ copied';
     setTimeout(() => { $('invite-agent').textContent = '🤖 invite agent'; }, 1500);
   };
@@ -597,9 +607,40 @@
 
   window.addEventListener('focus', () => { unreadMentions = 0; setTitle(); });
 
+  // ---------- create workspace (onboarding at /create) ----------
+
+  if (isCreatePage) {
+    $('create-view').classList.remove('hidden');
+    $('create-form').addEventListener('submit', async (ev) => {
+      ev.preventDefault();
+      const btn = $('create-form').querySelector('button[type=submit]');
+      btn.disabled = true;
+      try {
+        const created = await api('/api/v1/rooms', {
+          method: 'POST', body: { name: $('create-room-name').value.trim() },
+        });
+        const joined = await api('/api/v1/rooms/join', {
+          method: 'POST',
+          body: {
+            invite_code: created.invite_code,
+            name: $('create-user-name').value.trim(),
+            is_human: true,
+          },
+        });
+        localStorage.setItem('agentchat:' + created.room.slug, JSON.stringify({ token: joined.token }));
+        location.href = '/r/' + created.room.slug;
+      } catch (e) {
+        btn.disabled = false;
+        $('create-error').textContent = e.message;
+        $('create-error').classList.remove('hidden');
+      }
+    });
+    return;
+  }
+
   // boot
   (async () => {
-    if (!secret) { document.body.textContent = 'Missing room link.'; return; }
+    if (!slug) { document.body.textContent = 'Missing room link.'; return; }
     let saved = null;
     try { saved = JSON.parse(localStorage.getItem(storeKey) || 'null'); } catch (e) { /* corrupt entry */ }
     if (saved && saved.token) {

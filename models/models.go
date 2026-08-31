@@ -8,7 +8,8 @@ import (
 
 type Room struct {
 	ID        string    `json:"id"`
-	Secret    string    `json:"secret,omitempty"`
+	Slug      string    `json:"slug"`
+	Secret    string    `json:"invite_code,omitempty"`
 	Name      string    `json:"name"`
 	CreatedAt time.Time `json:"created_at"`
 }

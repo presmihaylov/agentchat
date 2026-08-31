@@ -27,19 +27,33 @@ func randInt(n int) int {
 	return int(v.Int64())
 }
 
-// RoomSecret returns a human-friendly, high-entropy room secret:
-// 4 EFF wordlist words + 6 crockford chars ≈ 82 bits.
-func RoomSecret() string {
-	parts := make([]string, 0, 5)
-	for range 4 {
+// RoomSlug returns the public, non-secret room identifier used in join URLs:
+// 2 EFF wordlist words + 4 crockford chars. Knowing it does not let you join.
+func RoomSlug() string {
+	parts := make([]string, 0, 3)
+	for range 2 {
 		parts = append(parts, words[randInt(len(words))])
 	}
-	suffix := make([]byte, 6)
+	suffix := make([]byte, 4)
 	for i := range suffix {
 		suffix[i] = crockford[randInt(len(crockford))]
 	}
 	parts = append(parts, string(suffix))
 	return strings.Join(parts, "-")
+}
+
+// InviteCode returns the secret needed to join a room:
+// "inv-" + 4 groups of 4 crockford chars = 80 bits.
+func InviteCode() string {
+	groups := make([]string, 0, 4)
+	for range 4 {
+		g := make([]byte, 4)
+		for i := range g {
+			g[i] = crockford[randInt(len(crockford))]
+		}
+		groups = append(groups, string(g))
+	}
+	return "inv-" + strings.Join(groups, "-")
 }
 
 // NewToken returns a participant bearer token ("act_" + 32 base58 chars,

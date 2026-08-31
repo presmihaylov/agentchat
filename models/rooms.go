@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 )
 
-func (s *Store) CreateRoom(ctx context.Context, name, secret string) (Room, error) {
+func (s *Store) CreateRoom(ctx context.Context, name, slug, secret string) (Room, error) {
 	var r Room
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -14,10 +14,10 @@ func (s *Store) CreateRoom(ctx context.Context, name, secret string) (Room, erro
 	defer tx.Rollback(ctx)
 
 	err = tx.QueryRow(ctx,
-		`INSERT INTO rooms (name, secret) VALUES ($1, $2)
-		 RETURNING id, secret, name, created_at`,
-		name, secret,
-	).Scan(&r.ID, &r.Secret, &r.Name, &r.CreatedAt)
+		`INSERT INTO rooms (name, slug, secret) VALUES ($1, $2, $3)
+		 RETURNING id, slug, secret, name, created_at`,
+		name, slug, secret,
+	).Scan(&r.ID, &r.Slug, &r.Secret, &r.Name, &r.CreatedAt)
 	if err != nil {
 		if isUniqueViolation(err) {
 			return r, ErrConflict
@@ -39,15 +39,26 @@ func (s *Store) CreateRoom(ctx context.Context, name, secret string) (Room, erro
 	return r, tx.Commit(ctx)
 }
 
+// RoomBySecret looks a room up by its invite code.
 func (s *Store) RoomBySecret(ctx context.Context, secret string) (Room, error) {
 	var r Room
 	err := s.pool.QueryRow(ctx,
-		`SELECT id, secret, name, created_at FROM rooms WHERE secret = $1`, secret,
-	).Scan(&r.ID, &r.Secret, &r.Name, &r.CreatedAt)
+		`SELECT id, slug, secret, name, created_at FROM rooms WHERE secret = $1`, secret,
+	).Scan(&r.ID, &r.Slug, &r.Secret, &r.Name, &r.CreatedAt)
 	return r, mapRowErr(err)
 }
 
-// RotateSecret replaces the room's join secret, invalidating the old link.
+// RoomBySlug looks a room up by its public URL slug.
+func (s *Store) RoomBySlug(ctx context.Context, slug string) (Room, error) {
+	var r Room
+	err := s.pool.QueryRow(ctx,
+		`SELECT id, slug, secret, name, created_at FROM rooms WHERE slug = $1`, slug,
+	).Scan(&r.ID, &r.Slug, &r.Secret, &r.Name, &r.CreatedAt)
+	return r, mapRowErr(err)
+}
+
+// RotateSecret replaces the room's invite code, invalidating the old one.
+// The public slug (and so the room URL) stays stable.
 func (s *Store) RotateSecret(ctx context.Context, roomID, newSecret string) (Room, error) {
 	var r Room
 	tx, err := s.pool.Begin(ctx)
@@ -64,9 +75,9 @@ func (s *Store) RotateSecret(ctx context.Context, roomID, newSecret string) (Roo
 	}
 	err = tx.QueryRow(ctx,
 		`UPDATE rooms SET secret = $2 WHERE id = $1
-		 RETURNING id, secret, name, created_at`,
+		 RETURNING id, slug, secret, name, created_at`,
 		roomID, newSecret,
-	).Scan(&r.ID, &r.Secret, &r.Name, &r.CreatedAt)
+	).Scan(&r.ID, &r.Slug, &r.Secret, &r.Name, &r.CreatedAt)
 	if err != nil {
 		return r, mapRowErr(err)
 	}
@@ -91,9 +102,9 @@ func (s *Store) RenameRoom(ctx context.Context, roomID, name string) (Room, erro
 	}
 	err = tx.QueryRow(ctx,
 		`UPDATE rooms SET name = $2 WHERE id = $1
-		 RETURNING id, secret, name, created_at`,
+		 RETURNING id, slug, secret, name, created_at`,
 		roomID, name,
-	).Scan(&r.ID, &r.Secret, &r.Name, &r.CreatedAt)
+	).Scan(&r.ID, &r.Slug, &r.Secret, &r.Name, &r.CreatedAt)
 	if err != nil {
 		return r, mapRowErr(err)
 	}
@@ -107,7 +118,7 @@ func (s *Store) RenameRoom(ctx context.Context, roomID, name string) (Room, erro
 func (s *Store) RoomByID(ctx context.Context, id string) (Room, error) {
 	var r Room
 	err := s.pool.QueryRow(ctx,
-		`SELECT id, secret, name, created_at FROM rooms WHERE id = $1`, id,
-	).Scan(&r.ID, &r.Secret, &r.Name, &r.CreatedAt)
+		`SELECT id, slug, secret, name, created_at FROM rooms WHERE id = $1`, id,
+	).Scan(&r.ID, &r.Slug, &r.Secret, &r.Name, &r.CreatedAt)
 	return r, mapRowErr(err)
 }

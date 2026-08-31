@@ -89,15 +89,18 @@ func setupRoom(t *testing.T, base string) (secret string, alice, bob *testClient
 	t.Helper()
 	c := &testClient{t: t, base: base}
 	out := c.must("POST", "/api/v1/rooms", map[string]any{"name": "test room"}, 201)
-	secret = out["room"].(map[string]any)["secret"].(string)
+	secret = out["invite_code"].(string)
 	if !strings.HasPrefix(out["join_url"].(string), "http://public.test/r/") {
 		t.Fatalf("bad join_url: %v", out["join_url"])
+	}
+	if strings.Contains(out["join_url"].(string), secret) {
+		t.Fatalf("join_url leaks the invite code: %v", out["join_url"])
 	}
 
 	join := func(name string, human bool) *testClient {
 		cc := &testClient{t: t, base: base}
 		out := cc.must("POST", "/api/v1/rooms/join", map[string]any{
-			"secret": secret, "name": name, "description": name + " the test agent", "is_human": human,
+			"invite_code": secret, "name": name, "description": name + " the test agent", "is_human": human,
 		}, 201)
 		cc.token = out["token"].(string)
 		return cc
@@ -109,24 +112,26 @@ func TestFullFlow(t *testing.T) {
 	srv, _ := newTestServer(t)
 	secret, alice, bob := setupRoom(t, srv.URL)
 
-	// join with pasted URL + duplicate name rejected
+	// duplicate name rejected (legacy "secret" field still accepted), bad code 404
 	c := &testClient{t: t, base: srv.URL}
 	c.must("POST", "/api/v1/rooms/join", map[string]any{
-		"secret": "http://public.test/r/" + secret, "name": "alice",
+		"secret": secret, "name": "alice",
 	}, 409)
-	c.must("POST", "/api/v1/rooms/join", map[string]any{"secret": "wrong-secret", "name": "eve"}, 404)
-
-	// peek
-	out := c.must("GET", "/api/v1/rooms/peek?secret="+secret, nil, 200)
-	if out["name"] != "test room" {
-		t.Fatalf("peek: %v", out)
-	}
+	c.must("POST", "/api/v1/rooms/join", map[string]any{"invite_code": "wrong-code", "name": "eve"}, 404)
 
 	// room overview
-	out = alice.must("GET", "/api/v1/room", nil, 200)
+	out := alice.must("GET", "/api/v1/room", nil, 200)
 	if n := len(out["participants"].([]any)); n != 2 {
 		t.Fatalf("want 2 participants, got %d", n)
 	}
+
+	// peek by public slug; peeking by invite code must not work
+	slug := out["room"].(map[string]any)["slug"].(string)
+	peek := c.must("GET", "/api/v1/rooms/peek?slug="+slug, nil, 200)
+	if peek["name"] != "test room" {
+		t.Fatalf("peek: %v", peek)
+	}
+	c.must("GET", "/api/v1/rooms/peek?slug="+secret, nil, 404)
 
 	// unauthenticated
 	anon := &testClient{t: t, base: srv.URL}
@@ -344,7 +349,7 @@ func TestRolesAndModeration(t *testing.T) {
 
 	// channel rules: bob creates one, carol (member) cannot archive it, bob (creator) can
 	cc := &testClient{t: t, base: srv.URL}
-	out := cc.must("POST", "/api/v1/rooms/join", map[string]any{"secret": secret, "name": "carol"}, 201)
+	out := cc.must("POST", "/api/v1/rooms/join", map[string]any{"invite_code": secret, "name": "carol"}, 201)
 	cc.token = out["token"].(string)
 
 	bob.must("POST", "/api/v1/channels", map[string]any{"name": "bobs-place"}, 201)
@@ -400,14 +405,14 @@ func TestRolesAndModeration(t *testing.T) {
 
 	// rotate secret: old secret dies, new one works
 	rot := bob.must("POST", "/api/v1/room/rotate-secret", nil, 200)
-	newSecret := rot["room"].(map[string]any)["secret"].(string)
+	newSecret := rot["invite_code"].(string)
 	if newSecret == secret {
 		t.Fatal("secret did not change")
 	}
 	dead := &testClient{t: t, base: srv.URL}
-	dead.must("POST", "/api/v1/rooms/join", map[string]any{"secret": secret, "name": "late"}, 404)
+	dead.must("POST", "/api/v1/rooms/join", map[string]any{"invite_code": secret, "name": "late"}, 404)
 	fresh := &testClient{t: t, base: srv.URL}
-	fresh.must("POST", "/api/v1/rooms/join", map[string]any{"secret": newSecret, "name": "late"}, 201)
+	fresh.must("POST", "/api/v1/rooms/join", map[string]any{"invite_code": newSecret, "name": "late"}, 201)
 }
 
 func TestEventFiltering(t *testing.T) {

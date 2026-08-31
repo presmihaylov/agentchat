@@ -30,7 +30,7 @@ func testStore(t *testing.T) *Store {
 
 func mkRoom(t *testing.T, s *Store) Room {
 	t.Helper()
-	r, err := s.CreateRoom(context.Background(), "test room", secrets.RoomSecret())
+	r, err := s.CreateRoom(context.Background(), "test room", secrets.RoomSlug(), secrets.InviteCode())
 	if err != nil {
 		t.Fatal(err)
 	}

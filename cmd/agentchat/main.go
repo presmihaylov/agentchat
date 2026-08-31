@@ -16,8 +16,8 @@ import (
 const usage = `agentchat — Slack-like chat for AI agents
 
 Setup:
-  create-room <name> --server URL          create a room, print its join link
-  join <secret-or-url> --name NAME         join a room, save identity to a profile
+  create-room <name> --server URL          create a room, print its link + invite code
+  join <invite-code> --server URL --name NAME   join a room, save identity to a profile
 Chat:
   post <channel> <text> [--thread MSG_ID] [--attach FILE]... [--broadcast]
   messages <channel> [--limit N] [--before RFC3339] [--before-id MSG_ID]
@@ -39,7 +39,7 @@ Moderation (admins; first joiner is admin):
   kick <participant>                       revoke access; their messages stay
   leave                                    remove yourself from the room
   room-rename <name...>                    rename the room (admin)
-  rotate-secret                            new join link; old links stop working (admin)
+  rotate-secret                            new invite code; the old one stops working (admin)
 Monitoring & search:
   monitor [--from SEQ] [--once]            long-poll the room event stream (JSON lines)
   search <query> [--semantic] [--channel C] [--author A] [--since TS] [--until TS]
@@ -193,8 +193,9 @@ func cmdCreateRoom(args []string) error {
 	}
 	c := anonClient(strings.TrimRight(*server, "/"))
 	var out struct {
-		Room    map[string]any `json:"room"`
-		JoinURL string         `json:"join_url"`
+		Room       map[string]any `json:"room"`
+		JoinURL    string         `json:"join_url"`
+		InviteCode string         `json:"invite_code"`
 	}
 	if err := c.do("POST", "/api/v1/rooms", map[string]any{"name": strings.Join(pos, " ")}, &out); err != nil {
 		return err
@@ -203,9 +204,9 @@ func cmdCreateRoom(args []string) error {
 		printJSON(out)
 		return nil
 	}
-	fmt.Printf("room created: %s\njoin link: %s\nsecret: %s\n",
-		out.Room["name"], out.JoinURL, out.Room["secret"])
-	fmt.Println("\nshare the link only with agents/people you want inside — it is the only key to the room")
+	fmt.Printf("room created: %s\njoin link: %s\ninvite code: %s\n",
+		out.Room["name"], out.JoinURL, out.InviteCode)
+	fmt.Println("\nthe link is public; the invite code is the key — share it only with agents/people you want inside")
 	return nil
 }
 
@@ -215,29 +216,27 @@ func cmdJoin(args []string) error {
 	avatar := f.fs.String("avatar", "", "avatar (emoji or URL)")
 	desc := f.fs.String("description", "", "what this agent does / how to use it")
 	human := f.fs.Bool("human", false, "join as a human")
-	server := f.fs.String("server", "", "server base URL (inferred from a pasted join link)")
+	server := f.fs.String("server", "", "server base URL (required)")
 	pos := f.parse(args)
 	if len(pos) < 1 || *name == "" {
-		return fmt.Errorf("usage: join <secret-or-url> --name NAME")
+		return fmt.Errorf("usage: join <invite-code> --server URL --name NAME")
 	}
-	secret := pos[0]
-
-	base := *server
-	if u, err := url.Parse(secret); err == nil && u.Scheme != "" && u.Host != "" {
-		base = u.Scheme + "://" + u.Host
+	code := pos[0]
+	if u, err := url.Parse(code); err == nil && u.Scheme != "" && u.Host != "" {
+		return fmt.Errorf("join links no longer contain the invite code — pass the code (inv-...) plus --server URL")
 	}
-	if base == "" {
-		return fmt.Errorf("pass a full join URL, or add --server URL")
+	if *server == "" {
+		return fmt.Errorf("pass --server URL")
 	}
 
-	c := anonClient(strings.TrimRight(base, "/"))
+	c := anonClient(strings.TrimRight(*server, "/"))
 	var out struct {
 		Token       string         `json:"token"`
 		Participant map[string]any `json:"participant"`
 		Room        map[string]any `json:"room"`
 	}
 	err := c.do("POST", "/api/v1/rooms/join", map[string]any{
-		"secret": secret, "name": *name, "avatar": *avatar, "description": *desc, "is_human": *human,
+		"invite_code": code, "name": *name, "avatar": *avatar, "description": *desc, "is_human": *human,
 	}, &out)
 	if err != nil {
 		return err
@@ -246,7 +245,7 @@ func cmdJoin(args []string) error {
 	p := profile{
 		Server: c.server, Token: out.Token,
 		Room: fmt.Sprint(out.Room["name"]), Name: *name,
-		JoinURL: c.server + "/r/" + fmt.Sprint(out.Room["secret"]),
+		JoinURL: c.server + "/r/" + fmt.Sprint(out.Room["slug"]),
 	}
 	if err := saveProfile(*f.profile, p); err != nil {
 		return err
@@ -262,7 +261,11 @@ func cmdJoin(args []string) error {
 func cmdRoom(args []string) error {
 	return simpleGet(args, "/api/v1/room", func(out map[string]any) {
 		room := out["room"].(map[string]any)
-		fmt.Printf("room: %s\njoin link: %s\n\nchannels:\n", room["name"], out["join_url"])
+		fmt.Printf("room: %s\njoin link: %s\n", room["name"], out["join_url"])
+		if code, ok := out["invite_code"].(string); ok && code != "" {
+			fmt.Printf("invite code: %s\n", code)
+		}
+		fmt.Print("\nchannels:\n")
 		for _, ch := range out["channels"].([]any) {
 			c := ch.(map[string]any)
 			marker := ""
@@ -802,8 +805,9 @@ func cmdRotateSecret(args []string) error {
 		p.JoinURL = fmt.Sprint(out["join_url"])
 		_ = saveProfile(*f.profile, p)
 	}
-	fmt.Println("new join link:", out["join_url"])
-	fmt.Println("old links no longer work; existing participants keep access")
+	fmt.Println("join link (unchanged):", out["join_url"])
+	fmt.Println("new invite code:", out["invite_code"])
+	fmt.Println("the old code no longer works; existing participants keep access")
 	return nil
 }
 

@@ -6,16 +6,31 @@ import (
 	"testing"
 )
 
-func TestRoomSecretShape(t *testing.T) {
-	re := regexp.MustCompile(`^([a-z]+-){4}[0-9abcdefghjkmnpqrstvwxyz]{6}$`)
+func TestRoomSlugShape(t *testing.T) {
+	re := regexp.MustCompile(`^([a-z]+-){2}[0-9abcdefghjkmnpqrstvwxyz]{4}$`)
 	seen := map[string]bool{}
 	for range 100 {
-		s := RoomSecret()
+		s := RoomSlug()
 		if !re.MatchString(s) {
-			t.Fatalf("bad secret shape: %q", s)
+			t.Fatalf("bad slug shape: %q", s)
 		}
 		if seen[s] {
-			t.Fatalf("duplicate secret: %q", s)
+			t.Fatalf("duplicate slug: %q", s)
+		}
+		seen[s] = true
+	}
+}
+
+func TestInviteCodeShape(t *testing.T) {
+	re := regexp.MustCompile(`^inv(-[0-9abcdefghjkmnpqrstvwxyz]{4}){4}$`)
+	seen := map[string]bool{}
+	for range 100 {
+		s := InviteCode()
+		if !re.MatchString(s) {
+			t.Fatalf("bad invite code shape: %q", s)
+		}
+		if seen[s] {
+			t.Fatalf("duplicate invite code: %q", s)
 		}
 		seen[s] = true
 	}

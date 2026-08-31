@@ -10,12 +10,12 @@ body { margin: 0; font: 15px/1.45 -apple-system, "Segoe UI", Helvetica, sans-ser
 button { cursor: pointer; }
 
 /* join */
-#join-view { display: flex; align-items: center; justify-content: center; height: 100vh; }
-#join-form { background: var(--panel); padding: 32px; border-radius: 12px; width: 360px; display: flex; flex-direction: column; gap: 14px; border: 1px solid var(--border); }
-#join-form h1 { margin: 0 0 6px; font-size: 20px; }
-#join-form label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--dim); }
-#join-form input { background: var(--panel2); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; color: var(--text); font-size: 15px; }
-#join-form button { background: var(--accent); border: 0; border-radius: 6px; padding: 10px; color: #fff; font-size: 15px; font-weight: 600; }
+#join-view, #create-view { display: flex; align-items: center; justify-content: center; height: 100vh; }
+#join-form, #create-form { background: var(--panel); padding: 32px; border-radius: 12px; width: 360px; display: flex; flex-direction: column; gap: 14px; border: 1px solid var(--border); }
+#join-form h1, #create-form h1 { margin: 0 0 6px; font-size: 20px; }
+#join-form label, #create-form label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--dim); }
+#join-form input, #create-form input { background: var(--panel2); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; color: var(--text); font-size: 15px; }
+#join-form button, #create-form button { background: var(--accent); border: 0; border-radius: 6px; padding: 10px; color: #fff; font-size: 15px; font-weight: 600; }
 .hint { font-size: 12px; color: var(--dim); margin: 0; }
 .hint a { color: var(--accent); }
 

@@ -27,19 +27,21 @@ func (s *Server) handleCreateRoom(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	room, err := s.store.CreateRoom(r.Context(), req.Name, secrets.RoomSecret())
+	room, err := s.store.CreateRoom(r.Context(), req.Name, secrets.RoomSlug(), secrets.InviteCode())
 	if err != nil {
 		writeStoreErr(w, err)
 		return
 	}
 	writeJSON(w, http.StatusCreated, map[string]any{
-		"room":     room,
-		"join_url": s.cfg.PublicURL + "/r/" + room.Secret,
+		"room":        room,
+		"join_url":    s.cfg.PublicURL + "/r/" + room.Slug,
+		"invite_code": room.Secret,
 	})
 }
 
 type joinRoomReq struct {
-	Secret      string `json:"secret"`
+	InviteCode  string `json:"invite_code"`
+	Secret      string `json:"secret"` // legacy alias for invite_code
 	Name        string `json:"name"`
 	Avatar      string `json:"avatar"`
 	Description string `json:"description"`
@@ -55,7 +57,10 @@ func (s *Server) handleJoinRoom(w http.ResponseWriter, r *http.Request) {
 	if !readJSON(w, r, &req) {
 		return
 	}
-	req.Secret = normalizeSecret(req.Secret)
+	if req.InviteCode == "" {
+		req.InviteCode = req.Secret
+	}
+	req.InviteCode = normalizeCode(req.InviteCode)
 	if !validName(req.Name) {
 		writeErr(w, http.StatusBadRequest, "name must match ^[a-z0-9][a-z0-9_-]{1,31}$")
 		return
@@ -75,11 +80,12 @@ func (s *Server) handleJoinRoom(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	room, err := s.store.RoomBySecret(r.Context(), req.Secret)
+	room, err := s.store.RoomBySecret(r.Context(), req.InviteCode)
 	if err != nil {
 		writeStoreErr(w, err)
 		return
 	}
+	room.Secret = ""
 
 	token, hash := secrets.NewToken()
 	p, err := s.store.CreateParticipant(r.Context(), room.ID, req.Name, req.Avatar, req.Description, req.IsHuman, hash)
@@ -94,13 +100,14 @@ func (s *Server) handleJoinRoom(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// handlePeekRoom lets holders of a secret see the room name before joining.
+// handlePeekRoom shows the room name behind a join URL. The slug is not a
+// secret; the name is the only thing it reveals.
 func (s *Server) handlePeekRoom(w http.ResponseWriter, r *http.Request) {
 	if !s.joinLimit.Allow(s.clientIP(r)) {
 		writeErr(w, http.StatusTooManyRequests, "slow down")
 		return
 	}
-	room, err := s.store.RoomBySecret(r.Context(), normalizeSecret(r.URL.Query().Get("secret")))
+	room, err := s.store.RoomBySlug(r.Context(), strings.TrimSpace(r.URL.Query().Get("slug")))
 	if err != nil {
 		writeStoreErr(w, err)
 		return
@@ -124,29 +131,24 @@ func (s *Server) handleGetRoom(w http.ResponseWriter, r *http.Request, p models.
 		writeStoreErr(w, err)
 		return
 	}
-	// Only admins see the secret. Otherwise any member could re-learn the
-	// join link after a rotation, making eviction (rotate-secret then kick)
-	// impossible to ever make stick.
-	joinURL := ""
+	// The join URL (slug) is not a secret. The invite code is: only admins
+	// see it, otherwise any member could re-learn it after a rotation,
+	// making eviction (rotate then kick) impossible to ever make stick.
+	inviteCode := ""
 	if isAdmin(p) {
-		joinURL = s.cfg.PublicURL + "/r/" + room.Secret
+		inviteCode = room.Secret
 	}
-	if !isAdmin(p) {
-		room.Secret = ""
-	}
+	room.Secret = inviteCode
 	writeJSON(w, http.StatusOK, map[string]any{
 		"room":         room,
-		"join_url":     joinURL,
+		"join_url":     s.cfg.PublicURL + "/r/" + room.Slug,
+		"invite_code":  inviteCode,
 		"channels":     channels,
 		"participants": participants,
 	})
 }
 
-// normalizeSecret tolerates pasted join URLs and surrounding whitespace.
-func normalizeSecret(s string) string {
-	s = strings.TrimSpace(s)
-	if i := strings.LastIndex(s, "/r/"); i >= 0 {
-		s = s[i+3:]
-	}
-	return strings.Trim(s, "/ ")
+// normalizeCode tolerates surrounding whitespace and slashes in a pasted code.
+func normalizeCode(s string) string {
+	return strings.Trim(strings.TrimSpace(s), "/ ")
 }

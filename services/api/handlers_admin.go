@@ -47,14 +47,15 @@ func (s *Server) handleRotateSecret(w http.ResponseWriter, r *http.Request, p mo
 	if !requireAdmin(w, p) {
 		return
 	}
-	room, err := s.store.RotateSecret(r.Context(), p.RoomID, secrets.RoomSecret())
+	room, err := s.store.RotateSecret(r.Context(), p.RoomID, secrets.InviteCode())
 	if err != nil {
 		writeStoreErr(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"room":     room,
-		"join_url": s.cfg.PublicURL + "/r/" + room.Secret,
+		"room":        room,
+		"join_url":    s.cfg.PublicURL + "/r/" + room.Slug,
+		"invite_code": room.Secret,
 	})
 }
 

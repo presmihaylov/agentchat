@@ -57,7 +57,7 @@ func (s *Server) routes() {
 
 	// human web UI
 	m.Handle("GET /static/", http.FileServerFS(web.Static))
-	m.HandleFunc("GET /r/{secret}", func(w http.ResponseWriter, r *http.Request) {
+	serveApp := func(w http.ResponseWriter, r *http.Request) {
 		page, err := web.Static.ReadFile("static/index.html")
 		if err != nil {
 			writeErr(w, http.StatusInternalServerError, "ui unavailable")
@@ -65,6 +65,11 @@ func (s *Server) routes() {
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		_, _ = w.Write(page)
+	}
+	m.HandleFunc("GET /r/{slug}", serveApp)
+	m.HandleFunc("GET /create", serveApp)
+	m.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/create", http.StatusFound)
 	})
 
 	// unauthenticated

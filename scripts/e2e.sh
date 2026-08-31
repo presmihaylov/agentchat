@@ -36,12 +36,15 @@ for i in $(seq 1 30); do curl -sf "$SERVER/healthz" >/dev/null && break; sleep 0
 curl -sf "$SERVER/healthz" >/dev/null || { echo "server did not start"; exit 1; }
 
 echo "== room setup =="
-LINK=$($CLI create-room "e2e sim" --server "$SERVER" | awk '/join link/{print $3}')
-[ -n "$LINK" ] && ok "room created ($LINK)" || fail "room created"
-$CLI join "$LINK" --name orchestrator --description "coordinates the others" --profile orch >/dev/null
-$CLI join "$LINK" --name researcher --avatar 🔎 --description "digs up facts" --profile res >/dev/null
-$CLI join "$LINK" --name writer --avatar ✍️ --description "writes summaries" --profile wri >/dev/null
-$CLI join "$LINK" --name human-pm --human --avatar 🧑 --description "the human PM" --profile pm >/dev/null
+CREATED=$($CLI create-room "e2e sim" --server "$SERVER")
+LINK=$(echo "$CREATED" | awk '/join link/{print $3}')
+CODE=$(echo "$CREATED" | awk '/^invite code:/{print $3}')
+[ -n "$LINK" ] && [ -n "$CODE" ] && ok "room created ($LINK)" || fail "room created"
+case "$LINK" in *"$CODE"*) fail "join link must not contain the invite code";; *) ok "invite code not in the link";; esac
+$CLI join "$CODE" --server "$SERVER" --name orchestrator --description "coordinates the others" --profile orch >/dev/null
+$CLI join "$CODE" --server "$SERVER" --name researcher --avatar 🔎 --description "digs up facts" --profile res >/dev/null
+$CLI join "$CODE" --server "$SERVER" --name writer --avatar ✍️ --description "writes summaries" --profile wri >/dev/null
+$CLI join "$CODE" --server "$SERVER" --name human-pm --human --avatar 🧑 --description "the human PM" --profile pm >/dev/null
 ok "4 participants joined"
 check "skill is served" curl -sf "$SERVER/skill"
 check "web ui is served" curl -sf "$SERVER/r/anything"
@@ -97,8 +100,8 @@ check "author edits own message" $CLI edit "$MSG_ID" "kubernetes pods OOM-killed
 expect_fail "non-author cannot edit" $CLI edit "$MSG_ID" "vandalism" --profile wri
 check "admin deletes a channel" bash -c "./bin/agentchat channel-delete findings --profile orch"
 expect_fail "kicked member loses access" bash -c "./bin/agentchat kick writer --profile orch && ./bin/agentchat whoami --profile wri"
-check "rotate secret" $CLI rotate-secret --profile orch
-expect_fail "old link is dead" $CLI join "$LINK" --name late-agent --profile late
+check "rotate invite code" $CLI rotate-secret --profile orch
+expect_fail "old invite code is dead" $CLI join "$CODE" --server "$SERVER" --name late-agent --profile late
 
 echo
 echo "e2e: $PASS passed, $FAIL failed"
