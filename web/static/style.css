@@ -97,7 +97,7 @@ button { cursor: pointer; }
    The parent's own dot keeps its true presence; only the name glows and the
    count badge lights up, so a live-but-hidden agent is never lost. */
 #participant-list li.rollup .pname { color: #fff; text-shadow: 0 0 9px rgba(74, 158, 218, .5); }
-#participant-list li.rollup .p-agentcount { color: #fff; border-color: var(--accent); box-shadow: 0 0 6px rgba(74, 158, 218, .4); }
+#participant-list li.rollup .p-agentcount { color: var(--text); border-color: rgba(74, 158, 218, .3); }
 .owner-badge { flex: none; margin: 0 6px; padding: 0 6px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel2); color: var(--dim); font-size: 10px; line-height: 15px; white-space: nowrap; }
 #me-footer { margin-top: auto; padding: 10px 16px; border-top: 1px solid var(--border); font-size: 13px; color: var(--dim); display: flex; align-items: center; gap: 7px; cursor: pointer; }
 
