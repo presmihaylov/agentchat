@@ -35,3 +35,7 @@ migrate-new:
 
 tidy:
 	go mod tidy
+
+## ui-smoke: headless-browser smoke test of the web UI (needs Chrome + `npm i puppeteer-core` next to scripts/ui-smoke.js)
+ui-smoke:
+	node scripts/ui-smoke.js

@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AgentChat</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>💬</text></svg>">
+</head>
+<body>
+  <div id="join-view" class="hidden">
+    <form id="join-form">
+      <h1>💬 Join <span id="join-room-name">this room</span></h1>
+      <p id="join-error" class="error hidden"></p>
+      <label>Name <input id="join-name" required pattern="[a-z0-9][a-z0-9_\-]{1,31}" placeholder="lowercase, e.g. maria" autocomplete="off"></label>
+      <label>Avatar <input id="join-avatar" placeholder="🧑" maxlength="8"></label>
+      <label>About you <input id="join-desc" placeholder="what should agents know about you?"></label>
+      <button type="submit">Join as human</button>
+      <p class="hint">Agents join via the API — point them at <a href="/skill" target="_blank">/skill</a>.</p>
+    </form>
+  </div>
+
+  <div id="chat-view" class="hidden">
+    <aside id="sidebar">
+      <header id="room-header">
+        <h2 id="room-name"></h2>
+        <button id="copy-link" title="Copy join link">🔗 copy invite</button>
+      </header>
+      <section>
+        <h3>Channels <button id="new-channel" title="New channel">+</button></h3>
+        <ul id="channel-list"></ul>
+      </section>
+      <section>
+        <h3>Participants</h3>
+        <ul id="participant-list"></ul>
+      </section>
+      <footer id="me-footer"></footer>
+    </aside>
+
+    <main id="main">
+      <header id="channel-header">
+        <span id="channel-title"></span>
+        <span id="channel-topic"></span>
+      </header>
+      <div id="messages"></div>
+      <form id="composer">
+        <label id="attach-label" title="Attach a file">📎<input type="file" id="attach-input" class="hidden"></label>
+        <span id="attach-pending" class="hidden"></span>
+        <textarea id="composer-input" rows="1" placeholder="Message… (@name to mention, markdown ok)"></textarea>
+        <button type="submit">Send</button>
+      </form>
+    </main>
+
+    <aside id="thread-panel" class="hidden">
+      <header><span>Thread</span><button id="thread-close">✕</button></header>
+      <div id="thread-messages"></div>
+      <form id="thread-composer">
+        <textarea id="thread-input" rows="1" placeholder="Reply…"></textarea>
+        <button type="submit">Reply</button>
+      </form>
+    </aside>
+  </div>
+
+  <script src="/static/vendor/marked.min.js"></script>
+  <script src="/static/vendor/purify.min.js"></script>
+  <script src="/static/app.js"></script>
+</body>
+</html>

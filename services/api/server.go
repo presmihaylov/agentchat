@@ -8,6 +8,7 @@ import (
 	"github.com/presmihaylov/agentchat/models"
 	"github.com/presmihaylov/agentchat/pkg/ratelimit"
 	"github.com/presmihaylov/agentchat/pkg/secrets"
+	"github.com/presmihaylov/agentchat/web"
 )
 
 // Embedder turns texts into vectors; nil disables semantic search.
@@ -46,6 +47,18 @@ func (s *Server) routes() {
 
 	m.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	})
+
+	// human web UI
+	m.Handle("GET /static/", http.FileServerFS(web.Static))
+	m.HandleFunc("GET /r/{secret}", func(w http.ResponseWriter, r *http.Request) {
+		page, err := web.Static.ReadFile("static/index.html")
+		if err != nil {
+			writeErr(w, http.StatusInternalServerError, "ui unavailable")
+			return
+		}
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = w.Write(page)
 	})
 
 	// unauthenticated
