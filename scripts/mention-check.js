@@ -1,7 +1,7 @@
-// E2E for the Slack-style mention chips. Three buckets must render distinctly:
-//   - @you (the viewer's own name) -> amber/gold self chip (.mention-self)
-//   - @channel/@here/@everyone broadcast -> strong blue pill (.mention-me), unchanged
-//   - @someone-else -> subtle blue tint (.mention, no modifier), unchanged
+// E2E for the Slack-style mention chips. Two families must render distinctly:
+//   - pings you: your own name OR a @channel/@here/@everyone broadcast ->
+//     warm amber/gold chip (.mention-me)
+//   - @someone-else -> subtle blue tint (.mention, no modifier)
 // Run: NODE_PATH=<dir with puppeteer-core> SERVER=http://localhost:8095 node scripts/mention-check.js
 const puppeteer = require('puppeteer-core');
 const SERVER = process.env.SERVER || 'http://localhost:8095';
@@ -44,7 +44,6 @@ async function api(path, opts = {}) {
       const cs = getComputedStyle(el);
       return {
         text: el.textContent.trim(),
-        self: el.classList.contains('mention-self'),
         me: el.classList.contains('mention-me'),
         color: rgb(cs.color),
         bg: rgb(cs.backgroundColor),
@@ -55,19 +54,19 @@ async function api(path, opts = {}) {
   const self = find('@Maya'), other = find('@orca-infra'), bc = find('@channel');
   if (!self || !other || !bc) throw new Error('missing a chip: ' + JSON.stringify(chips));
 
-  // self chip: amber -> red channel high, blue channel low, and it must NOT be white text
-  const warm = self.color[0] > 180 && self.color[2] < 120;
-  if (!self.self || self.me) throw new Error('self chip has wrong class: ' + JSON.stringify(self));
-  if (!warm) throw new Error('self chip is not amber/gold: ' + JSON.stringify(self));
+  // amber test: warm text (red channel high, blue channel low)
+  const warm = (c) => c.color[0] > 180 && c.color[2] < 120;
+  // self chip: amber
+  if (!self.me) throw new Error('self chip lost the amber class: ' + JSON.stringify(self));
+  if (!warm(self)) throw new Error('self chip is not amber/gold: ' + JSON.stringify(self));
 
-  // broadcast: unchanged strong blue pill (white text on accent bg)
-  const whiteText = bc.color[0] > 240 && bc.color[1] > 240 && bc.color[2] > 240;
-  if (!bc.me || bc.self) throw new Error('broadcast chip changed class: ' + JSON.stringify(bc));
-  if (!whiteText) throw new Error('broadcast chip is not the white-on-blue pill: ' + JSON.stringify(bc));
+  // broadcast: now the SAME amber chip as self
+  if (!bc.me) throw new Error('broadcast chip is not the amber class: ' + JSON.stringify(bc));
+  if (!warm(bc)) throw new Error('broadcast chip is not amber/gold: ' + JSON.stringify(bc));
 
-  // other: unchanged subtle blue tint, no modifier, blue-forward text
+  // other: subtle blue tint, no modifier, blue-forward text
   const bluish = other.color[2] > other.color[0];
-  if (other.self || other.me) throw new Error('other chip picked up a modifier: ' + JSON.stringify(other));
+  if (other.me) throw new Error('other chip picked up the amber modifier: ' + JSON.stringify(other));
   if (!bluish) throw new Error('other chip is not blue-tinted: ' + JSON.stringify(other));
 
   await browser.close();
