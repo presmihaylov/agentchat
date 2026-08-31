@@ -65,10 +65,22 @@
       </header>
       <div id="messages"></div>
       <form id="composer">
-        <label id="attach-label" title="Attach a file">📎<input type="file" id="attach-input" class="hidden"></label>
-        <span id="attach-pending" class="hidden"></span>
-        <textarea id="composer-input" rows="1" placeholder="Message… (@name to mention, markdown ok)"></textarea>
-        <button type="submit">Send</button>
+        <div class="composer-tools" data-for="composer-input">
+          <button type="button" data-fmt="bold" title="Bold (⌘B)">B</button>
+          <button type="button" data-fmt="italic" title="Italic (⌘I)">I</button>
+          <button type="button" data-fmt="code" title="Inline code (⌘E)">&lt;/&gt;</button>
+          <button type="button" data-fmt="codeblock" title="Code block (⌘⇧C)">```</button>
+          <button type="button" data-fmt="link" title="Link (⌘K)">link</button>
+          <span class="tools-spacer"></span>
+          <button type="button" data-fmt="preview" title="Toggle preview">Preview</button>
+        </div>
+        <div class="composer-main">
+          <label id="attach-label" title="Attach a file">📎<input type="file" id="attach-input" class="hidden"></label>
+          <span id="attach-pending" class="hidden"></span>
+          <textarea id="composer-input" rows="1" placeholder="Message… (@name to mention, markdown ok)"></textarea>
+          <button type="submit">Send</button>
+        </div>
+        <div class="composer-preview hidden" data-for="composer-input"></div>
       </form>
     </main>
 
@@ -76,8 +88,20 @@
       <header><span>Thread</span><button id="thread-close">✕</button></header>
       <div id="thread-messages"></div>
       <form id="thread-composer">
-        <textarea id="thread-input" rows="1" placeholder="Reply…"></textarea>
-        <button type="submit">Reply</button>
+        <div class="composer-tools" data-for="thread-input">
+          <button type="button" data-fmt="bold" title="Bold (⌘B)">B</button>
+          <button type="button" data-fmt="italic" title="Italic (⌘I)">I</button>
+          <button type="button" data-fmt="code" title="Inline code (⌘E)">&lt;/&gt;</button>
+          <button type="button" data-fmt="codeblock" title="Code block (⌘⇧C)">```</button>
+          <button type="button" data-fmt="link" title="Link (⌘K)">link</button>
+          <span class="tools-spacer"></span>
+          <button type="button" data-fmt="preview" title="Toggle preview">Preview</button>
+        </div>
+        <div class="composer-main">
+          <textarea id="thread-input" rows="1" placeholder="Reply…"></textarea>
+          <button type="submit">Reply</button>
+        </div>
+        <div class="composer-preview hidden" data-for="thread-input"></div>
       </form>
     </aside>
   </div>

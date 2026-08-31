@@ -706,7 +706,7 @@
     const input = $('composer-input');
     const text = input.value.trim();
     if ((!text && !pendingAttachment) || !current) return;
-    try { await post(text); input.value = ''; } catch (e) { alert(e.message); }
+    try { await post(text); input.value = ''; resetComposer(input); } catch (e) { alert(e.message); }
   });
 
   $('thread-composer').addEventListener('submit', async (ev) => {
@@ -714,7 +714,7 @@
     const input = $('thread-input');
     const text = input.value.trim();
     if (!text || !openThreadRoot) return;
-    try { await post(text, openThreadRoot); input.value = ''; } catch (e) { alert(e.message); }
+    try { await post(text, openThreadRoot); input.value = ''; resetComposer(input); } catch (e) { alert(e.message); }
   });
 
   // @-mention autocomplete: typing "@pre" pops matching participants + broadcasts.
@@ -781,6 +781,120 @@
       if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); $(form).requestSubmit(); }
     });
   }
+
+  // ---------- rich composer: auto-grow, markdown shortcuts/toolbar, preview ----------
+
+  // grow the textarea with its content up to ~40vh, then let it scroll
+  const autoGrow = (ta) => {
+    ta.style.height = 'auto';
+    const h = ta.scrollHeight;
+    if (!h) { ta.style.height = ''; return; } // hidden / not laid out yet
+    const max = Math.round(window.innerHeight * 0.4);
+    ta.style.height = Math.min(h, max) + 'px';
+  };
+  // fires an input event so autogrow + mention + preview all resync
+  const bumpComposer = (ta) => ta.dispatchEvent(new Event('input', { bubbles: true }));
+
+  // wrap the selection (or a placeholder) in markdown; toggle it back off if the
+  // marks are already there
+  const surround = (ta, before, after, placeholder) => {
+    const s = ta.selectionStart, e = ta.selectionEnd;
+    const sel = ta.value.slice(s, e);
+    const pre = ta.value.slice(Math.max(0, s - before.length), s);
+    const post = ta.value.slice(e, e + after.length);
+    if (sel && pre === before && post === after) {
+      ta.value = ta.value.slice(0, s - before.length) + sel + ta.value.slice(e + after.length);
+      ta.setSelectionRange(s - before.length, e - before.length);
+    } else {
+      const body = sel || placeholder;
+      ta.value = ta.value.slice(0, s) + before + body + after + ta.value.slice(e);
+      const ns = s + before.length;
+      ta.setSelectionRange(ns, ns + body.length);
+    }
+    bumpComposer(ta);
+    ta.focus();
+  };
+  const insertLink = (ta) => {
+    const s = ta.selectionStart, e = ta.selectionEnd;
+    const label = ta.value.slice(s, e) || 'text';
+    const md = '[' + label + '](url)';
+    ta.value = ta.value.slice(0, s) + md + ta.value.slice(e);
+    const us = s + label.length + 3; // land on 'url'
+    ta.setSelectionRange(us, us + 3);
+    bumpComposer(ta);
+    ta.focus();
+  };
+  const applyFmt = (ta, kind) => {
+    if (kind === 'bold') return surround(ta, '**', '**', 'text');
+    if (kind === 'italic') return surround(ta, '*', '*', 'text');
+    if (kind === 'code') return surround(ta, '`', '`', 'code');
+    if (kind === 'codeblock') return surround(ta, '```\n', '\n```', 'code');
+    if (kind === 'link') return insertLink(ta);
+  };
+
+  const previewOf = (ta) => document.querySelector('.composer-preview[data-for="' + ta.id + '"]');
+  const toolsOf = (ta) => document.querySelector('.composer-tools[data-for="' + ta.id + '"]');
+  const refreshPreview = (ta) => {
+    const pv = previewOf(ta);
+    if (!pv || pv.classList.contains('hidden')) return;
+    pv.innerHTML = renderMarkdown(ta.value);
+    pv.querySelectorAll('pre code').forEach((c) => { try { hljs.highlightElement(c); } catch (e) { /* unknown lang */ } });
+  };
+
+  // reset a composer after a successful send: clear height, drop preview
+  function resetComposer(ta) {
+    autoGrow(ta);
+    const pv = previewOf(ta);
+    const btn = toolsOf(ta)?.querySelector('[data-fmt="preview"]');
+    if (pv) { pv.classList.add('hidden'); pv.innerHTML = ''; }
+    if (btn) btn.classList.remove('active');
+  }
+
+  const enhanceComposer = (taID) => {
+    const ta = $(taID);
+    autoGrow(ta);
+    ta.addEventListener('input', () => { autoGrow(ta); refreshPreview(ta); });
+
+    // ⌘/ctrl formatting shortcuts (⇧ for the code block, so plain ⌘C still copies)
+    ta.addEventListener('keydown', (ev) => {
+      if (!(ev.metaKey || ev.ctrlKey)) return;
+      const k = ev.key.toLowerCase();
+      const map = { b: 'bold', i: 'italic', e: 'code', k: 'link' };
+      if (k === 'c' && ev.shiftKey) { ev.preventDefault(); applyFmt(ta, 'codeblock'); return; }
+      if (map[k] && !ev.shiftKey) { ev.preventDefault(); applyFmt(ta, map[k]); }
+    });
+
+    // paste a URL over a selection -> markdown link (image paste handled elsewhere)
+    ta.addEventListener('paste', (ev) => {
+      const text = (ev.clipboardData?.getData('text/plain') || '').trim();
+      const s = ta.selectionStart, e = ta.selectionEnd;
+      if (e > s && /^https?:\/\/\S+$/.test(text)) {
+        ev.preventDefault();
+        const md = '[' + ta.value.slice(s, e) + '](' + text + ')';
+        ta.value = ta.value.slice(0, s) + md + ta.value.slice(e);
+        const pos = s + md.length;
+        ta.setSelectionRange(pos, pos);
+        bumpComposer(ta);
+      }
+    });
+
+    const tools = toolsOf(ta);
+    tools?.addEventListener('mousedown', (ev) => {
+      const btn = ev.target.closest('button[data-fmt]');
+      if (!btn) return;
+      ev.preventDefault(); // keep textarea focus/selection
+      const kind = btn.dataset.fmt;
+      if (kind !== 'preview') { applyFmt(ta, kind); return; }
+      const pv = previewOf(ta);
+      const show = pv.classList.contains('hidden');
+      pv.classList.toggle('hidden', !show);
+      btn.classList.toggle('active', show);
+      if (show) refreshPreview(ta);
+    });
+  };
+  enhanceComposer('composer-input');
+  enhanceComposer('thread-input');
+  window.addEventListener('resize', () => { autoGrow($('composer-input')); autoGrow($('thread-input')); });
 
   $('thread-close').onclick = closeThread;
 
