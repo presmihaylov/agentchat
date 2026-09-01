@@ -1738,3 +1738,89 @@ func TestChannelMembersList(t *testing.T) {
 		t.Fatalf("after remove members = %v", got)
 	}
 }
+
+func TestChannelPrivacyConversion(t *testing.T) {
+	srv, _ := newTestServer(t)
+	secret, alice, bob := setupRoom(t, srv.URL) // alice is the admin
+	join := func(name string) *testClient {
+		cc := &testClient{t: t, base: srv.URL}
+		out := cc.must("POST", "/api/v1/rooms/join", map[string]any{
+			"invite_code": secret, "name": name, "description": "t",
+		}, 201)
+		cc.token = out["token"].(string)
+		return cc
+	}
+	carol, dave := join("carol"), join("dave")
+
+	alice.must("POST", "/api/v1/channels", map[string]any{"name": "pub"}, 201)
+	bob.must("POST", "/api/v1/channels/pub/join", nil, 200)
+	alice.must("POST", "/api/v1/channels/pub/messages", map[string]any{"body": "pre-conversion history"}, 201)
+
+	// gates: a plain member cannot convert; #general can never be private
+	if code, _ := bob.do("PATCH", "/api/v1/channels/pub", map[string]any{"private": true}); code != 403 {
+		t.Fatalf("member convert = %d, want 403", code)
+	}
+	if code, _ := alice.do("PATCH", "/api/v1/channels/general", map[string]any{"private": true}); code != 409 {
+		t.Fatalf("general convert = %d, want 409", code)
+	}
+
+	// the creator can convert their own channel without being admin
+	bob.must("POST", "/api/v1/channels", map[string]any{"name": "bobs"}, 201)
+	bob.must("PATCH", "/api/v1/channels/bobs", map[string]any{"private": true}, 200)
+
+	cur := bob.must("GET", "/api/v1/events", nil, 200)
+	cursor := int64(cur["cursor"].(float64))
+
+	out := alice.must("PATCH", "/api/v1/channels/pub", map[string]any{"private": true}, 200)
+	if out["private"] != true {
+		t.Fatalf("converted channel: %v", out)
+	}
+
+	// the member set stays and history stays visible to members
+	msgs := bob.must("GET", "/api/v1/channels/pub/messages", nil, 200)["messages"].([]any)
+	seen := false
+	for _, raw := range msgs {
+		if raw.(map[string]any)["body"] == "pre-conversion history" {
+			seen = true
+		}
+	}
+	if !seen {
+		t.Fatalf("member lost pre-conversion history: %v", msgs)
+	}
+
+	// out of browse, invite-only after; a member-add is still the way in
+	for _, raw := range carol.must("GET", "/api/v1/channels/browse", nil, 200)["channels"].([]any) {
+		if raw.(map[string]any)["name"] == "pub" {
+			t.Fatalf("private channel still browsable")
+		}
+	}
+	if code, _ := carol.do("POST", "/api/v1/channels/pub/join", nil); code != 403 {
+		t.Fatalf("join after convert = %d, want 403", code)
+	}
+	alice.must("POST", "/api/v1/channels/pub/members", map[string]any{"participant": "carol"}, 200)
+	carol.must("GET", "/api/v1/channels/pub/messages", nil, 200)
+
+	// no reverse conversion; re-converting is an idempotent no-op
+	if code, _ := alice.do("PATCH", "/api/v1/channels/pub", map[string]any{"private": false}); code != 409 {
+		t.Fatalf("reverse convert = %d, want 409", code)
+	}
+	alice.must("PATCH", "/api/v1/channels/pub", map[string]any{"private": true}, 200)
+
+	// the privacy event reaches members only
+	sawPrivacy := func(c *testClient) bool {
+		evs := c.must("GET", fmt.Sprintf("/api/v1/events?after=%d", cursor), nil, 200)["events"].([]any)
+		for _, raw := range evs {
+			e := raw.(map[string]any)
+			if e["type"] == "channel.privacy_changed" && e["payload"].(map[string]any)["channel_id"] == out["id"] {
+				return true
+			}
+		}
+		return false
+	}
+	if !sawPrivacy(bob) {
+		t.Fatalf("member did not receive channel.privacy_changed")
+	}
+	if sawPrivacy(dave) {
+		t.Fatalf("non-member received channel.privacy_changed")
+	}
+}

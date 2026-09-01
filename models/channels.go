@@ -311,6 +311,36 @@ func (s *Store) DeleteChannel(ctx context.Context, roomID, id string) error {
 	return tx.Commit(ctx)
 }
 
+// SetChannelPrivate converts a public channel to private. One-way by design:
+// history shared under an expectation of privacy must never turn public later.
+func (s *Store) SetChannelPrivate(ctx context.Context, roomID, id string) error {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	// advisory-first: the UPDATE takes an FK row lock on rooms before appendEventTx
+	if err := lockRoomEvents(ctx, tx, roomID); err != nil {
+		return err
+	}
+	res, err := tx.Exec(ctx,
+		`UPDATE channels SET private = TRUE WHERE room_id = $1 AND id = $2`, roomID, id)
+	if err != nil {
+		return err
+	}
+	if res.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	// member-scoped (see gatedChannel): who can see a now-private channel is
+	// itself private information
+	payload, _ := json.Marshal(map[string]any{"channel_id": id, "private": true})
+	if err := appendEventTx(ctx, tx, roomID, "channel.privacy_changed", payload); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
 func (s *Store) SetChannelArchived(ctx context.Context, roomID, id string, archived bool) error {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {

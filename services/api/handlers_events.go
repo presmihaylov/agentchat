@@ -120,7 +120,8 @@ type eventMessage struct {
 func gatedChannel(e models.Event) (string, bool) {
 	switch e.Type {
 	case "message.created", "message.edited",
-		"channel.member_joined", "channel.member_left":
+		"channel.member_joined", "channel.member_left",
+		"channel.privacy_changed":
 		var pl struct {
 			ChannelID string `json:"channel_id"`
 		}

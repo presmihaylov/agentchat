@@ -216,6 +216,7 @@ func (s *Server) handleCreateChannel(w http.ResponseWriter, r *http.Request, p m
 
 type updateChannelReq struct {
 	Archived *bool `json:"archived"`
+	Private  *bool `json:"private"`
 }
 
 func (s *Server) handleUpdateChannel(w http.ResponseWriter, r *http.Request, p models.Participant) {
@@ -228,23 +229,40 @@ func (s *Server) handleUpdateChannel(w http.ResponseWriter, r *http.Request, p m
 	if !readJSON(w, r, &req) {
 		return
 	}
-	if req.Archived == nil {
+	if req.Archived == nil && req.Private == nil {
 		writeErr(w, http.StatusBadRequest, "nothing to update")
 		return
 	}
-	// Slack-style: general can never be archived; only admins or the creator manage archive state
+	// Slack-style: general is pinned public and unarchived; only admins or the
+	// creator manage a channel's archive and privacy state
 	if ch.Name == "general" {
-		writeErr(w, http.StatusConflict, "the general channel cannot be archived")
+		writeErr(w, http.StatusConflict, "the general channel cannot be changed")
 		return
 	}
 	isCreator := ch.CreatedBy != nil && *ch.CreatedBy == p.ID
 	if !isAdmin(p) && !isCreator {
-		writeErr(w, http.StatusForbidden, "only admins or the channel creator can (un)archive it")
+		writeErr(w, http.StatusForbidden, "only admins or the channel creator can update it")
 		return
 	}
-	if err := s.store.SetChannelArchived(r.Context(), p.RoomID, ch.ID, *req.Archived); err != nil {
-		writeStoreErr(w, err)
-		return
+	if req.Private != nil {
+		// one-way: making a private channel public would expose history that
+		// was shared under an expectation of privacy
+		if !*req.Private && ch.Private {
+			writeErr(w, http.StatusConflict, "a private channel cannot be made public again")
+			return
+		}
+		if *req.Private && !ch.Private {
+			if err := s.store.SetChannelPrivate(r.Context(), p.RoomID, ch.ID); err != nil {
+				writeStoreErr(w, err)
+				return
+			}
+		}
+	}
+	if req.Archived != nil {
+		if err := s.store.SetChannelArchived(r.Context(), p.RoomID, ch.ID, *req.Archived); err != nil {
+			writeStoreErr(w, err)
+			return
+		}
 	}
 	ch, err = s.store.ChannelByID(r.Context(), p.RoomID, ch.ID)
 	if err != nil {

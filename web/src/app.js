@@ -399,6 +399,10 @@ import { createComposer } from './composer.js';
       ev.preventDefault();
       const items = [];
       if (ch.private) items.push({ label: 'Add people', run: () => addPeople(ch) });
+      // conversion gate mirrors the server: admins or the creator; #general never
+      if (!ch.private && ch.name !== 'general' && (me.role === 'admin' || ch.created_by === me.id)) {
+        items.push({ label: 'Make private', run: () => makePrivate(ch) });
+      }
       items.push({ label: 'Move to section…', run: () => openMoveMenu(ev.clientX, ev.clientY, ch) });
       // #general is pinned: it can be organized into a section but never left.
       if (ch.name !== 'general') items.push({ label: 'Leave channel', danger: true, run: () => leaveChannel(ch) });
@@ -729,7 +733,7 @@ import { createComposer } from './composer.js';
     const changed = !current || current.id !== ch.id;
     current = ch;
     syncURL(changed); // refreshes replace, real navigation pushes
-    $('channel-title').textContent = '# ' + ch.name;
+    $('channel-title').textContent = (ch.private ? '🔒 ' : '# ') + ch.name;
     $('channel-topic').innerHTML = ch.topic ? linkify(ch.topic) : '';
     refreshHeaderMembers(ch); // header member count, not worth blocking the feed on
     renderChannels();
@@ -989,6 +993,13 @@ import { createComposer } from './composer.js';
     await refreshRoom();
     if ((t === 'channel.member_joined' || t === 'channel.member_left') && current) {
       refreshHeaderMembers(current); // keeps the header count and open modal live
+    }
+    if (t === 'channel.privacy_changed' && current && ev.payload.channel_id === current.id) {
+      const ch = channels.find((c) => c.id === current.id);
+      if (ch) {
+        current = ch;
+        $('channel-title').textContent = (ch.private ? '🔒 ' : '# ') + ch.name;
+      }
     }
     // profile changes (avatar, name) must also repaint already-rendered messages
     if (t === 'participant.updated') {
@@ -1614,6 +1625,19 @@ import { createComposer } from './composer.js';
     try {
       await api('/api/v1/channels/' + ch.id + '/members', { method: 'POST', body: { participant: who.trim() } });
     } catch (e) { alert(e.message); }
+  };
+
+  // One-way by design: server rejects private -> public, so no undo path here.
+  const makePrivate = async (ch) => {
+    if (!confirm('Make #' + ch.name + ' private? Current members stay, it leaves browse, and joining becomes invite-only. This cannot be undone.')) return;
+    try {
+      await api('/api/v1/channels/' + ch.id, { method: 'PATCH', body: { private: true } });
+      await refreshRoom(); // lock icon in the sidebar right away
+      if (current && current.id === ch.id) {
+        current = channels.find((c) => c.id === ch.id) || current;
+        $('channel-title').textContent = '🔒 ' + current.name;
+      }
+    } catch (e) { alert('Make private failed: ' + e.message); }
   };
 
   // Browse view: the public channels you are not in yet, each with a Join button.
