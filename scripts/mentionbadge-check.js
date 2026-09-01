@@ -31,6 +31,9 @@ async function api(path, opts = {}) {
   await mkChan('glowonly');
   await mkChan('mentioned');
   await mkChan('broadcast');
+  // membership: only members see a channel's counters, so viewer joins first
+  for (const ch of ['glowonly', 'mentioned', 'broadcast'])
+    await api('/api/v1/channels/' + ch + '/join', { method: 'POST', token: viewer.token });
   const post = (chan, body) => api('/api/v1/channels/' + chan + '/messages', { method: 'POST', token: sender.token, body: { body } });
 
   // glowonly: two plain messages -> unread, no mention -> glow, NO number

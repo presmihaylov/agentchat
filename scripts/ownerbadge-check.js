@@ -64,6 +64,15 @@ async function api(path, opts = {}) {
   if (byAuthor.lonerbot !== false) fail('ownerless agent message avatar unexpectedly has a badge');
   if (byAuthor.maya !== false) fail('human message avatar unexpectedly has a badge');
 
+  // humans collapse their agents by default; expand maya to reveal ownedbot
+  await page.evaluate(() => {
+    const li = [...document.querySelectorAll('#participant-list li')].find((x) => (x.querySelector('.pname') || {}).textContent === 'maya');
+    if (li) (li.querySelector('.p-toggle') || li).click();
+  });
+  await page.waitForFunction(() =>
+    [...document.querySelectorAll('#participant-list li .pname')].some((e) => e.textContent === 'ownedbot'),
+    { timeout: 4000 });
+
   // participant list: same rule
   const byPart = await page.evaluate(() => {
     const out = {};

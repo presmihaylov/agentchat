@@ -46,6 +46,14 @@ const assert = (cond, msg) => { if (!cond) throw new Error(msg); };
   await page.waitForSelector('#chat-view:not(.hidden)', { timeout: 5000 });
   await waitPath('/r/' + slug + '/c/general');
 
+  // membership: the human must join #deep before it shows in the sidebar
+  const humanToken = await page.evaluate((s) =>
+    JSON.parse(localStorage.getItem('agentchat:' + s)).token, slug);
+  await api('/api/v1/channels/deep/join', { method: 'POST', token: humanToken });
+  await page.reload({ waitUntil: 'networkidle2' });
+  await page.waitForSelector('#chat-view:not(.hidden)', { timeout: 8000 });
+  await waitPath('/r/' + slug + '/c/general');
+
   // 2. clicking a channel pushes its URL
   await page.waitForFunction(() =>
     [...document.querySelectorAll('#channel-list li')].some((li) => li.textContent.includes('deep')), { timeout: 8000 });

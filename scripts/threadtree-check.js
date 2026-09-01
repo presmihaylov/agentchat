@@ -24,6 +24,8 @@ async function api(path, opts = {}) {
   const sender = await api('/api/v1/rooms/join', { method: 'POST', body: { invite_code: roomCode, name: 'sender', avatar: '🤖' } });
   const viewer = await api('/api/v1/rooms/join', { method: 'POST', body: { invite_code: roomCode, name: 'viewer', avatar: '🧑', is_human: true } });
   await api('/api/v1/channels', { method: 'POST', token: sender.token, body: { name: 'proj' } });
+  // membership: viewer must join #proj to post there and see its threads
+  await api('/api/v1/channels/proj/join', { method: 'POST', token: viewer.token });
 
   const post = (chan, body, root) => api('/api/v1/channels/' + chan + '/messages',
     { method: 'POST', token: (body.startsWith('vv:') ? viewer : sender).token,
