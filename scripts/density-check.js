@@ -1,5 +1,5 @@
-// E2E guard for the compact message type scale: message text runs ~20% under
-// the 15px chrome base (12px), the markdown scale follows via em units, and the
+// E2E guard for the compact message type scale: message text is exactly 14px
+// (Maya settled the size), the markdown scale follows via em units, and the
 // thread panel uses the same scale as the feed. Chrome (composer) stays 15px.
 // Run: NODE_PATH=<dir with puppeteer-core> node scripts/density-check.js
 const puppeteer = require('puppeteer-core');
@@ -50,10 +50,10 @@ const assert = (cond, msg) => { if (!cond) throw new Error(msg); };
       composer: gs(document.querySelector('.composer-editor')),
     };
   });
-  assert(px(feed.content) === 12, 'feed content ' + feed.content + ', want 12px');
-  assert(Math.abs(px(feed.heading) - 15) <= 0.5, 'h2 ' + feed.heading + ', want ~15px (1.25em of 12)');
-  assert(px(feed.code) < 12, 'inline code ' + feed.code + ', want under the 12px body (em-scaled)');
-  assert(px(feed.author) === 12, 'author ' + feed.author + ', want 12px');
+  assert(px(feed.content) === 14, 'feed content ' + feed.content + ', want 14px');
+  assert(Math.abs(px(feed.heading) - 17.5) <= 0.5, 'h2 ' + feed.heading + ', want ~17.5px (1.25em of 14)');
+  assert(px(feed.code) < 14, 'inline code ' + feed.code + ', want under the 14px body (em-scaled)');
+  assert(px(feed.author) === 13, 'author ' + feed.author + ', want 13px');
   assert(feed.avatar === 28, 'avatar width ' + feed.avatar + ', want 28');
   assert(px(feed.composer) === 15, 'composer ' + feed.composer + ', want 15px (chrome keeps the base)');
 
@@ -64,7 +64,7 @@ const assert = (cond, msg) => { if (!cond) throw new Error(msg); };
   await page.waitForFunction(() => document.querySelectorAll('#thread-messages .msg').length >= 1, { timeout: 8000 });
   const thread = await page.evaluate(() =>
     getComputedStyle(document.querySelector('#thread-messages .msg .content')).fontSize);
-  assert(px(thread) === 12, 'thread content ' + thread + ', want 12px');
+  assert(px(thread) === 14, 'thread content ' + thread + ', want 14px');
 
   await browser.close();
   console.log('DENSITY_CHECK_OK');

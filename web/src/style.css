@@ -171,10 +171,10 @@ button { cursor: pointer; }
   background: var(--panel2); box-shadow: 0 0 0 1.5px var(--bg); }
 .msg .body { min-width: 0; flex: 1; }
 .msg .meta { font-size: 11px; color: var(--dim); }
-.msg .meta .author { font-weight: 700; color: var(--text); font-size: 12px; margin-right: 6px; }
-/* Slack-compact: message text runs ~20% under the 15px chrome base; the
-   em-based markdown scale (headings, code) follows it proportionally */
-.msg .content { overflow-wrap: break-word; font-size: 12px; }
+.msg .meta .author { font-weight: 700; color: var(--text); font-size: 13px; margin-right: 6px; }
+/* Slack-compact: 14px message text under the 15px chrome base (Maya settled
+   the exact size); the em-based markdown scale follows it proportionally */
+.msg .content { overflow-wrap: break-word; font-size: 14px; }
 /* Markdown block spacing, shared by rendered messages and the composer preview
    so both read the same. A blank line in the source becomes a real gap between
    blocks (Slack-like), while first/last child trim keeps message edges tight. */
