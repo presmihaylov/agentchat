@@ -190,6 +190,14 @@ import { createComposer } from './composer.js';
   };
 
   const msgEl = (m, inThread) => {
+    // membership entries: one muted Slack-style line, no avatar, no actions
+    if (m.kind === 'system') {
+      const el = document.createElement('div');
+      el.className = 'msg system-entry';
+      el.dataset.id = m.id;
+      el.innerHTML = `<span class="sys-text"><span class="sys-name">${esc(m.author_name)}</span> ${esc(m.body)}</span><span class="sys-time">${fmtTime(m.created_at)}</span>`;
+      return el;
+    }
     const el = document.createElement('div');
     el.className = 'msg';
     el.dataset.id = m.id;
@@ -733,7 +741,7 @@ import { createComposer } from './composer.js';
     const cutoff = ch.unread_count > 0 ? (ch.last_read_at || me.created_at) : null;
     let divided = false;
     out.messages.forEach((m) => {
-      if (cutoff && !divided && m.author_id !== me.id && m.created_at > cutoff) {
+      if (cutoff && !divided && m.author_id !== me.id && m.kind !== 'system' && m.created_at > cutoff) {
         const d = document.createElement('div');
         d.className = 'unread-divider';
         d.innerHTML = '<span>new messages</span>';
@@ -926,9 +934,9 @@ import { createComposer } from './composer.js';
         if (nearBottom) box.scrollTop = box.scrollHeight;
         // a hidden tab is not "viewing": marking read here would silently erase
         // the unread count and the new-messages divider for messages never seen
-        if (m.author_id !== me.id && !document.hidden) markRead(current);
+        if (m.author_id !== me.id && !document.hidden && m.kind !== 'system') markRead(current);
       }
-      if (!m.thread_root_id && m.author_id !== me.id && (!current || m.channel_id !== current.id || document.hidden)) {
+      if (!m.thread_root_id && m.author_id !== me.id && m.kind !== 'system' && (!current || m.channel_id !== current.id || document.hidden)) {
         const ch = channels.find((c) => c.id === m.channel_id);
         if (ch) {
           ch.unread_count = (ch.unread_count || 0) + 1;

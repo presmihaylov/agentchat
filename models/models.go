@@ -98,6 +98,9 @@ type Message struct {
 	AuthorName   string           `json:"author_name"`
 	Body         string           `json:"body"`
 	IsBroadcast  bool             `json:"is_broadcast"`
+	// Kind is "message" for normal posts, "system" for membership timeline
+	// entries ("joined #x"); system rows skip unread counts, search, threads.
+	Kind string `json:"kind"`
 	CreatedAt    time.Time        `json:"created_at"`
 	EditedAt     *time.Time       `json:"edited_at,omitempty"`
 	ReplyCount   int              `json:"reply_count"`

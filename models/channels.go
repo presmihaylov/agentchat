@@ -79,18 +79,20 @@ func (s *Store) ParticipantChannelIDs(ctx context.Context, participantID string)
 // JoinChannel adds a participant to a channel and emits channel.member_joined.
 // Idempotent: joining a channel you are already in changes nothing and reports
 // changed=false. The event carries channel_id, so the membership gate delivers
-// it only to that channel's members (the new member included).
-func (s *Store) JoinChannel(ctx context.Context, roomID, channelID, participantID, name string) (bool, error) {
-	return s.setMembership(ctx, roomID, channelID, participantID, name, true)
+// it only to that channel's members (the new member included). The actor is
+// who performed the action (self-join: the participant themselves); it shapes
+// the system timeline entry ("joined #x" vs "was added by Y").
+func (s *Store) JoinChannel(ctx context.Context, roomID, channelID, participantID, name, actorID, actorName string) (bool, error) {
+	return s.setMembership(ctx, roomID, channelID, participantID, name, actorID, actorName, true)
 }
 
 // LeaveChannel removes a participant from a channel and emits channel.member_left.
 // Idempotent: leaving a channel you are not in reports changed=false.
-func (s *Store) LeaveChannel(ctx context.Context, roomID, channelID, participantID, name string) (bool, error) {
-	return s.setMembership(ctx, roomID, channelID, participantID, name, false)
+func (s *Store) LeaveChannel(ctx context.Context, roomID, channelID, participantID, name, actorID, actorName string) (bool, error) {
+	return s.setMembership(ctx, roomID, channelID, participantID, name, actorID, actorName, false)
 }
 
-func (s *Store) setMembership(ctx context.Context, roomID, channelID, participantID, name string, join bool) (bool, error) {
+func (s *Store) setMembership(ctx context.Context, roomID, channelID, participantID, name, actorID, actorName string, join bool) (bool, error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return false, err
@@ -129,6 +131,39 @@ func (s *Store) setMembership(ctx context.Context, roomID, channelID, participan
 	if err := appendEventTx(ctx, tx, roomID, typ, payload); err != nil {
 		return false, err
 	}
+
+	// Slack-style timeline entry, persisted as a system message so history
+	// shows it in place. Authored by the subject; the body carries the rest.
+	body := "joined #" + name
+	if join && actorID != participantID {
+		body = "was added by " + actorName
+	}
+	if !join {
+		body = "left #" + name
+		if actorID != participantID {
+			body = "was removed by " + actorName
+		}
+	}
+	var msgID string
+	if err := tx.QueryRow(ctx,
+		`INSERT INTO messages (room_id, channel_id, author_id, body, kind, embed_status)
+		 VALUES ($1, $2, $3, $4, 'system', 'skipped') RETURNING id`,
+		roomID, channelID, participantID, body).Scan(&msgID); err != nil {
+		return false, err
+	}
+	msg, err := scanMessage(tx.QueryRow(ctx, messageSelect+` WHERE m.id = $1`, msgID))
+	if err != nil {
+		return false, err
+	}
+	msgPayload, err := json.Marshal(msg)
+	if err != nil {
+		return false, err
+	}
+	// message.created reuses the UI's live feed path; membership-gated like
+	// every content event, so only the channel's members render it
+	if err := appendEventTx(ctx, tx, roomID, "message.created", msgPayload); err != nil {
+		return false, err
+	}
 	return true, tx.Commit(ctx)
 }
 
@@ -161,11 +196,11 @@ func (s *Store) ListChannelsUnread(ctx context.Context, roomID, participantID st
 		        r.last_read_at,
 		        (SELECT count(*) FROM messages m
 		         WHERE m.channel_id = c.id AND m.thread_root_id IS NULL
-		           AND m.author_id <> $2
+		           AND m.author_id <> $2 AND m.kind <> 'system'
 		           AND m.created_at > COALESCE(r.last_read_at, p.created_at)) AS unread,
 		        (SELECT count(*) FROM messages m
 		         WHERE m.channel_id = c.id AND m.thread_root_id IS NULL
-		           AND m.author_id <> $2
+		           AND m.author_id <> $2 AND m.kind <> 'system'
 		           AND m.created_at > COALESCE(r.last_read_at, p.created_at)
 		           AND (m.is_broadcast OR EXISTS (
 		                SELECT 1 FROM mentions mn

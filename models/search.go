@@ -71,7 +71,7 @@ func (s *Store) SearchText(ctx context.Context, roomID, query string, f SearchFi
 		      THEN 1.0 + ts_rank(m.tsv, websearch_to_tsquery('english', $2))
 		      ELSE word_similarity($2, m.body) END AS score` +
 		messageFrom + fmt.Sprintf(`
-		 WHERE m.room_id = $1 AND (
+		 WHERE m.room_id = $1 AND m.kind <> 'system' AND (
 		   m.tsv @@ websearch_to_tsquery('english', $2)
 		   OR word_similarity($2, m.body) >= $3
 		 )%s
@@ -90,7 +90,7 @@ func (s *Store) SearchSemantic(ctx context.Context, roomID string, embedding []f
 		`, 1 - (e.embedding <=> $2) AS score` +
 		messageFrom + fmt.Sprintf(`
 		 JOIN message_embeddings e ON e.message_id = m.id
-		 WHERE m.room_id = $1%s
+		 WHERE m.room_id = $1 AND m.kind <> 'system'%s
 		 ORDER BY e.embedding <=> $2 ASC LIMIT $%d`, clause, len(args))
 
 	// HNSW returns ef_search candidates BEFORE the WHERE filters apply; with
@@ -145,7 +145,7 @@ func scanSearchResult(rows pgx.Rows) (SearchResult, error) {
 	// same order as scanMessage plus trailing score
 	var attJSON, menJSON, repJSON, mkrJSON []byte
 	err := rows.Scan(&r.ID, &r.RoomID, &r.ChannelID, &r.ThreadRootID, &r.AuthorID, &r.AuthorName,
-		&r.Body, &r.IsBroadcast, &r.CreatedAt, &r.EditedAt, &r.ReplyCount, &r.LastReplyAt,
+		&r.Body, &r.IsBroadcast, &r.Kind, &r.CreatedAt, &r.EditedAt, &r.ReplyCount, &r.LastReplyAt,
 		&repJSON, &attJSON, &menJSON, &mkrJSON, &r.Score)
 	if err != nil {
 		return r, err

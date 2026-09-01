@@ -186,9 +186,14 @@ func TestFullFlow(t *testing.T) {
 		t.Fatalf("nested reply should attach to root: %v", reply2["thread_root_id"])
 	}
 
-	// listing: one top-level with 2 replies
+	// listing: one real top-level with 2 replies (bob's join adds a system row)
 	list := bob.must("GET", "/api/v1/channels/deploys/messages", nil, 200)
-	msgs := list["messages"].([]any)
+	msgs := []any{}
+	for _, raw := range list["messages"].([]any) {
+		if raw.(map[string]any)["kind"] != "system" {
+			msgs = append(msgs, raw)
+		}
+	}
 	if len(msgs) != 1 || msgs[0].(map[string]any)["reply_count"].(float64) != 2 {
 		t.Fatalf("channel listing: %v", msgs)
 	}
@@ -1446,8 +1451,14 @@ func TestChannelMembership(t *testing.T) {
 	bob.must("POST", "/api/v1/channels/secret/join", nil, 200)
 	// now a member: read + post succeed, and the two earlier messages are visible
 	msgs := bob.must("GET", "/api/v1/channels/secret/messages", nil, 200)["messages"].([]any)
-	if len(msgs) != 2 {
-		t.Fatalf("after join bob sees %d top-level messages, want 2", len(msgs))
+	real := 0
+	for _, raw := range msgs {
+		if raw.(map[string]any)["kind"] != "system" {
+			real++
+		}
+	}
+	if real != 2 {
+		t.Fatalf("after join bob sees %d top-level messages, want 2", real)
 	}
 	bob.must("POST", "/api/v1/channels/secret/messages", map[string]any{"body": "thanks"}, 201)
 	// once joined, #secret is gone from browse and present in the channel list
@@ -1507,8 +1518,14 @@ func TestPrivateChannels(t *testing.T) {
 
 	// --- a member (alice) adds bob; bob can now read and post ---
 	alice.must("POST", "/api/v1/channels/war-room/members", map[string]any{"participant": "bob"}, 200)
-	if n := len(bob.must("GET", "/api/v1/channels/war-room/messages", nil, 200)["messages"].([]any)); n != 1 {
-		t.Fatalf("after add bob sees %d messages, want 1", n)
+	warMsgs := 0
+	for _, raw := range bob.must("GET", "/api/v1/channels/war-room/messages", nil, 200)["messages"].([]any) {
+		if raw.(map[string]any)["kind"] != "system" {
+			warMsgs++
+		}
+	}
+	if warMsgs != 1 {
+		t.Fatalf("after add bob sees %d messages, want 1", warMsgs)
 	}
 	bob.must("POST", "/api/v1/channels/war-room/messages", map[string]any{"body": "in"}, 201)
 
@@ -1587,4 +1604,92 @@ func TestChannelGroups(t *testing.T) {
 		t.Fatalf("alice still has %d sections after delete, want 0", n)
 	}
 	alice.must("GET", "/api/v1/channels/proj/messages", nil, 200) // channel survives
+}
+
+// Membership changes persist Slack-style system entries in the timeline and
+// stay out of unread counts, search, and threads.
+func TestMembershipSystemEntries(t *testing.T) {
+	srv, _ := newTestServer(t)
+	_, alice, bob := setupRoom(t, srv.URL)
+
+	alice.must("POST", "/api/v1/channels", map[string]any{"name": "proj", "topic": ""}, 201)
+	alice.must("POST", "/api/v1/channels/proj/messages", map[string]any{"body": "hello proj"}, 201)
+
+	// self-join, add, leave: each writes one system entry with the right body
+	bob.must("POST", "/api/v1/channels/proj/join", nil, 200)
+	bob.must("POST", "/api/v1/channels/proj/leave", nil, 200)
+	alice.must("POST", "/api/v1/channels/proj/members", map[string]any{"participant": "bob"}, 200)
+
+	msgs := alice.must("GET", "/api/v1/channels/proj/messages", nil, 200)["messages"].([]any)
+	type entry struct{ kind, author, body string }
+	var sys []entry
+	for _, raw := range msgs {
+		m := raw.(map[string]any)
+		if m["kind"] == "system" {
+			sys = append(sys, entry{"system", m["author_name"].(string), m["body"].(string)})
+		}
+	}
+	want := []entry{
+		{"system", "bob", "joined #proj"},
+		{"system", "bob", "left #proj"},
+		{"system", "bob", "was added by alice"},
+	}
+	if len(sys) != len(want) {
+		t.Fatalf("system entries = %+v, want %+v", sys, want)
+	}
+	for i := range want {
+		if sys[i] != want[i] {
+			t.Fatalf("system entry %d = %+v, want %+v", i, sys[i], want[i])
+		}
+	}
+
+	// idempotent re-add writes nothing new
+	alice.must("POST", "/api/v1/channels/proj/members", map[string]any{"participant": "bob"}, 200)
+	again := alice.must("GET", "/api/v1/channels/proj/messages", nil, 200)["messages"].([]any)
+	if len(again) != len(msgs) {
+		t.Fatalf("idempotent re-add grew the timeline: %d -> %d", len(msgs), len(again))
+	}
+
+	// system entries never count as unread (regression: they used to be plain rows)
+	for _, raw := range bob.must("GET", "/api/v1/channels", nil, 200)["channels"].([]any) {
+		ch := raw.(map[string]any)
+		if ch["name"] == "proj" && ch["unread_count"].(float64) != 1 {
+			t.Fatalf("bob's #proj unread = %v, want 1 (only the real message)", ch["unread_count"])
+		}
+	}
+
+	// search never surfaces a system entry
+	sr := alice.must("GET", "/api/v1/search?q=joined", nil, 200)
+	if n := len(sr["results"].([]any)); n != 0 {
+		t.Fatalf("search leaked %d system entries", n)
+	}
+
+	// a system entry takes no replies
+	var sysID string
+	for _, raw := range msgs {
+		m := raw.(map[string]any)
+		if m["kind"] == "system" {
+			sysID = m["id"].(string)
+		}
+	}
+	alice.must("POST", "/api/v1/channels/proj/messages",
+		map[string]any{"body": "re: joining", "thread_root_id": sysID}, 409)
+
+	// the live event stream carries the system entry as message.created
+	c0 := fmt.Sprintf("%.0f", alice.must("GET", "/api/v1/events", nil, 200)["cursor"].(float64))
+	bob.must("POST", "/api/v1/channels/proj/leave", nil, 200)
+	found := false
+	for _, raw := range alice.must("GET", "/api/v1/events?after="+c0, nil, 200)["events"].([]any) {
+		e := raw.(map[string]any)
+		if e["type"] != "message.created" {
+			continue
+		}
+		pl := e["payload"].(map[string]any)
+		if pl["kind"] == "system" && pl["body"] == "left #proj" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("no system message.created event reached alice")
+	}
 }

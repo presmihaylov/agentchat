@@ -23,7 +23,7 @@ type CreateMessageParams struct {
 // mentions and reply counts. Split so searches can append a score column.
 const messageColumns = `
 	       m.id, m.room_id, m.channel_id, m.thread_root_id, m.author_id, a.name,
-	       m.body, m.is_broadcast, m.created_at, m.edited_at,
+	       m.body, m.is_broadcast, m.kind, m.created_at, m.edited_at,
 	       (SELECT count(*) FROM messages r WHERE r.thread_root_id = m.id) AS reply_count,
 	       (SELECT max(r.created_at) FROM messages r WHERE r.thread_root_id = m.id) AS last_reply_at,
 	       COALESCE(
@@ -63,7 +63,7 @@ func scanMessage(row pgx.Row) (Message, error) {
 	var m Message
 	var attJSON, menJSON, repJSON, mkrJSON []byte
 	err := row.Scan(&m.ID, &m.RoomID, &m.ChannelID, &m.ThreadRootID, &m.AuthorID, &m.AuthorName,
-		&m.Body, &m.IsBroadcast, &m.CreatedAt, &m.EditedAt, &m.ReplyCount, &m.LastReplyAt,
+		&m.Body, &m.IsBroadcast, &m.Kind, &m.CreatedAt, &m.EditedAt, &m.ReplyCount, &m.LastReplyAt,
 		&repJSON, &attJSON, &menJSON, &mkrJSON)
 	if err != nil {
 		return m, err
@@ -108,6 +108,20 @@ func (s *Store) CreateMessage(ctx context.Context, p CreateMessageParams) (Messa
 	}
 	if archived {
 		return Message{}, ErrArchived
+	}
+
+	// system timeline entries take no replies
+	if p.ThreadRootID != nil {
+		var rootKind string
+		err = tx.QueryRow(ctx,
+			`SELECT kind FROM messages WHERE id = $1 AND room_id = $2`,
+			*p.ThreadRootID, p.RoomID).Scan(&rootKind)
+		if err != nil {
+			return Message{}, mapRowErr(err)
+		}
+		if rootKind == "system" {
+			return Message{}, ErrConflict
+		}
 	}
 
 	var id string

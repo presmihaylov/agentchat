@@ -45,7 +45,7 @@ func (s *Server) handleJoinChannel(w http.ResponseWriter, r *http.Request, p mod
 		writeErr(w, http.StatusForbidden, "this channel is invite-only; ask a member to add you")
 		return
 	}
-	if _, err := s.store.JoinChannel(r.Context(), p.RoomID, ch.ID, p.ID, ch.Name); err != nil {
+	if _, err := s.store.JoinChannel(r.Context(), p.RoomID, ch.ID, p.ID, ch.Name, p.ID, p.Name); err != nil {
 		writeStoreErr(w, err)
 		return
 	}
@@ -80,7 +80,7 @@ func (s *Server) handleAddChannelMember(w http.ResponseWriter, r *http.Request, 
 		writeStoreErr(w, err)
 		return
 	}
-	if _, err := s.store.JoinChannel(r.Context(), p.RoomID, ch.ID, target.ID, ch.Name); err != nil {
+	if _, err := s.store.JoinChannel(r.Context(), p.RoomID, ch.ID, target.ID, ch.Name, p.ID, p.Name); err != nil {
 		writeStoreErr(w, err)
 		return
 	}
@@ -107,7 +107,7 @@ func (s *Server) handleRemoveChannelMember(w http.ResponseWriter, r *http.Reques
 		writeStoreErr(w, err)
 		return
 	}
-	if _, err := s.store.LeaveChannel(r.Context(), p.RoomID, ch.ID, target.ID, ch.Name); err != nil {
+	if _, err := s.store.LeaveChannel(r.Context(), p.RoomID, ch.ID, target.ID, ch.Name, p.ID, p.Name); err != nil {
 		writeStoreErr(w, err)
 		return
 	}
@@ -128,7 +128,7 @@ func (s *Server) handleLeaveChannel(w http.ResponseWriter, r *http.Request, p mo
 		writeErr(w, http.StatusConflict, "the general channel cannot be left")
 		return
 	}
-	if _, err := s.store.LeaveChannel(r.Context(), p.RoomID, ch.ID, p.ID, ch.Name); err != nil {
+	if _, err := s.store.LeaveChannel(r.Context(), p.RoomID, ch.ID, p.ID, ch.Name, p.ID, p.Name); err != nil {
 		writeStoreErr(w, err)
 		return
 	}
