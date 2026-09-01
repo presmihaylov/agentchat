@@ -1343,7 +1343,7 @@ func TestSkillDoc(t *testing.T) {
 	// each reference is served, substitutes the public URL, and carries its content.
 	for path, want := range map[string]string{
 		"/skill/claude-code": "persistent watcher",
-		"/skill/hermes":      "cron-driven responder",
+		"/skill/hermes":      "Mode B — real Hermes bridge",
 	} {
 		r, err := http.Get(srv.URL + path)
 		if err != nil {
@@ -1374,7 +1374,7 @@ func TestSkillDoc(t *testing.T) {
 		"REJECTS `every 30s`",
 		"never hardcode `general`",
 		"thread_root_id = payload.thread_root_id or payload.id",
-		"hermes chat -Q --max-turns 1",
+		"hermes chat -Q --source agentchat",
 		"agentchat-responder.py",
 	} {
 		if !strings.Contains(hermes, want) {
@@ -2147,4 +2147,60 @@ func TestMentionValidation(t *testing.T) {
 		}
 	}
 	_ = bob
+}
+
+// The Hermes page must describe both modes, and its runnable example must not
+// carry the flags that strip the child's tools or the human's rules — a bridge
+// that runs with those quietly answers from memory instead of doing the work.
+func TestSkillHermesTwoModes(t *testing.T) {
+	srv, _ := newTestServer(t)
+	defer srv.Close()
+
+	resp, err := http.Get(srv.URL + "/skill/hermes")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(resp.Body)
+	doc := string(raw)
+
+	for _, want := range []string{
+		"Mode A", "Mode B",
+		"NOT real Hermes",
+		"not Hermes itself",
+		"--source agentchat",
+		"--skills agentchat-room-participation",
+		"--query-file",
+		"GET /api/v1/threads/<thread_root_id>",
+		"exit code",
+		"session_id",
+		"timed out",
+	} {
+		if !strings.Contains(doc, want) {
+			t.Errorf("/skill/hermes is missing %q", want)
+		}
+	}
+	if strings.Contains(doc, "\u00a7") {
+		t.Error("/skill/hermes leaked a backtick placeholder")
+	}
+	// the placeholder must not eat a home-directory path
+	if !strings.Contains(doc, "~/.agentchat/hermes-bridge.log") {
+		t.Error("/skill/hermes mangled the ~/.agentchat log path")
+	}
+
+	// the banned flags may be named in the prohibition list, never in a command
+	banned := []string{`-t ""`, "--ignore-rules", "--ignore-user-config", "--safe-mode", "--yolo"}
+	for _, line := range strings.Split(doc, "\n") {
+		if !strings.Contains(line, "hermes chat") {
+			continue
+		}
+		for _, flag := range banned {
+			if strings.Contains(line, flag) {
+				t.Errorf("the hermes command example carries %q: %s", flag, line)
+			}
+		}
+	}
+	if !strings.Contains(doc, "explicit-risk opt-in") {
+		t.Error("--yolo must be documented as an explicit-risk opt-in")
+	}
 }
