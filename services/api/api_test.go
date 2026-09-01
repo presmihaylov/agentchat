@@ -2071,3 +2071,80 @@ func TestPermalinkRoutesServeApp(t *testing.T) {
 		}
 	}
 }
+
+// Dead mentions: a typo must fail loudly with the roster attached, and a
+// mention of somebody outside the channel must warn the sender, because both
+// otherwise look exactly like a message nobody answers.
+func TestMentionValidation(t *testing.T) {
+	srv, _ := newTestServer(t)
+	defer srv.Close()
+	_, alice, bob := setupRoom(t, srv.URL)
+
+	// 1. the roster is authoritative and lists both handles
+	roster := alice.must("GET", "/api/v1/members", nil, 200)
+	members := roster["members"].([]any)
+	if len(members) != 2 {
+		t.Fatalf("want 2 members, got %v", members)
+	}
+	handles := map[string]bool{}
+	for _, m := range members {
+		mm := m.(map[string]any)
+		handles[mm["handle"].(string)] = true
+		if mm["dormant"].(bool) {
+			t.Fatalf("a member who just joined is dormant: %v", mm)
+		}
+		if mm["id"].(string) == "" || mm["last_seen_at"].(string) == "" {
+			t.Fatalf("roster entry missing identity or liveness: %v", mm)
+		}
+	}
+	if !handles["alice"] || !handles["bob"] {
+		t.Fatalf("roster handles: %v", handles)
+	}
+
+	// 2. an unknown handle is a 422 that names it and carries the roster
+	status, out := alice.do("POST", "/api/v1/channels/general/messages", map[string]any{"body": "ping @ghost"})
+	if status != 422 {
+		t.Fatalf("unknown mention -> %d, want 422: %v", status, out)
+	}
+	unknown := out["unknown_mentions"].([]any)
+	if len(unknown) != 1 || unknown[0] != "ghost" {
+		t.Fatalf("unknown_mentions: %v", out)
+	}
+	if len(out["members"].([]any)) != 2 {
+		t.Fatalf("the 422 must carry the current roster: %v", out)
+	}
+
+	// 3. the escape hatch posts anyway
+	alice.must("POST", "/api/v1/channels/general/messages",
+		map[string]any{"body": "ping @ghost", "allow_unknown_mentions": true}, 201)
+
+	// 4. emails and code spans must not false-trigger
+	alice.must("POST", "/api/v1/channels/general/messages",
+		map[string]any{"body": "mail ops@example.com and run `@ghost` later"}, 201)
+
+	// 5. a real handle posts clean, with no warning
+	ok := alice.must("POST", "/api/v1/channels/general/messages", map[string]any{"body": "hi @bob"}, 201)
+	if ok["warnings"] != nil {
+		t.Fatalf("a channel member must not warn: %v", ok["warnings"])
+	}
+
+	// 6. bob is a room member but not in alice's private channel: warn, do not fail
+	ch := alice.must("POST", "/api/v1/channels", map[string]any{"name": "alice-only"}, 201)
+	chID := ch["id"].(string)
+	warned := alice.must("POST", "/api/v1/channels/"+chID+"/messages", map[string]any{"body": "hi @bob"}, 201)
+	warnings, _ := warned["warnings"].([]any)
+	if len(warnings) != 1 || !strings.Contains(warnings[0].(string), "@bob") {
+		t.Fatalf("want a not-in-channel warning, got %v", warned["warnings"])
+	}
+
+	// 7. ?channel= flags who would actually receive a mention there
+	scoped := alice.must("GET", "/api/v1/members?channel="+chID, nil, 200)
+	for _, m := range scoped["members"].([]any) {
+		mm := m.(map[string]any)
+		want := mm["handle"] == "alice"
+		if mm["in_channel"].(bool) != want {
+			t.Fatalf("in_channel for %v: %v", mm["handle"], mm["in_channel"])
+		}
+	}
+	_ = bob
+}

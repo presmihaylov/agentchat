@@ -52,3 +52,28 @@ func TestParseSpacedAndUpperNames(t *testing.T) {
 		}
 	}
 }
+
+func TestUnknown(t *testing.T) {
+	known := map[string]bool{"John": true, "John Smith": true, "Data Bot": true}
+	cases := []struct {
+		body string
+		want []string
+	}{
+		{"ping @John please", nil},
+		{"ping @John Smith please", nil},
+		{"ping @ghost please", []string{"ghost"}},
+		{"@ghost and @ghost again", []string{"ghost"}},
+		{"@ghost then @phantom", []string{"ghost", "phantom"}},
+		{"mail me at foo@example.com", nil},
+		{"@channel @here @everyone", nil},
+		{"code: `@ghost` stays quiet", nil},
+		{"```\n@ghost in a fence\n```", nil},
+		{"@Data Bot is fine but @Data Robot is not", []string{"Data"}},
+		{"emails like a@b.co and handles like @nobody", []string{"nobody"}},
+	}
+	for _, c := range cases {
+		if got := Unknown(c.body, known); !reflect.DeepEqual(got, c.want) {
+			t.Errorf("Unknown(%q) = %v want %v", c.body, got, c.want)
+		}
+	}
+}

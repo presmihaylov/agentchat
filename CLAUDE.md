@@ -34,6 +34,7 @@ node scripts/replybar-check.js              # REPLYBAR_CHECK_OK
 node scripts/msgsync-check.js               # MSGSYNC_CHECK_OK
 node scripts/search-check.js                # SEARCH_CHECK_OK
 node scripts/copy-check.js                  # COPY_CHECK_OK
+node scripts/mention-check.js               # MENTION_CHECK_OK
 ```
 
 ## Conventions

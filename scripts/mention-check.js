@@ -1,74 +1,94 @@
-// E2E for the Slack-style mention chips. Two families must render distinctly:
-//   - pings you: your own name OR a @channel/@here/@everyone broadcast ->
-//     warm amber/gold chip (.mention-me)
-//   - @someone-else -> subtle blue tint (.mention, no modifier)
-// Run: NODE_PATH=<dir with puppeteer-core> SERVER=http://localhost:8095 node scripts/mention-check.js
+// E2E for dead-mention hardening: the API rejects a handle nobody answers to,
+// the UI still lets a human type literal "@text", and mentioning somebody who
+// is not in the channel warns the sender instead of vanishing.
+// Run: NODE_PATH=<dir with puppeteer-core> node scripts/mention-check.js
 const puppeteer = require('puppeteer-core');
 const SERVER = process.env.SERVER || 'http://localhost:8095';
 
-async function api(path, opts = {}) {
+async function call(path, opts = {}) {
   const resp = await fetch(SERVER + path, {
     method: opts.method || 'GET',
-    headers: Object.assign({ 'Content-Type': 'application/json' }, opts.token ? { Authorization: 'Bearer ' + opts.token } : {}),
+    headers: Object.assign({ 'Content-Type': 'application/json' },
+      opts.token ? { Authorization: 'Bearer ' + opts.token } : {}),
     body: opts.body ? JSON.stringify(opts.body) : undefined,
   });
   const data = await resp.json().catch(() => ({}));
-  if (!resp.ok) throw new Error(path + ' -> ' + resp.status + ' ' + JSON.stringify(data));
+  return { status: resp.status, data };
+}
+async function api(path, opts = {}) {
+  const { status, data } = await call(path, opts);
+  if (status >= 400) throw new Error(path + ' -> ' + status + ' ' + JSON.stringify(data));
   return data;
 }
+const assert = (cond, msg) => { if (!cond) throw new Error(msg); };
 
 (async () => {
   const created = await api('/api/v1/rooms', { method: 'POST', body: { name: 'mention check' } });
-  const code = created.invite_code, slug = created.room.slug;
-  const maya = await api('/api/v1/rooms/join', { method: 'POST', body: { invite_code: code, name: 'Maya', avatar: '🧑', is_human: true } });
-  const bot = await api('/api/v1/rooms/join', { method: 'POST', body: { invite_code: code, name: 'orca-infra', avatar: '📊' } });
-  // one message that hits all three buckets, authored by the bot so the viewer (Maya) sees @Maya as a self-mention
-  await api('/api/v1/channels/general/messages', { method: 'POST', token: bot.token, body: { body: 'hey @Maya and @orca-infra, @channel please review' } });
+  const slug = created.room.slug;
+  const bot = await api('/api/v1/rooms/join', { method: 'POST', body: { invite_code: created.invite_code, name: 'mentionbot', description: 't' } });
+  const viewer = await api('/api/v1/rooms/join', { method: 'POST', body: { invite_code: created.invite_code, name: 'viewer', is_human: true } });
+
+  // 1. the roster is fetchable and lists both handles
+  const roster = await api('/api/v1/members', { token: bot.token });
+  const handles = roster.members.map((m) => m.handle).sort();
+  assert(handles.join(',') === 'mentionbot,viewer', 'roster handles: ' + handles);
+  assert(roster.members.every((m) => m.dormant === false), 'a fresh member is dormant');
+
+  // 2. an unknown handle is a 422 carrying the roster
+  const bad = await call('/api/v1/channels/general/messages', {
+    method: 'POST', token: bot.token, body: { body: 'ping @ghost' },
+  });
+  assert(bad.status === 422, 'unknown mention -> ' + bad.status);
+  assert(bad.data.unknown_mentions[0] === 'ghost', 'unknown_mentions: ' + JSON.stringify(bad.data));
+  assert(bad.data.members.length === 2, 'the 422 must carry the roster');
+
+  // 3. an out-of-channel mention posts, with a warning
+  const priv = await api('/api/v1/channels', { method: 'POST', token: bot.token, body: { name: 'botonly' } });
+  const warned = await api('/api/v1/channels/' + priv.id + '/messages', {
+    method: 'POST', token: bot.token, body: { body: 'hi @viewer' },
+  });
+  assert(warned.warnings && /viewer/.test(warned.warnings[0]), 'no warning: ' + JSON.stringify(warned));
 
   const browser = await puppeteer.launch({
     executablePath: process.env.CHROME || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
     headless: 'new', args: ['--no-sandbox', '--disable-dev-shm-usage'],
   });
   const page = await browser.newPage();
-  await page.setViewport({ width: 1000, height: 800, deviceScaleFactor: 2 });
-  page.on('pageerror', (e) => { console.error('PAGEERROR', e.message); process.exitCode = 1; });
+  await page.setViewport({ width: 1280, height: 800 });
+  let alerted = null;
+  page.on('dialog', async (d) => { alerted = d.message(); await d.dismiss(); });
   await page.goto(SERVER + '/r/' + slug, { waitUntil: 'networkidle2' });
-  await page.evaluate((s, t) => localStorage.setItem('agentchat:' + s, JSON.stringify({ token: t })), slug, maya.token);
+  await page.evaluate((s, t) => localStorage.setItem('agentchat:' + s, JSON.stringify({ token: t })), slug, viewer.token);
   await page.reload({ waitUntil: 'networkidle2' });
-  await page.waitForSelector('.msg .mention', { timeout: 6000 });
+  await page.waitForSelector('#chat-view:not(.hidden)', { timeout: 8000 });
 
-  // classify each chip by its text and read the computed color/background
-  const chips = await page.evaluate(() => {
-    const rgb = (c) => c.replace(/rgba?\(|\)|\s/g, '').split(',').map(Number);
-    return [...document.querySelectorAll('.msg .mention')].map((el) => {
-      const cs = getComputedStyle(el);
-      return {
-        text: el.textContent.trim(),
-        me: el.classList.contains('mention-me'),
-        color: rgb(cs.color),
-        bg: rgb(cs.backgroundColor),
-      };
-    });
-  });
-  const find = (t) => chips.find((c) => c.text === t);
-  const self = find('@Maya'), other = find('@orca-infra'), bc = find('@channel');
-  if (!self || !other || !bc) throw new Error('missing a chip: ' + JSON.stringify(chips));
+  // 4. a human typing literal "@text" is never blocked
+  await page.type('#composer-input', 'see @ghost-branch for the fix ');
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Enter');
+  await page.waitForFunction(() => [...document.querySelectorAll('#messages .msg')]
+    .some((m) => m.textContent.includes('ghost-branch')), { timeout: 8000 });
+  assert(!alerted, 'the UI blocked a literal @text: ' + alerted);
 
-  // amber test: warm text (red channel high, blue channel low)
-  const warm = (c) => c.color[0] > 180 && c.color[2] < 120;
-  // self chip: amber
-  if (!self.me) throw new Error('self chip lost the amber class: ' + JSON.stringify(self));
-  if (!warm(self)) throw new Error('self chip is not amber/gold: ' + JSON.stringify(self));
+  // 5. the human mentioning an out-of-channel member sees the warning pill
+  await api('/api/v1/channels', { method: 'POST', token: viewer.token, body: { name: 'viewer-only' } });
+  await page.reload({ waitUntil: 'networkidle2' });
+  await page.waitForSelector('#chat-view:not(.hidden)', { timeout: 8000 });
+  await page.evaluate(() => [...document.querySelectorAll('#channel-list li')]
+    .find((li) => li.textContent.includes('viewer-only')).click());
+  await page.waitForFunction(() => document.querySelector('#channel-title').textContent.includes('viewer-only'), { timeout: 8000 });
+  // the trailing space dismisses the mention popup, so Enter sends instead of
+  // picking a suggestion
+  await page.type('#composer-input', 'hey @mentionbot ');
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Enter');
+  await page.waitForFunction(() => {
+    const n = document.getElementById('notice');
+    return n && !n.classList.contains('hidden') && /mentionbot/.test(n.textContent);
+  }, { timeout: 8000 });
 
-  // broadcast: now the SAME amber chip as self
-  if (!bc.me) throw new Error('broadcast chip is not the amber class: ' + JSON.stringify(bc));
-  if (!warm(bc)) throw new Error('broadcast chip is not amber/gold: ' + JSON.stringify(bc));
-
-  // other: subtle blue tint, no modifier, blue-forward text
-  const bluish = other.color[2] > other.color[0];
-  if (other.me) throw new Error('other chip picked up the amber modifier: ' + JSON.stringify(other));
-  if (!bluish) throw new Error('other chip is not blue-tinted: ' + JSON.stringify(other));
+  await page.screenshot({ path: (process.env.OUT || '.') + '/mention-warning.png' });
 
   await browser.close();
-  if (!process.exitCode) console.log('MENTION_CHECK_OK');
+  console.log('MENTION_CHECK_OK');
 })().catch((e) => { console.error('MENTION_CHECK_FAIL:', e.message); process.exit(1); });

@@ -104,6 +104,8 @@ func (s *Server) routes() {
 	m.HandleFunc("PATCH /api/v1/room", s.authed(s.handleRenameRoom))
 	m.HandleFunc("POST /api/v1/room/rotate-secret", s.authed(s.handleRotateSecret))
 
+	// the authoritative handle roster clients validate mentions against
+	m.HandleFunc("GET /api/v1/members", s.authed(s.handleListMembers))
 	m.HandleFunc("GET /api/v1/participants", s.authed(s.handleListParticipants))
 	m.HandleFunc("POST /api/v1/participants/{id}/role", s.authed(s.handleSetRole))
 	m.HandleFunc("DELETE /api/v1/participants/{id}", s.authed(s.handleRevokeParticipant))

@@ -22,6 +22,17 @@ type postMessageReq struct {
 	ThreadRootID  *string  `json:"thread_root_id"`
 	AttachmentIDs []string `json:"attachment_ids"`
 	Broadcast     bool     `json:"broadcast"`
+	// AllowUnknownMentions posts anyway when the body names a handle nobody
+	// answers to. Without it an unknown @handle is a 422, so a typo cannot
+	// silently address nobody.
+	AllowUnknownMentions bool `json:"allow_unknown_mentions"`
+}
+
+// postMessageResp keeps the flat message shape clients already read and adds
+// delivery warnings, e.g. a mention of somebody who is not in this channel.
+type postMessageResp struct {
+	models.Message
+	Warnings []string `json:"warnings,omitempty"`
 }
 
 func (s *Server) handlePostMessage(w http.ResponseWriter, r *http.Request, p models.Participant) {
@@ -107,6 +118,34 @@ func (s *Server) handlePostMessage(w http.ResponseWriter, r *http.Request, p mod
 		mentionIDs = append(mentionIDs, byName[n])
 	}
 
+	if unknown := mentions.Unknown(req.Body, known); len(unknown) > 0 && !req.AllowUnknownMentions {
+		// the roster rides along so a client can refresh its cache and retry
+		// without a second round trip
+		writeJSON(w, http.StatusUnprocessableEntity, map[string]any{
+			"error":            "unknown mentions: " + strings.Join(unknown, ", "),
+			"unknown_mentions": unknown,
+			"members":          toRoster(participants, nil),
+			"hint":             "fetch GET /api/v1/members, or resend with allow_unknown_mentions: true",
+		})
+		return
+	}
+
+	// a mentioned room member who is not in this channel never sees the
+	// message; the sender must learn that instead of waiting for a reply
+	var warnings []string
+	if len(names) > 0 {
+		inChannel, err := s.channelMemberSet(r, p.RoomID, ch.ID)
+		if err != nil {
+			writeStoreErr(w, err)
+			return
+		}
+		for _, n := range names {
+			if !inChannel[byName[n]] {
+				warnings = append(warnings, "@"+n+" is not a member of #"+ch.Name+" and will not receive this message")
+			}
+		}
+	}
+
 	msg, err := s.store.CreateMessage(r.Context(), models.CreateMessageParams{
 		RoomID:        p.RoomID,
 		ChannelID:     ch.ID,
@@ -121,7 +160,7 @@ func (s *Server) handlePostMessage(w http.ResponseWriter, r *http.Request, p mod
 		writeStoreErr(w, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, msg)
+	writeJSON(w, http.StatusCreated, postMessageResp{Message: msg, Warnings: warnings})
 }
 
 func (s *Server) handleListMessages(w http.ResponseWriter, r *http.Request, p models.Participant) {

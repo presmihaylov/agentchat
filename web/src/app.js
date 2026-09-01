@@ -1005,7 +1005,9 @@ import { createComposer } from './composer.js';
   const post = async (body, threadRootID) => {
     const rootID = threadRootID || null;
     const att = (pendingAttachment && !threadRootID) ? pendingAttachment : null;
-    const payload = { body };
+    // a human typing "@foo" usually means literal text, not a dead mention, so
+    // the strict 422 stays for API clients and the UI just posts
+    const payload = { body, allow_unknown_mentions: true };
     if (threadRootID) payload.thread_root_id = threadRootID;
     if (att) payload.attachment_ids = [att.id];
 
@@ -1021,7 +1023,9 @@ import { createComposer } from './composer.js';
     if (att) { pendingAttachment = null; $('attach-pending').classList.add('hidden'); }
 
     try {
-      await api(`/api/v1/channels/${current.id}/messages`, { method: 'POST', body: payload });
+      const sent = await api(`/api/v1/channels/${current.id}/messages`, { method: 'POST', body: payload });
+      // mentioning somebody outside the channel silently reaches nobody
+      if (sent && sent.warnings && sent.warnings.length) notice(sent.warnings[0], true);
     } catch (e) {
       const i = pendingSends.indexOf(rec);
       if (i >= 0) pendingSends.splice(i, 1);
