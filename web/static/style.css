@@ -294,6 +294,13 @@ button { cursor: pointer; }
 .mention-ac { position: absolute; bottom: calc(100% + 4px); left: 0; min-width: 220px; max-height: 240px; overflow-y: auto; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; z-index: 20; box-shadow: 0 4px 16px rgba(0,0,0,.4); }
 .mention-opt { padding: 6px 12px; cursor: pointer; font-size: 14px; }
 .mention-opt.sel, .mention-opt:hover { background: var(--accent); color: #fff; }
+.slash-ac .mention-opt { display: flex; align-items: baseline; gap: 8px; font-family: inherit; }
+.slash-args { color: var(--dim); font-size: 12px; }
+.slash-hint { margin-left: auto; color: var(--dim); font-size: 11px; padding-left: 16px; }
+.mention-opt.sel .slash-args, .mention-opt.sel .slash-hint, .mention-opt:hover .slash-args, .mention-opt:hover .slash-hint { color: rgba(255,255,255,.75); }
+.composer-status { font-size: 12px; color: var(--dim); padding: 2px 2px 0; transition: opacity .3s; }
+.composer-status.err { color: var(--danger, #e5534b); }
+.composer-status.hidden { display: none; }
 #composer textarea, #thread-composer textarea { flex: 1; resize: none; background: var(--panel2); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; color: var(--text); font: inherit; max-height: 40vh; overflow-y: auto; }
 #composer > button[type="submit"], #thread-composer > button[type="submit"], .composer-main > button[type="submit"] { background: var(--accent); color: #fff; border: 0; border-radius: 8px; padding: 10px 16px; font-weight: 600; }
 

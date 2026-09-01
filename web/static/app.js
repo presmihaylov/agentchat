@@ -1126,6 +1126,167 @@
   setupMentions('composer-input');
   setupMentions('thread-input');
 
+  // ---------- slash commands: /invite, /join, /leave, /archive ----------
+  // Autocomplete mirrors the mention popup; commands run client-side against
+  // the existing APIs and never post the raw "/command" text as a message.
+  const SLASH_COMMANDS = [
+    { name: 'invite', args: '@participant', hint: 'add someone to this channel' },
+    { name: 'join', args: '#channel', hint: 'join a public channel' },
+    { name: 'leave', args: '', hint: 'leave this channel' },
+    { name: 'archive', args: '', hint: 'archive the open thread' },
+  ];
+
+  // inline confirmation / error in the composer area, auto-fades
+  const slashStatus = (ta, text, isErr) => {
+    const host = ta.closest('form') || ta.parentElement;
+    let s = host.querySelector('.composer-status');
+    if (!s) {
+      s = document.createElement('div');
+      s.className = 'composer-status';
+      host.appendChild(s);
+    }
+    s.textContent = text;
+    s.classList.toggle('err', !!isErr);
+    s.classList.remove('hidden');
+    clearTimeout(s._fade);
+    s._fade = setTimeout(() => s.classList.add('hidden'), 4000);
+  };
+
+  const runSlash = async (ta) => {
+    const raw = ta.value.trim();
+    const m = raw.match(/^\/(\S+)\s*(.*)$/);
+    const cmd = m ? m[1].toLowerCase() : '';
+    const arg = m ? m[2].trim() : '';
+    const done = (msg) => { ta.value = ''; bumpComposer(ta); slashStatus(ta, msg); };
+    const fail = (msg) => slashStatus(ta, msg, true);
+    try {
+      if (cmd === 'invite') {
+        if (!current) return fail('No channel selected.');
+        const who = arg.replace(/^@/, '');
+        if (!who) return fail('Usage: /invite @participant');
+        await api('/api/v1/channels/' + current.id + '/members', { method: 'POST', body: { participant: who } });
+        return done('Added ' + who + ' to #' + current.name);
+      }
+      if (cmd === 'join') {
+        const name = arg.replace(/^#/, '');
+        if (!name) return fail('Usage: /join channel');
+        const out = await api('/api/v1/channels/browse');
+        const ch = (out.channels || []).find((c) => c.name === name);
+        if (!ch) return fail('No public channel "' + name + '" to join.');
+        await api('/api/v1/channels/' + ch.id + '/join', { method: 'POST' });
+        await refreshRoom();
+        await selectChannel(channels.find((c) => c.id === ch.id));
+        return done('Joined #' + name);
+      }
+      if (cmd === 'leave') {
+        if (!current) return fail('No channel selected.');
+        if (current.name === 'general') return fail('#general cannot be left.');
+        const name = current.name;
+        await leaveChannel(current);
+        return done('Left #' + name);
+      }
+      if (cmd === 'archive') {
+        if (ta.id !== 'thread-input' || !openThreadRoot) return fail('/archive works in an open thread.');
+        const root = openThreadRoot;
+        await api('/api/v1/threads/' + root + '/resolve', { method: 'POST', body: { resolved: true } });
+        closeThread();
+        loadThreads();
+        return done('Thread archived.');
+      }
+      fail('Unknown command /' + cmd);
+    } catch (e) { fail('/' + cmd + ' failed: ' + e.message); }
+  };
+
+  // capture on document so the slash run wins over the send handlers on the form
+  document.addEventListener('submit', (ev) => {
+    const ta = ev.target.querySelector('#composer-input, #thread-input');
+    if (!ta || !ta.value.trimStart().startsWith('/')) return;
+    ev.preventDefault();
+    ev.stopPropagation();
+    runSlash(ta);
+  }, true);
+
+  const setupSlashCommands = (taID) => {
+    const ta = $(taID);
+    const box = document.createElement('div');
+    box.className = 'mention-ac slash-ac hidden';
+    ta.parentElement.appendChild(box);
+    let items = [];
+    let sel = 0;
+    let browseCache = null; // public channels, fetched once per popup
+
+    const close = () => { items = []; browseCache = null; box.classList.add('hidden'); };
+    const apply = (it) => {
+      if (it.kind === 'cmd') {
+        ta.value = '/' + it.name + (it.args ? ' ' : '');
+        const pos = ta.value.length;
+        ta.setSelectionRange(pos, pos);
+        ta.focus();
+        close();
+        // /join immediately re-opens with the channel list
+        if (it.name === 'join') update();
+        return;
+      }
+      ta.value = '/join ' + it.name;
+      ta.setSelectionRange(ta.value.length, ta.value.length);
+      ta.focus();
+      close();
+    };
+    const render = () => {
+      box.innerHTML = '';
+      items.forEach((it, i) => {
+        const d = document.createElement('div');
+        d.className = 'mention-opt' + (i === sel ? ' sel' : '');
+        d.innerHTML = it.kind === 'cmd'
+          ? '/' + esc(it.name) + (it.args ? ' <span class="slash-args">' + esc(it.args) + '</span>' : '') +
+            '<span class="slash-hint">' + esc(it.hint) + '</span>'
+          : '#' + esc(it.name) + '<span class="slash-hint">' + esc(it.topic || '') + '</span>';
+        d.onmousedown = (ev) => { ev.preventDefault(); apply(it); };
+        box.appendChild(d);
+      });
+      box.classList.toggle('hidden', items.length === 0);
+    };
+    const update = () => {
+      const head = ta.value.slice(0, ta.selectionStart);
+      // stage 2: /join <partial> completes public channel names
+      const jm = head.match(/^\/join\s+#?(\S*)$/);
+      if (jm) {
+        const typed = jm[1].toLowerCase();
+        const fill = () => {
+          items = (browseCache || []).filter((c) => c.name.toLowerCase().startsWith(typed))
+            .map((c) => ({ kind: 'channel', name: c.name, topic: c.topic })).slice(0, 8);
+          sel = 0;
+          render();
+        };
+        if (browseCache) return fill();
+        api('/api/v1/channels/browse')
+          .then((out) => { browseCache = out.channels || []; fill(); })
+          .catch(() => {});
+        return;
+      }
+      // stage 1: a lone "/word" at the very start filters command names
+      const m = head.match(/^\/([a-z]*)$/i);
+      if (!m || ta.value.slice(ta.selectionStart).trim() !== '') { close(); return; }
+      const typed = m[1].toLowerCase();
+      items = SLASH_COMMANDS.filter((c) => c.name.startsWith(typed))
+        .map((c) => ({ kind: 'cmd', ...c }));
+      sel = 0;
+      render();
+    };
+    ta.addEventListener('input', update);
+    ta.addEventListener('click', update);
+    ta.addEventListener('blur', () => setTimeout(close, 100));
+    ta.addEventListener('keydown', (ev) => {
+      if (box.classList.contains('hidden')) return;
+      if (ev.key === 'ArrowDown') { ev.preventDefault(); sel = (sel + 1) % items.length; render(); }
+      else if (ev.key === 'ArrowUp') { ev.preventDefault(); sel = (sel + items.length - 1) % items.length; render(); }
+      else if (ev.key === 'Enter' || ev.key === 'Tab') { ev.preventDefault(); ev.stopImmediatePropagation(); apply(items[sel]); }
+      else if (ev.key === 'Escape') close();
+    });
+  };
+  setupSlashCommands('composer-input');
+  setupSlashCommands('thread-input');
+
   // enter sends, shift+enter for a newline
   for (const [ta, form] of [['composer-input', 'composer'], ['thread-input', 'thread-composer']]) {
     $(ta).addEventListener('keydown', (ev) => {
