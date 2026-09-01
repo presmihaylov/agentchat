@@ -451,8 +451,96 @@ import { createComposer } from './composer.js';
     return li;
   };
 
+  // ---------- sidebar drag-and-drop ----------
+  // The "Move to section…" menu stays as the keyboard path; this is the pointer
+  // one. Only channel rows drag; thread leaves and headers are targets at most.
+  let dragChannel = null;
+
+  const clearDropMarks = () => document.querySelectorAll('#channel-list li')
+    .forEach((n) => n.classList.remove('drop-before', 'drop-after', 'drop-into'));
+
+  const endDrag = () => {
+    dragChannel = null;
+    $('channel-list').classList.remove('dnd');
+    document.querySelectorAll('#channel-list li.dragging').forEach((n) => n.classList.remove('dragging'));
+    clearDropMarks();
+  };
+
+  // groupID null drops the channel out of every section; index is its slot.
+  const dropChannel = async (ch, groupID, index) => {
+    const target = groups.find((g) => g.id === groupID);
+    // the ungrouped area has no stored order, so only the placement changes
+    if (!target) {
+      await moveChannel(ch, null);
+      return;
+    }
+    const ids = (target.channel_ids || []).filter((id) => id !== ch.id);
+    ids.splice(Math.max(0, Math.min(index, ids.length)), 0, ch.id);
+    groups.forEach((g) => { g.channel_ids = (g.channel_ids || []).filter((id) => id !== ch.id); });
+    target.channel_ids = ids;
+    renderChannels(); // land the row now; the writes only confirm it
+    try {
+      for (let i = 0; i < ids.length; i += 1) {
+        await api('/api/v1/channels/' + ids[i] + '/group', { method: 'PUT', body: { group_id: groupID, position: i } });
+      }
+    } catch (e) { notice(e.message, true); }
+    await fetchGroups();
+    renderChannels();
+  };
+
+  const dropEdge = (li, ev) => {
+    const r = li.getBoundingClientRect();
+    return ev.clientY > r.top + r.height / 2 ? 1 : 0;
+  };
+
+  const makeDragRow = (li, ch, groupID) => {
+    li.draggable = true;
+    li.dataset.chid = ch.id;
+    li.ondragstart = (ev) => {
+      dragChannel = ch;
+      ev.dataTransfer.effectAllowed = 'move';
+      ev.dataTransfer.setData('text/plain', ch.id);
+      li.classList.add('dragging');
+      $('channel-list').classList.add('dnd');
+    };
+    li.ondragend = endDrag;
+    li.ondragover = (ev) => {
+      if (!dragChannel || dragChannel.id === ch.id) return;
+      ev.preventDefault();
+      clearDropMarks();
+      li.classList.add(dropEdge(li, ev) ? 'drop-after' : 'drop-before');
+    };
+    li.ondrop = (ev) => {
+      if (!dragChannel || dragChannel.id === ch.id) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      const moved = dragChannel;
+      const g = groups.find((x) => x.id === groupID);
+      const ids = g ? (g.channel_ids || []).filter((id) => id !== moved.id) : [];
+      const index = ids.indexOf(ch.id) + dropEdge(li, ev);
+      endDrag();
+      dropChannel(moved, groupID, index);
+    };
+  };
+
+  const makeDropZone = (li, groupID, index) => {
+    li.ondragover = (ev) => {
+      if (!dragChannel) return;
+      ev.preventDefault();
+      clearDropMarks();
+      li.classList.add('drop-into');
+    };
+    li.ondrop = (ev) => {
+      if (!dragChannel) return;
+      ev.preventDefault();
+      const moved = dragChannel;
+      endDrag();
+      dropChannel(moved, groupID, index());
+    };
+  };
+
   // One channel row (with its nested thread leaves appended right beneath it).
-  const appendChannel = (ul, ch) => {
+  const appendChannel = (ul, ch, groupID) => {
     const li = document.createElement('li');
     const sigil = ch.private ? '🔒 ' : '# ';
     li.textContent = sigil + ch.name + (ch.archived ? ' (archived)' : '');
@@ -482,6 +570,7 @@ import { createComposer } from './composer.js';
       if (ch.name !== 'general') items.push({ label: 'Leave channel', danger: true, run: () => leaveChannel(ch) });
       openContextMenu(ev.clientX, ev.clientY, items);
     };
+    makeDragRow(li, ch, groupID);
     ul.appendChild(li);
     threads.filter((t) => t.channel_id === ch.id).forEach((t) => ul.appendChild(threadLeafLi(t)));
   };
@@ -497,8 +586,15 @@ import { createComposer } from './composer.js';
     ul.innerHTML = '';
     const placement = groupOf();
 
+    // only shown mid-drag: the way back out of every section
+    const none = document.createElement('li');
+    none.className = 'drop-none';
+    none.textContent = 'drop here for no section';
+    makeDropZone(none, null, () => 0);
+    ul.appendChild(none);
+
     // ungrouped channels first, in their normal order
-    channels.filter((ch) => !placement[ch.id]).forEach((ch) => appendChannel(ul, ch));
+    channels.filter((ch) => !placement[ch.id]).forEach((ch) => appendChannel(ul, ch, null));
 
     // then each personal section, in order
     groups.forEach((g) => {
@@ -518,6 +614,8 @@ import { createComposer } from './composer.js';
         header.appendChild(b);
       }
       header.onclick = () => toggleGroup(g);
+      // a header drop appends, which is also the only sane slot when collapsed
+      makeDropZone(header, g.id, () => (g.channel_ids || []).length);
       header.oncontextmenu = (ev) => {
         ev.preventDefault();
         openContextMenu(ev.clientX, ev.clientY, [
@@ -526,7 +624,7 @@ import { createComposer } from './composer.js';
         ]);
       };
       ul.appendChild(header);
-      if (!g.collapsed) members.forEach((ch) => appendChannel(ul, ch));
+      if (!g.collapsed) members.forEach((ch) => appendChannel(ul, ch, g.id));
     });
   };
 
