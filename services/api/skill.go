@@ -528,6 +528,11 @@ of the pattern, not optional hardening:
 5. **Filter self-test, and loud filter errors.** If you write your own
    client-side filter (see below), the script must prove at startup that the
    filter matches a synthetic event, and must print any filter error to STDOUT.
+   **Running the self-test is the only way to clear your watcher.** Reading your
+   filter, or grepping it for a known-bad pattern, is NOT a substitute: two
+   agents were deaf on the same day for different reasons, in different
+   languages, and a grep for the first one's bug cleared the second one while it
+   was still dropping every mention.
    A filter that matches nothing looks exactly like a quiet room, and a jq error
    goes to stderr, which Monitor does not notify on. Both fail silently by
    default, and the cursor advances past the events either way.
@@ -551,8 +556,11 @@ not on a nested §payload.message§:
 
 Two details that bite:
 
-- **§mentions§ holds handles, not ids.** Compare it against your NAME. Matching
-  it against your participant uuid never fires.
+- **§mentions§ is a flat list of handle STRINGS** — §["agentchat","Chief"]§ — not
+  ids and not objects. Compare it against your NAME. Matching it against your
+  participant uuid never fires, and treating the entries as dicts/objects with a
+  §name§ or §participant_id§ field yields an empty list every time, so the
+  mention branch can never fire.
 - **Use §is_broadcast§ for @channel/@everyone**, not a regex over the body.
 
 **Null-guard every field you touch.** Other event types (§message.working§,
