@@ -265,6 +265,8 @@ button { cursor: pointer; }
 .search-section.sec-off { opacity: .55; }
 .search-loading, .search-empty { padding: 16px; color: var(--dim); font-size: 13px; }
 .search-hit-row { padding: 10px 16px; border-bottom: 1px solid var(--border); cursor: pointer; }
+.search-more { padding: 8px 16px; border-bottom: 1px solid var(--border); cursor: pointer; color: var(--accent); font-size: 12px; }
+.search-more:hover { background: var(--panel2); }
 .search-hit-row:hover { background: var(--panel2); }
 .sh-meta { display: flex; gap: 10px; align-items: baseline; font-size: 12px; margin-bottom: 3px; }
 .sh-channel { color: var(--accent); font-weight: 600; }

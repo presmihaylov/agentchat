@@ -1432,7 +1432,7 @@ import { createComposer } from './composer.js';
     const seq = ++searchSeq;
     if (!q) { box.innerHTML = ''; return; }
 
-    const state = { seq, text: 'pending', sem: semanticEnabled === false ? 'off' : 'pending' };
+    const state = { seq, text: 'pending', sem: semanticEnabled === false ? 'off' : 'pending', expanded: {} };
     paintSearch(state);
 
     api('/api/v1/search?q=' + encodeURIComponent(q) + '&limit=25')
@@ -1463,19 +1463,33 @@ import { createComposer } from './composer.js';
     return d;
   };
 
+  // Long groups collapse to a preview so both stay visible in one glance;
+  // "(see more)" expands inline for this query only, without a new request.
+  const SEARCH_PREVIEW_ROWS = 5;
+  const appendHitGroup = (box, state, key, rows) => {
+    const shown = state.expanded[key] ? rows : rows.slice(0, SEARCH_PREVIEW_ROWS);
+    shown.forEach((r) => box.appendChild(searchHitRow(r)));
+    if (rows.length <= shown.length) return;
+    const more = document.createElement('div');
+    more.className = 'search-more';
+    more.textContent = '... (see more)';
+    more.onclick = () => { state.expanded[key] = true; paintSearch(state); };
+    box.appendChild(more);
+  };
+
   const paintSearch = (state) => {
     if (state.seq !== searchSeq) return;
     const box = $('search-results');
     box.innerHTML = '';
     const textIds = new Set(Array.isArray(state.text) ? state.text.map((r) => r.id) : []);
 
-    box.appendChild(searchSection('Text matches'));
+    box.appendChild(searchSection('Direct matches'));
     if (state.text === 'pending') box.appendChild(searchNote('search-loading', 'Searching…'));
     else if (state.text && state.text.err) box.appendChild(searchNote('search-empty', 'Search failed: ' + state.text.err));
-    else if (!state.text.length) box.appendChild(searchNote('search-empty', 'No text matches.'));
-    else state.text.forEach((r) => box.appendChild(searchHitRow(r)));
+    else if (!state.text.length) box.appendChild(searchNote('search-empty', 'No direct matches.'));
+    else appendHitGroup(box, state, 'direct', state.text);
 
-    const semHead = searchSection('Semantic matches');
+    const semHead = searchSection('Related matches');
     box.appendChild(semHead);
     if (state.sem === 'off') {
       semHead.classList.add('sec-off');
@@ -1485,9 +1499,9 @@ import { createComposer } from './composer.js';
     } else if (state.sem && state.sem.err) {
       box.appendChild(searchNote('search-empty', 'Semantic search failed: ' + state.sem.err));
     } else {
-      const fresh = state.sem.filter((r) => !textIds.has(r.id)); // dedupe: a text hit never repeats here
-      if (!fresh.length) box.appendChild(searchNote('search-empty', 'No additional semantic matches.'));
-      else fresh.forEach((r) => box.appendChild(searchHitRow(r)));
+      const fresh = state.sem.filter((r) => !textIds.has(r.id)); // dedupe: a direct hit never repeats here
+      if (!fresh.length) box.appendChild(searchNote('search-empty', 'No additional related matches.'));
+      else appendHitGroup(box, state, 'related', fresh);
     }
   };
 

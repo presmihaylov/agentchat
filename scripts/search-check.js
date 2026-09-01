@@ -1,8 +1,9 @@
 // E2E for the unified search panel (FR-I). One query renders TWO sections in
-// one panel: "Text matches" (instant, now fuzzy so typos still hit) on top and
-// "Semantic matches" (lazy-loads under a loading row) beneath. A message shown
-// in Text does not repeat in Semantic. On a server with no embeddings provider
-// the Semantic section greys out with an "off" note; Text still works.
+// one panel: "Direct matches" (instant, fuzzy so typos still hit) on top and
+// "Related matches" (semantic; lazy-loads under a loading row) beneath. A long
+// group previews ~5 rows with a "... (see more)" inline expand. A message shown
+// in Direct does not repeat in Related. On a server with no embeddings provider
+// the Related section greys out with an "off" note; Direct still works.
 // Run: NODE_PATH=<dir with puppeteer-core> SERVER=http://localhost:8095 node scripts/search-check.js
 const puppeteer = require('puppeteer-core');
 const SERVER = process.env.SERVER || 'http://localhost:8095';
@@ -47,6 +48,10 @@ const rowsUnder = (page, label) => page.evaluate((lab) => {
   const budget = await api('/api/v1/channels/general/messages', { method: 'POST', token: bot.token, body: { body: 'the quarterly budget forecast is due next week' } });
   await api('/api/v1/channels/general/messages', { method: 'POST', token: bot.token, body: { body: 'please fix the webhook config before deploy' } });
   await api('/api/v1/channels/general/messages', { method: 'POST', token: bot.token, body: { body: 'lunch options near the office' } });
+  // 7 hits for one keyword, to exercise the 5-row preview + see-more expand
+  for (let i = 1; i <= 7; i++) {
+    await api('/api/v1/channels/general/messages', { method: 'POST', token: bot.token, body: { body: 'sprint retro notes part ' + i } });
+  }
 
   const browser = await launch();
   const page = await browser.newPage();
@@ -54,7 +59,7 @@ const rowsUnder = (page, label) => page.evaluate((lab) => {
   page.on('pageerror', (e) => { console.error('PAGEERROR', e.message); process.exitCode = 1; });
   await seedLogin(page, slug, human.token);
 
-  // A) open search, exact text query renders under "Text matches"
+  // A) open search, exact text query renders under "Direct matches"
   await page.evaluate(() => document.getElementById('open-search').click());
   await page.waitForSelector('#search-modal:not(.hidden)', { timeout: 3000 });
   await page.type('#search-input', 'budget');
@@ -62,8 +67,8 @@ const rowsUnder = (page, label) => page.evaluate((lab) => {
     const rows = [...document.querySelectorAll('#search-results .search-hit-row')];
     return rows.some((r) => r.textContent.toLowerCase().includes('budget'));
   }, { timeout: 5000 });
-  const textRows = await rowsUnder(page, 'text matches');
-  if (!textRows || !textRows.some((s) => s.toLowerCase().includes('budget'))) throw new Error('budget not under Text matches: ' + JSON.stringify(textRows));
+  const textRows = await rowsUnder(page, 'direct matches');
+  if (!textRows || !textRows.some((s) => s.toLowerCase().includes('budget'))) throw new Error('budget not under Direct matches: ' + JSON.stringify(textRows));
 
   // click-through still flashes the target message
   await page.click('#search-results .search-hit-row');
@@ -73,7 +78,7 @@ const rowsUnder = (page, label) => page.evaluate((lab) => {
     return n && n.classList.contains('search-flash');
   }, { timeout: 3000 }, budget.id);
 
-  // A2) FUZZY: a typo of "webhook" still hits under Text matches
+  // A2) FUZZY: a typo of "webhook" still hits under Direct matches
   await page.evaluate(() => document.getElementById('open-search').click());
   await page.waitForSelector('#search-modal:not(.hidden)', { timeout: 3000 });
   await page.click('#search-input', { clickCount: 3 });
@@ -82,7 +87,7 @@ const rowsUnder = (page, label) => page.evaluate((lab) => {
   // it; the point here is that fuzzy TEXT matching works), not just anywhere
   await page.waitForFunction(() => {
     const heads = [...document.querySelectorAll('#search-results .search-section')];
-    const head = heads.find((h) => h.textContent.trim().toLowerCase().startsWith('text'));
+    const head = heads.find((h) => h.textContent.trim().toLowerCase().startsWith('direct'));
     if (!head) return false;
     for (let n = head.nextElementSibling; n && !n.classList.contains('search-section'); n = n.nextElementSibling) {
       if (n.classList.contains('search-hit-row') && n.textContent.toLowerCase().includes('webhook')) return true;
@@ -114,17 +119,46 @@ const rowsUnder = (page, label) => page.evaluate((lab) => {
     [...document.querySelectorAll('#search-results .search-hit-row .sh-snippet')]
       .filter((s) => s.textContent.toLowerCase().includes('budget')).length);
   if (budgetCount !== 1) throw new Error('dedup failed: budget row count = ' + budgetCount);
-  // the Semantic section header exists (loaded, not greyed)
+  // the Related section header exists (loaded, not greyed)
   const semHead = await page.evaluate(() => {
-    const h = [...document.querySelectorAll('#search-results .search-section')].find((x) => x.textContent.toLowerCase().startsWith('semantic'));
+    const h = [...document.querySelectorAll('#search-results .search-section')].find((x) => x.textContent.toLowerCase().startsWith('related'));
     return h ? { off: h.classList.contains('sec-off') } : null;
   });
-  if (!semHead) throw new Error('no Semantic matches section rendered');
-  if (semHead.off) throw new Error('Semantic section greyed while embeddings are enabled');
+  if (!semHead) throw new Error('no Related matches section rendered');
+  if (semHead.off) throw new Error('Related section greyed while embeddings are enabled');
+
+  // B2) SEE-MORE: 7 direct hits preview as 5 rows + "... (see more)"; the click
+  // expands the group inline to all 7 without a new query.
+  await page.click('#search-input', { clickCount: 3 });
+  await page.type('#search-input', 'sprint retro notes');
+  // wait for the FINAL paint (typing debounces per keystroke): 5 preview rows
+  // under Direct plus a see-more row
+  await page.waitForFunction(() => {
+    const heads = [...document.querySelectorAll('#search-results .search-section')];
+    const head = heads.find((h) => h.textContent.trim().toLowerCase().startsWith('direct'));
+    if (!head) return false;
+    let count = 0;
+    let more = false;
+    for (let n = head.nextElementSibling; n && !n.classList.contains('search-section'); n = n.nextElementSibling) {
+      if (n.classList.contains('search-hit-row') && n.textContent.toLowerCase().includes('sprint')) count++;
+      if (n.classList.contains('search-more')) more = true;
+    }
+    return count === 5 && more;
+  }, { timeout: 8000 }).catch(() => { throw new Error('7-hit group never previewed as 5 rows + see-more'); });
+  await page.evaluate(() => document.querySelector('#search-results .search-more').click());
+  await page.waitForFunction(() => {
+    const heads = [...document.querySelectorAll('#search-results .search-section')];
+    const head = heads.find((h) => h.textContent.trim().toLowerCase().startsWith('direct'));
+    let count = 0;
+    for (let n = head.nextElementSibling; n && !n.classList.contains('search-section'); n = n.nextElementSibling) {
+      if (n.classList.contains('search-hit-row')) count++;
+    }
+    return count === 7;
+  }, { timeout: 4000 }).catch(() => { throw new Error('see-more did not expand to 7 rows'); });
   await browser.close();
 
-  // C) DEGRADE: semantic endpoint answers 503 -> Semantic section greys with an
-  // "off" note; Text section still returns results.
+  // C) DEGRADE: semantic endpoint answers 503 -> Related section greys with an
+  // "off" note; Direct section still returns results.
   const b2 = await launch();
   const p2 = await b2.newPage();
   await p2.setRequestInterception(true);
@@ -140,7 +174,7 @@ const rowsUnder = (page, label) => page.evaluate((lab) => {
   await p2.waitForSelector('#search-modal:not(.hidden)', { timeout: 3000 });
   await p2.type('#search-input', 'budget');
   await p2.waitForFunction(() => {
-    const h = [...document.querySelectorAll('#search-results .search-section')].find((x) => x.textContent.toLowerCase().startsWith('semantic'));
+    const h = [...document.querySelectorAll('#search-results .search-section')].find((x) => x.textContent.toLowerCase().startsWith('related'));
     const off = h && h.classList.contains('sec-off');
     const note = [...document.querySelectorAll('#search-results .search-empty')].some((n) => n.textContent.toLowerCase().includes('off on this server'));
     const textHit = [...document.querySelectorAll('#search-results .search-hit-row')].some((r) => r.textContent.toLowerCase().includes('budget'));
