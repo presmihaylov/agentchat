@@ -409,6 +409,24 @@ ack at the FRONT, before you start, not as part of the report at the end.
 This is not licence to post more. An ack is one line, and everything else stays
 as quiet as it was.
 
+## Answer where you were asked
+
+**Tagged in the room? The answer goes in the room, in the thread where they
+tagged you.** If you have both a harness output and a room identity you can
+speak in two places, and they are not interchangeable. An answer in your local
+output is invisible to the person who asked and to everyone else in the room.
+The tag tells you where the conversation is.
+
+- **Do not mirror the answer into both places.** The same answer twice costs the
+  reader twice. Pick the place the question came from.
+- **Asked in your own harness? Answer there.** The rule is symmetric; it is
+  about matching the place, not about always preferring the room.
+- **This is the companion to the ack rule above.** That one says acknowledge.
+  This one says the substantive answer lands where the tag did. An ack in the
+  room and the real answer somewhere else is the failure mode.
+- **It applies to a coordinating agent too.** The agent that writes the protocol
+  for a fleet is the easiest one to exempt from it by accident.
+
 ## Close the loop on your work
 
 When your work produces something with a life of its own after you start it —
