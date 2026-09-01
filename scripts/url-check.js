@@ -78,7 +78,8 @@ const assert = (cond, msg) => { if (!cond) throw new Error(msg); };
 
   // 4. opening a thread pushes /t/<root-id>; closing pops back off via the X
   await page.waitForFunction(() => document.querySelector('button.reply-bar'), { timeout: 8000 });
-  await page.click('button.reply-bar');
+  // click inside evaluate: the feed re-renders on poll and detaches held handles
+  await page.evaluate(() => document.querySelector('button.reply-bar').click());
   await waitPath('/r/' + slug + '/c/general/t/' + root.id);
   await page.waitForFunction(() => !document.querySelector('#thread-panel').classList.contains('hidden'), { timeout: 8000 });
 

@@ -1,4 +1,6 @@
 /* AgentChat human web client — vanilla JS, talks to the same REST API as agents. */
+import { createComposer } from './composer.js';
+
 (() => {
   'use strict';
 
@@ -1051,80 +1053,20 @@
 
   $('composer').addEventListener('submit', async (ev) => {
     ev.preventDefault();
-    const input = $('composer-input');
-    const text = input.value.trim();
+    const text = composerBox.getMarkdown().trim();
     if ((!text && !pendingAttachment) || !current) return;
-    input.value = ''; resetComposer(input); // clear instantly; post shows the placeholder
-    try { await post(text); } catch (e) { input.value = text; autoGrow(input); alert(e.message); }
+    composerBox.clear(); // clear instantly; post shows the placeholder
+    try { await post(text); } catch (e) { composerBox.setMarkdown(text); alert(e.message); }
   });
 
   $('thread-composer').addEventListener('submit', async (ev) => {
     ev.preventDefault();
-    const input = $('thread-input');
-    const text = input.value.trim();
+    const text = threadBox.getMarkdown().trim();
     if (!text || !openThreadRoot) return;
     const root = openThreadRoot;
-    input.value = ''; resetComposer(input); // clear instantly; post shows the placeholder
-    try { await post(text, root); } catch (e) { input.value = text; autoGrow(input); alert(e.message); }
+    threadBox.clear(); // clear instantly; post shows the placeholder
+    try { await post(text, root); } catch (e) { threadBox.setMarkdown(text); alert(e.message); }
   });
-
-  // @-mention autocomplete: typing "@pre" pops matching participants + broadcasts.
-  // Registered BEFORE the enter-sends handlers so Enter can pick a name instead
-  // of submitting (stopImmediatePropagation).
-  const setupMentions = (taID) => {
-    const ta = $(taID);
-    const box = document.createElement('div');
-    box.className = 'mention-ac hidden';
-    ta.parentElement.appendChild(box);
-    let items = [];
-    let sel = 0;
-    let start = -1;
-
-    const close = () => { items = []; box.classList.add('hidden'); };
-    const apply = (name) => {
-      const end = ta.selectionStart;
-      ta.value = ta.value.slice(0, start) + '@' + name + ' ' + ta.value.slice(end);
-      const pos = start + name.length + 2;
-      ta.setSelectionRange(pos, pos);
-      ta.focus();
-      close();
-    };
-    const render = () => {
-      box.innerHTML = '';
-      items.forEach((it, i) => {
-        const d = document.createElement('div');
-        d.className = 'mention-opt' + (i === sel ? ' sel' : '');
-        d.textContent = `${it.avatar} ${it.name}`;
-        // mousedown (not click) so the pick lands before the textarea blurs
-        d.onmousedown = (ev) => { ev.preventDefault(); apply(it.name); };
-        box.appendChild(d);
-      });
-      box.classList.toggle('hidden', items.length === 0);
-    };
-    const update = () => {
-      const m = ta.value.slice(0, ta.selectionStart).match(/(^|\s)@([A-Za-z0-9_-]*(?: [A-Za-z0-9_-]*){0,3})$/);
-      if (!m) { close(); return; }
-      start = ta.selectionStart - m[2].length - 1;
-      const opts = participants.map((p) => ({ name: p.name, avatar: p.avatar }))
-        .concat([{ name: 'channel', avatar: '📣' }, { name: 'everyone', avatar: '📣' }, { name: 'here', avatar: '📣' }]);
-      const typed = m[2].toLowerCase();
-      items = opts.filter((o) => o.name.toLowerCase().startsWith(typed)).slice(0, 8);
-      sel = 0;
-      render();
-    };
-    ta.addEventListener('input', update);
-    ta.addEventListener('click', update);
-    ta.addEventListener('blur', () => setTimeout(close, 100));
-    ta.addEventListener('keydown', (ev) => {
-      if (box.classList.contains('hidden')) return;
-      if (ev.key === 'ArrowDown') { ev.preventDefault(); sel = (sel + 1) % items.length; render(); }
-      else if (ev.key === 'ArrowUp') { ev.preventDefault(); sel = (sel + items.length - 1) % items.length; render(); }
-      else if (ev.key === 'Enter' || ev.key === 'Tab') { ev.preventDefault(); ev.stopImmediatePropagation(); apply(items[sel].name); }
-      else if (ev.key === 'Escape') close();
-    });
-  };
-  setupMentions('composer-input');
-  setupMentions('thread-input');
 
   // ---------- slash commands: /invite, /join, /leave, /archive ----------
   // Autocomplete mirrors the mention popup; commands run client-side against
@@ -1136,9 +1078,38 @@
     { name: 'archive', args: '', hint: 'archive the open thread' },
   ];
 
+  // the two WYSIWYG composers (Tiptap); the wire format stays markdown
+  const composerBox = createComposer({
+    mount: $('composer-mount'), id: 'composer-input',
+    placeholder: 'Message… (@name to mention, markdown ok)',
+    onSubmit: () => $('composer').requestSubmit(),
+    getMentionOptions: () => participants.map((p) => ({ name: p.name, avatar: p.avatar })),
+    slashCommands: SLASH_COMMANDS,
+    browseChannels: async () => (await api('/api/v1/channels/browse')).channels || [],
+    onImageFile: (f) => uploadPending(new File([f], f.name || 'pasted-image.png', { type: f.type })),
+  });
+  const threadBox = createComposer({
+    mount: $('thread-mount'), id: 'thread-input',
+    placeholder: 'Reply…',
+    onSubmit: () => $('thread-composer').requestSubmit(),
+    getMentionOptions: () => participants.map((p) => ({ name: p.name, avatar: p.avatar })),
+    slashCommands: SLASH_COMMANDS,
+    browseChannels: async () => (await api('/api/v1/channels/browse')).channels || [],
+  });
+
+  // format toolbar drives editor commands; mousedown keeps the editor focus
+  for (const [inputID, box] of [['composer-input', composerBox], ['thread-input', threadBox]]) {
+    document.querySelector('.composer-tools[data-for="' + inputID + '"]').addEventListener('mousedown', (ev) => {
+      const btn = ev.target.closest('button[data-fmt]');
+      if (!btn) return;
+      ev.preventDefault();
+      box.format(btn.dataset.fmt);
+    });
+  }
+
   // inline confirmation / error in the composer area, auto-fades
-  const slashStatus = (ta, text, isErr) => {
-    const host = ta.closest('form') || ta.parentElement;
+  const slashStatus = (form, text, isErr) => {
+    const host = form;
     let s = host.querySelector('.composer-status');
     if (!s) {
       s = document.createElement('div');
@@ -1152,13 +1123,13 @@
     s._fade = setTimeout(() => s.classList.add('hidden'), 4000);
   };
 
-  const runSlash = async (ta) => {
-    const raw = ta.value.trim();
+  const runSlash = async (box, form) => {
+    const raw = box.getPlain().trim();
     const m = raw.match(/^\/(\S+)\s*(.*)$/);
     const cmd = m ? m[1].toLowerCase() : '';
     const arg = m ? m[2].trim() : '';
-    const done = (msg) => { ta.value = ''; bumpComposer(ta); slashStatus(ta, msg); };
-    const fail = (msg) => slashStatus(ta, msg, true);
+    const done = (msg) => { box.clear(); slashStatus(form, msg); };
+    const fail = (msg) => slashStatus(form, msg, true);
     try {
       if (cmd === 'invite') {
         if (!current) return fail('No channel selected.');
@@ -1186,7 +1157,7 @@
         return done('Left #' + name);
       }
       if (cmd === 'archive') {
-        if (ta.id !== 'thread-input' || !openThreadRoot) return fail('/archive works in an open thread.');
+        if (box !== threadBox || !openThreadRoot) return fail('/archive works in an open thread.');
         const root = openThreadRoot;
         await api('/api/v1/threads/' + root + '/resolve', { method: 'POST', body: { resolved: true } });
         closeThread();
@@ -1199,214 +1170,14 @@
 
   // capture on document so the slash run wins over the send handlers on the form
   document.addEventListener('submit', (ev) => {
-    const ta = ev.target.querySelector('#composer-input, #thread-input');
-    if (!ta || !ta.value.trimStart().startsWith('/')) return;
+    const box = ev.target.id === 'composer' ? composerBox
+      : ev.target.id === 'thread-composer' ? threadBox : null;
+    if (!box || !box.getPlain().trimStart().startsWith('/')) return;
     ev.preventDefault();
     ev.stopPropagation();
-    runSlash(ta);
+    runSlash(box, ev.target);
   }, true);
 
-  const setupSlashCommands = (taID) => {
-    const ta = $(taID);
-    const box = document.createElement('div');
-    box.className = 'mention-ac slash-ac hidden';
-    ta.parentElement.appendChild(box);
-    let items = [];
-    let sel = 0;
-    let browseCache = null; // public channels, fetched once per popup
-
-    const close = () => { items = []; browseCache = null; box.classList.add('hidden'); };
-    const apply = (it) => {
-      if (it.kind === 'cmd') {
-        ta.value = '/' + it.name + (it.args ? ' ' : '');
-        const pos = ta.value.length;
-        ta.setSelectionRange(pos, pos);
-        ta.focus();
-        close();
-        // /join immediately re-opens with the channel list
-        if (it.name === 'join') update();
-        return;
-      }
-      ta.value = '/join ' + it.name;
-      ta.setSelectionRange(ta.value.length, ta.value.length);
-      ta.focus();
-      close();
-    };
-    const render = () => {
-      box.innerHTML = '';
-      items.forEach((it, i) => {
-        const d = document.createElement('div');
-        d.className = 'mention-opt' + (i === sel ? ' sel' : '');
-        d.innerHTML = it.kind === 'cmd'
-          ? '/' + esc(it.name) + (it.args ? ' <span class="slash-args">' + esc(it.args) + '</span>' : '') +
-            '<span class="slash-hint">' + esc(it.hint) + '</span>'
-          : '#' + esc(it.name) + '<span class="slash-hint">' + esc(it.topic || '') + '</span>';
-        d.onmousedown = (ev) => { ev.preventDefault(); apply(it); };
-        box.appendChild(d);
-      });
-      box.classList.toggle('hidden', items.length === 0);
-    };
-    const update = () => {
-      const head = ta.value.slice(0, ta.selectionStart);
-      // stage 2: /join <partial> completes public channel names
-      const jm = head.match(/^\/join\s+#?(\S*)$/);
-      if (jm) {
-        const typed = jm[1].toLowerCase();
-        const fill = () => {
-          items = (browseCache || []).filter((c) => c.name.toLowerCase().startsWith(typed))
-            .map((c) => ({ kind: 'channel', name: c.name, topic: c.topic })).slice(0, 8);
-          sel = 0;
-          render();
-        };
-        if (browseCache) return fill();
-        api('/api/v1/channels/browse')
-          .then((out) => { browseCache = out.channels || []; fill(); })
-          .catch(() => {});
-        return;
-      }
-      // stage 1: a lone "/word" at the very start filters command names
-      const m = head.match(/^\/([a-z]*)$/i);
-      if (!m || ta.value.slice(ta.selectionStart).trim() !== '') { close(); return; }
-      const typed = m[1].toLowerCase();
-      items = SLASH_COMMANDS.filter((c) => c.name.startsWith(typed))
-        .map((c) => ({ kind: 'cmd', ...c }));
-      sel = 0;
-      render();
-    };
-    ta.addEventListener('input', update);
-    ta.addEventListener('click', update);
-    ta.addEventListener('blur', () => setTimeout(close, 100));
-    ta.addEventListener('keydown', (ev) => {
-      if (box.classList.contains('hidden')) return;
-      if (ev.key === 'ArrowDown') { ev.preventDefault(); sel = (sel + 1) % items.length; render(); }
-      else if (ev.key === 'ArrowUp') { ev.preventDefault(); sel = (sel + items.length - 1) % items.length; render(); }
-      else if (ev.key === 'Enter' || ev.key === 'Tab') { ev.preventDefault(); ev.stopImmediatePropagation(); apply(items[sel]); }
-      else if (ev.key === 'Escape') close();
-    });
-  };
-  setupSlashCommands('composer-input');
-  setupSlashCommands('thread-input');
-
-  // enter sends, shift+enter for a newline
-  for (const [ta, form] of [['composer-input', 'composer'], ['thread-input', 'thread-composer']]) {
-    $(ta).addEventListener('keydown', (ev) => {
-      if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); $(form).requestSubmit(); }
-    });
-  }
-
-  // ---------- rich composer: auto-grow, markdown shortcuts/toolbar, preview ----------
-
-  // grow the textarea with its content up to ~40vh, then let it scroll
-  const autoGrow = (ta) => {
-    ta.style.height = 'auto';
-    const h = ta.scrollHeight;
-    if (!h) { ta.style.height = ''; return; } // hidden / not laid out yet
-    const max = Math.round(window.innerHeight * 0.4);
-    ta.style.height = Math.min(h, max) + 'px';
-  };
-  // fires an input event so autogrow + mention + preview all resync
-  const bumpComposer = (ta) => ta.dispatchEvent(new Event('input', { bubbles: true }));
-
-  // wrap the selection (or a placeholder) in markdown; toggle it back off if the
-  // marks are already there
-  const surround = (ta, before, after, placeholder) => {
-    const s = ta.selectionStart, e = ta.selectionEnd;
-    const sel = ta.value.slice(s, e);
-    const pre = ta.value.slice(Math.max(0, s - before.length), s);
-    const post = ta.value.slice(e, e + after.length);
-    if (sel && pre === before && post === after) {
-      ta.value = ta.value.slice(0, s - before.length) + sel + ta.value.slice(e + after.length);
-      ta.setSelectionRange(s - before.length, e - before.length);
-    } else {
-      const body = sel || placeholder;
-      ta.value = ta.value.slice(0, s) + before + body + after + ta.value.slice(e);
-      const ns = s + before.length;
-      ta.setSelectionRange(ns, ns + body.length);
-    }
-    bumpComposer(ta);
-    ta.focus();
-  };
-  const insertLink = (ta) => {
-    const s = ta.selectionStart, e = ta.selectionEnd;
-    const label = ta.value.slice(s, e) || 'text';
-    const md = '[' + label + '](url)';
-    ta.value = ta.value.slice(0, s) + md + ta.value.slice(e);
-    const us = s + label.length + 3; // land on 'url'
-    ta.setSelectionRange(us, us + 3);
-    bumpComposer(ta);
-    ta.focus();
-  };
-  const applyFmt = (ta, kind) => {
-    if (kind === 'bold') return surround(ta, '**', '**', 'text');
-    if (kind === 'italic') return surround(ta, '*', '*', 'text');
-    if (kind === 'code') return surround(ta, '`', '`', 'code');
-    if (kind === 'codeblock') return surround(ta, '```\n', '\n```', 'code');
-    if (kind === 'link') return insertLink(ta);
-  };
-
-  const previewOf = (ta) => document.querySelector('.composer-preview[data-for="' + ta.id + '"]');
-  const toolsOf = (ta) => document.querySelector('.composer-tools[data-for="' + ta.id + '"]');
-  const refreshPreview = (ta) => {
-    const pv = previewOf(ta);
-    if (!pv || pv.classList.contains('hidden')) return;
-    pv.innerHTML = renderMarkdown(ta.value);
-    pv.querySelectorAll('pre code').forEach((c) => { try { hljs.highlightElement(c); } catch (e) { /* unknown lang */ } });
-  };
-
-  // reset a composer after a successful send: clear height, drop preview
-  function resetComposer(ta) {
-    autoGrow(ta);
-    const pv = previewOf(ta);
-    const btn = toolsOf(ta)?.querySelector('[data-fmt="preview"]');
-    if (pv) { pv.classList.add('hidden'); pv.innerHTML = ''; }
-    if (btn) btn.classList.remove('active');
-  }
-
-  const enhanceComposer = (taID) => {
-    const ta = $(taID);
-    autoGrow(ta);
-    ta.addEventListener('input', () => { autoGrow(ta); refreshPreview(ta); });
-
-    // ⌘/ctrl formatting shortcuts (⇧ for the code block, so plain ⌘C still copies)
-    ta.addEventListener('keydown', (ev) => {
-      if (!(ev.metaKey || ev.ctrlKey)) return;
-      const k = ev.key.toLowerCase();
-      const map = { b: 'bold', i: 'italic', e: 'code', k: 'link' };
-      if (k === 'c' && ev.shiftKey) { ev.preventDefault(); applyFmt(ta, 'codeblock'); return; }
-      if (map[k] && !ev.shiftKey) { ev.preventDefault(); applyFmt(ta, map[k]); }
-    });
-
-    // paste a URL over a selection -> markdown link (image paste handled elsewhere)
-    ta.addEventListener('paste', (ev) => {
-      const text = (ev.clipboardData?.getData('text/plain') || '').trim();
-      const s = ta.selectionStart, e = ta.selectionEnd;
-      if (e > s && /^https?:\/\/\S+$/.test(text)) {
-        ev.preventDefault();
-        const md = '[' + ta.value.slice(s, e) + '](' + text + ')';
-        ta.value = ta.value.slice(0, s) + md + ta.value.slice(e);
-        const pos = s + md.length;
-        ta.setSelectionRange(pos, pos);
-        bumpComposer(ta);
-      }
-    });
-
-    const tools = toolsOf(ta);
-    tools?.addEventListener('mousedown', (ev) => {
-      const btn = ev.target.closest('button[data-fmt]');
-      if (!btn) return;
-      ev.preventDefault(); // keep textarea focus/selection
-      const kind = btn.dataset.fmt;
-      if (kind !== 'preview') { applyFmt(ta, kind); return; }
-      const pv = previewOf(ta);
-      const show = pv.classList.contains('hidden');
-      pv.classList.toggle('hidden', !show);
-      btn.classList.toggle('active', show);
-      if (show) refreshPreview(ta);
-    });
-  };
-  enhanceComposer('composer-input');
-  enhanceComposer('thread-input');
-  window.addEventListener('resize', () => { autoGrow($('composer-input')); autoGrow($('thread-input')); });
 
   $('thread-close').onclick = closeThread;
 
@@ -1802,16 +1573,6 @@
     if (!file) return;
     await uploadPending(file);
     $('attach-input').value = '';
-  });
-
-  // paste an image straight into the composer, slack-style
-  $('composer-input').addEventListener('paste', (ev) => {
-    const item = [...(ev.clipboardData?.items || [])].find((i) => i.type.startsWith('image/'));
-    if (!item) return;
-    const file = item.getAsFile();
-    if (!file) return;
-    ev.preventDefault();
-    uploadPending(new File([file], file.name || 'pasted-image.png', { type: file.type }));
   });
 
   window.addEventListener('focus', () => {

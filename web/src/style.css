@@ -301,7 +301,17 @@ button { cursor: pointer; }
 .composer-status { font-size: 12px; color: var(--dim); padding: 2px 2px 0; transition: opacity .3s; }
 .composer-status.err { color: var(--danger, #e5534b); }
 .composer-status.hidden { display: none; }
-#composer textarea, #thread-composer textarea { flex: 1; resize: none; background: var(--panel2); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; color: var(--text); font: inherit; max-height: 40vh; overflow-y: auto; }
+/* Tiptap editor styled like the old textarea; content grows to 40vh then scrolls */
+.composer-editor { flex: 1; min-width: 0; }
+.composer-editor .ProseMirror { background: var(--panel2); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; color: var(--text); font: inherit; max-height: 40vh; overflow-y: auto; outline: none; white-space: pre-wrap; word-break: break-word; }
+.composer-editor .ProseMirror p { margin: 0; }
+.composer-editor .ProseMirror p.is-editor-empty:first-child::before { content: attr(data-placeholder); color: var(--dim); float: left; height: 0; pointer-events: none; }
+.composer-editor .ProseMirror pre { background: #111; padding: 8px; border-radius: 6px; margin: 4px 0; overflow-x: auto; }
+.composer-editor .ProseMirror code { background: #111; padding: 1px 4px; border-radius: 4px; font-size: 13px; }
+.composer-editor .ProseMirror pre code { padding: 0; background: none; }
+.composer-editor .ProseMirror blockquote { margin: 4px 0; padding: 2px 0 2px 12px; border-left: 3px solid var(--border); color: var(--dim); }
+.composer-editor .ProseMirror ul, .composer-editor .ProseMirror ol { margin: 0; padding-left: 22px; }
+.composer-editor .ProseMirror a { color: var(--accent); }
 #composer > button[type="submit"], #thread-composer > button[type="submit"], .composer-main > button[type="submit"] { background: var(--accent); color: #fff; border: 0; border-radius: 8px; padding: 10px 16px; font-weight: 600; }
 
 /* composer format toolbar */
@@ -311,7 +321,6 @@ button { cursor: pointer; }
 .composer-tools button[data-fmt="bold"] { font-weight: 800; }
 .composer-tools button[data-fmt="italic"] { font-style: italic; }
 .composer-tools button[data-fmt="code"], .composer-tools button[data-fmt="codeblock"] { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
-.composer-tools button[data-fmt="preview"].active { background: var(--accent); color: #fff; }
 .tools-spacer { flex: 1; }
 
 /* composer live preview */
