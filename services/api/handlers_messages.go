@@ -570,3 +570,15 @@ func sanitizeFilename(name string) string {
 		return r
 	}, name)
 }
+
+// handleListMarkers returns the caller's own active "working on it" markers.
+// Only your own: a marker is a promise you made, and this is how you find the
+// ones you forgot to clear.
+func (s *Server) handleListMarkers(w http.ResponseWriter, r *http.Request, p models.Participant) {
+	markers, err := s.store.ListAgentMarkers(r.Context(), p.RoomID, p.ID)
+	if err != nil {
+		writeStoreErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"markers": markers})
+}

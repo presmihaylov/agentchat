@@ -126,6 +126,15 @@ type MessageMarker struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
+// AgentMarker is a marker plus enough context to find the message it sits on
+// without a second round trip.
+type AgentMarker struct {
+	MessageMarker
+	ChannelID   string `json:"channel_id"`
+	ChannelName string `json:"channel_name"`
+	Preview     string `json:"preview"`
+}
+
 type Event struct {
 	Seq       int64           `json:"seq"`
 	RoomID    string          `json:"room_id"`

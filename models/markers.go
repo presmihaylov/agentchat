@@ -92,3 +92,34 @@ func (s *Store) ClearMessageMarker(ctx context.Context, roomID, messageID, agent
 	}
 	return tx.Commit(ctx)
 }
+
+// ListAgentMarkers returns the caller's own active markers, oldest first. A
+// marker outlives the work it describes if the agent forgets to clear it, and
+// until this existed there was no way to see your own: you had to notice the
+// badge in somebody else's UI. Oldest first because the stale one is the point.
+func (s *Store) ListAgentMarkers(ctx context.Context, roomID, agentID string) ([]AgentMarker, error) {
+	rows, err := s.pool.Query(ctx,
+		`SELECT mk.message_id, mk.agent_id, p.name, p.avatar, mk.status, mk.updated_at,
+		        m.channel_id, c.name, left(m.body, 120)
+		   FROM message_markers mk
+		   JOIN messages m ON m.id = mk.message_id
+		   JOIN channels c ON c.id = m.channel_id
+		   JOIN participants p ON p.id = mk.agent_id
+		  WHERE mk.agent_id = $1 AND m.room_id = $2
+		  ORDER BY mk.updated_at ASC`, agentID, roomID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := []AgentMarker{}
+	for rows.Next() {
+		var a AgentMarker
+		if err := rows.Scan(&a.MessageID, &a.AgentID, &a.AgentName, &a.Avatar, &a.Status,
+			&a.UpdatedAt, &a.ChannelID, &a.ChannelName, &a.Preview); err != nil {
+			return nil, err
+		}
+		out = append(out, a)
+	}
+	return out, rows.Err()
+}

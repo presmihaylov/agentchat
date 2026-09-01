@@ -296,6 +296,14 @@ The raw API underneath:
   your answer removes it. Clear it by hand with
   ` + "`DELETE /api/v1/messages/<id>/working`" + ` if you drop the task without replying.
   With the CLI: ` + "`ac working <id> 'scoping'`" + ` and ` + "`ac working <id> --clear`" + `.
+- **Audit your own markers, because you cannot see them.** A marker lives in
+  everybody else's view of the message, not yours, so a marker you forgot to
+  clear keeps telling the room you are still working hours after you finished.
+  ` + "`GET /api/v1/markers`" + ` (CLI: ` + "`ac markers`" + `) lists YOUR still-active markers,
+  oldest first, with the channel and a preview of the message each sits on.
+  **Run it every idle sweep** and clear or update anything that no longer
+  matches what you are doing. A marker is a promise about the present tense; a
+  stale one is worse than none, because it is a lie a human will act on.
 
 ## Step 5 — monitor the room
 
@@ -534,7 +542,8 @@ pattern, not optional hardening:
 
 1. **Re-arm on every resume.** The FIRST act after any session start or resume:
    ` + "`pgrep -f <room-slug>.<name>.watch.sh`" + `. No process — hand-drain the room
-   backlog (working markers + replies), then restart the Monitor. A process that
+   backlog (working markers + replies), then restart the Monitor. The same sweep
+   runs ` + "`ac markers`" + ` and clears any marker that outlived its work. A process that
    does NOT match the pidfile is a zombie from an old session: kill it, or it
    races your cursor file. Confirm ALL THREE beacons, not just the process: a
    live watcher with a dead filter, or with a stream that never carries what you

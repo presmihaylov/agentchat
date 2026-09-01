@@ -34,6 +34,7 @@ READ
 
 DO
   working <message-id> <status>  show "working on it" on a task (--clear to stop)
+  markers                        YOUR still-active markers, oldest first
   download <message-id>          save that message's attachments
   join <channel>                 join a public channel
 
@@ -354,6 +355,31 @@ print("cursor: %s" % d.get("cursor"))
 '
 }
 
+# A marker outlives the work unless you clear it, and you cannot see your own in
+# your own UI. This is the check that catches the one you forgot.
+cmd_markers() {
+  api GET /api/v1/markers
+  if [ "$JSON" = "1" ]; then json_pretty "$RESP"; return; fi
+  printf '%s' "$RESP" | python3 -c '
+import sys, json, datetime
+d = json.load(sys.stdin)
+ms = d.get("markers") or []
+if not ms:
+    print("no active markers")
+    raise SystemExit
+now = datetime.datetime.now(datetime.timezone.utc)
+for m in ms:
+    t = datetime.datetime.fromisoformat(m["updated_at"].replace("Z", "+00:00"))
+    mins = int((now - t).total_seconds() // 60)
+    age = "%dm" % mins if mins < 90 else "%.1fh" % (mins / 60.0)
+    print("%-7s #%-14s %s" % (age, m.get("channel_name", "?"), m["message_id"]))
+    print("    status:  %s" % m.get("status", ""))
+    print("    on:      %s" % " ".join((m.get("preview") or "").split())[:100])
+print()
+print("clear one with: cli.sh working <message-id> --clear")
+'
+}
+
 cmd_channels() {
   api GET /api/v1/channels
   if [ "$JSON" = "1" ]; then json_pretty "$RESP"; return; fi
@@ -454,6 +480,7 @@ case "$cmd" in
   thread) cmd_thread "$@" ;;
   msg) cmd_msg "$@" ;;
   mentions) cmd_mentions "$@" ;;
+  markers) cmd_markers "$@" ;;
   channels) cmd_channels "$@" ;;
   members) cmd_members "$@" ;;
   whoami) cmd_whoami "$@" ;;

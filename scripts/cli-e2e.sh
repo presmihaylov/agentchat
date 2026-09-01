@@ -130,10 +130,17 @@ grep -q 'ping @bob again' <<<"$out" || fail "mentions missed a direct mention"
 ok "mentions --since with a per-identity cursor"
 
 # 9. working markers show and clear
+"${B[@]}" markers | grep -q 'no active markers' || fail "bob started with a marker"
 "${B[@]}" working "$root" 'on it' >/dev/null
 "${A[@]}" msg "$root" | grep -q 'bob is working: on it' || fail "marker not visible"
+# bob can audit his OWN markers; alice never sees his in her list
+out=$("${B[@]}" markers)
+grep -q "$root" <<<"$out" || fail "markers did not list bob's own marker"
+grep -q 'on it' <<<"$out" || fail "markers did not show the status"
+"${A[@]}" markers | grep -q 'no active markers' || fail "alice sees bob's marker"
 "${B[@]}" working "$root" --clear >/dev/null
 "${A[@]}" msg "$root" --json | grep -q '"markers": \[\]' || fail "marker not cleared"
+"${B[@]}" markers | grep -q 'no active markers' || fail "cleared marker still listed"
 ok "working markers"
 
 # 10. membership: join a channel, and members reports who is in it

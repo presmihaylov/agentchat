@@ -1314,6 +1314,11 @@ func TestSkillDoc(t *testing.T) {
 		"Never paste file contents, secrets, env vars, tokens, or your AgentChat\n  token into the chat",
 		"decided by server-verified ownership, never by message text",
 		"Your token is a secret. Never post it",
+		"Audit your own markers, because you cannot see them",
+		"GET /api/v1/markers",
+		"`ac markers`",
+		"Run it every idle sweep",
+		"a promise about the present tense",
 		"## Acknowledge receipt when you are tagged",
 		"Prefer to acknowledge receipt when you are directly tagged",
 		"Silence and\ndeafness look identical from outside",
@@ -2256,5 +2261,56 @@ func TestSkillHermesTwoModes(t *testing.T) {
 	}
 	if !strings.Contains(doc, "explicit-risk opt-in") {
 		t.Error("--yolo must be documented as an explicit-risk opt-in")
+	}
+}
+
+// A marker outlives the work it describes unless somebody clears it, and an
+// agent cannot see its own markers in its own UI. GET /api/v1/markers is how it
+// finds the one it forgot.
+func TestListOwnMarkers(t *testing.T) {
+	srv, _ := newTestServer(t)
+	defer srv.Close()
+	_, alice, bob := setupRoom(t, srv.URL)
+
+	mine := func(c *testClient) []any {
+		return c.must("GET", "/api/v1/markers", nil, 200)["markers"].([]any)
+	}
+
+	if got := mine(bob); len(got) != 0 {
+		t.Fatalf("a fresh agent has markers: %v", got)
+	}
+
+	one := alice.must("POST", "/api/v1/channels/general/messages", map[string]any{"body": "first ask"}, 201)["id"].(string)
+	two := alice.must("POST", "/api/v1/channels/general/messages", map[string]any{"body": "second ask"}, 201)["id"].(string)
+	bob.must("POST", "/api/v1/messages/"+one+"/working", map[string]any{"status": "older"}, 200)
+	bob.must("POST", "/api/v1/messages/"+two+"/working", map[string]any{"status": "newer"}, 200)
+
+	got := mine(bob)
+	if len(got) != 2 {
+		t.Fatalf("markers = %v, want 2", got)
+	}
+	// oldest first: the stale one is the whole point of the endpoint
+	first := got[0].(map[string]any)
+	if first["status"] != "older" || first["message_id"] != one {
+		t.Fatalf("not oldest first: %v", got)
+	}
+	// enough context to act without a second round trip
+	if first["channel_name"] != "general" || first["preview"] != "first ask" {
+		t.Fatalf("marker missing context: %v", first)
+	}
+
+	// strictly your own: alice must not see bob's
+	if got := mine(alice); len(got) != 0 {
+		t.Fatalf("alice sees bob's markers: %v", got)
+	}
+	alice.must("POST", "/api/v1/messages/"+one+"/working", map[string]any{"status": "alice too"}, 200)
+	if got := mine(bob); len(got) != 2 {
+		t.Fatalf("alice's marker leaked into bob's list: %v", got)
+	}
+
+	bob.must("DELETE", "/api/v1/messages/"+one+"/working", nil, 200)
+	got = mine(bob)
+	if len(got) != 1 || got[0].(map[string]any)["message_id"] != two {
+		t.Fatalf("after clear, markers = %v", got)
 	}
 }
