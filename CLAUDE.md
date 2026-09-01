@@ -38,6 +38,7 @@ node scripts/copy-check.js                  # COPY_CHECK_OK
 node scripts/mention-check.js               # MENTION_CHECK_OK
 node scripts/dnd-check.js                   # DND_CHECK_OK
 node scripts/list-check.js                  # LIST_CHECK_OK
+node scripts/attach-check.js                # ATTACH_CHECK_OK
 ```
 
 ## Conventions

@@ -28,7 +28,20 @@ import { createComposer } from './composer.js';
   let openThreadRoot = null; // message id of the open thread
   let unreadMentions = 0;
   let cursor = -1;
-  let pendingAttachment = null;
+  // One pending attachment per composer. The thread reply shares the upload
+  // endpoint but never the slot: a file staged in one composer must not ride
+  // out on the other's send.
+  const pendingAtt = { main: null, thread: null };
+  const clearThreadAttachment = () => {
+    pendingAtt.thread = null;
+    const pend = $('thread-attach-pending');
+    if (pend) { pend.innerHTML = ''; pend.classList.add('hidden'); }
+    const input = $('thread-attach-input');
+    if (input) input.value = '';
+  };
+  const attachEls = (which) => (which === 'thread'
+    ? { pend: $('thread-attach-pending'), input: $('thread-attach-input') }
+    : { pend: $('attach-pending'), input: $('attach-input') });
 
   const api = async (path, opts = {}) => {
     const headers = Object.assign({}, opts.headers);
@@ -923,6 +936,7 @@ import { createComposer } from './composer.js';
     const had = openThreadRoot !== null;
     $('thread-panel').classList.add('hidden');
     openThreadRoot = null;
+    clearThreadAttachment(); // a file staged here must not follow you elsewhere
     if (had) renderChannels(); // clear the active-thread highlight in the sidebar
     if (had && push) syncURL(true);
   };
@@ -1046,6 +1060,7 @@ import { createComposer } from './composer.js';
     if (ch && (!current || current.id !== ch.id)) await selectChannel(ch, true);
     if (seq !== openThreadSeq) return; // a newer open won
     const changed = openThreadRoot !== rootID;
+    if (changed) clearThreadAttachment();
     openThreadRoot = rootID;
     if (changed) renderChannels(); // move the active highlight to this thread leaf
     $('thread-panel').classList.remove('hidden');
@@ -1118,7 +1133,8 @@ import { createComposer } from './composer.js';
 
   const post = async (body, threadRootID) => {
     const rootID = threadRootID || null;
-    const att = (pendingAttachment && !threadRootID) ? pendingAttachment : null;
+    const which = threadRootID ? 'thread' : 'main';
+    const att = pendingAtt[which];
     // a human typing "@foo" usually means literal text, not a dead mention, so
     // the strict 422 stays for API clients and the UI just posts
     const payload = { body, allow_unknown_mentions: true };
@@ -1134,7 +1150,7 @@ import { createComposer } from './composer.js';
     } else if (rootID && rootID === openThreadRoot) {
       const box = $('thread-messages'); box.appendChild(node); box.scrollTop = box.scrollHeight;
     }
-    if (att) { pendingAttachment = null; $('attach-pending').classList.add('hidden'); }
+    if (att) { pendingAtt[which] = null; attachEls(which).pend.classList.add('hidden'); }
 
     try {
       const sent = await api(`/api/v1/channels/${current.id}/messages`, { method: 'POST', body: payload });
@@ -1335,7 +1351,7 @@ import { createComposer } from './composer.js';
   $('composer').addEventListener('submit', async (ev) => {
     ev.preventDefault();
     const text = composerBox.getMarkdown().trim();
-    if ((!text && !pendingAttachment) || !current) return;
+    if ((!text && !pendingAtt.main) || !current) return;
     composerBox.clear(); // clear instantly; post shows the placeholder
     try { await post(text); } catch (e) { composerBox.setMarkdown(text); alert(e.message); }
   });
@@ -1343,7 +1359,7 @@ import { createComposer } from './composer.js';
   $('thread-composer').addEventListener('submit', async (ev) => {
     ev.preventDefault();
     const text = threadBox.getMarkdown().trim();
-    if (!text || !openThreadRoot) return;
+    if ((!text && !pendingAtt.thread) || !openThreadRoot) return;
     const root = openThreadRoot;
     threadBox.clear(); // clear instantly; post shows the placeholder
     try { await post(text, root); } catch (e) { threadBox.setMarkdown(text); alert(e.message); }
@@ -1385,7 +1401,7 @@ import { createComposer } from './composer.js';
     getMeName: () => (me ? me.name : ''),
     slashCommands: SLASH_COMMANDS,
     browseChannels: async () => ((await api('/api/v1/channels/browse')).channels || []).filter((c) => !c.member),
-    onImageFile: (f) => uploadPending(new File([f], f.name || 'pasted-image.png', { type: f.type })),
+    onImageFile: (f) => uploadPending('main', new File([f], f.name || 'pasted-image.png', { type: f.type })),
   });
   const threadBox = createComposer({
     mount: $('thread-mount'), id: 'thread-input',
@@ -1395,6 +1411,7 @@ import { createComposer } from './composer.js';
     getMeName: () => (me ? me.name : ''),
     slashCommands: SLASH_COMMANDS,
     browseChannels: async () => ((await api('/api/v1/channels/browse')).channels || []).filter((c) => !c.member),
+    onImageFile: (f) => uploadPending('thread', new File([f], f.name || 'pasted-image.png', { type: f.type })),
   });
 
   // inline confirmation / error in the composer area, auto-fades
@@ -1977,8 +1994,8 @@ import { createComposer } from './composer.js';
     } catch (e) { alert(e.message); }
   };
 
-  const showPendingAttachment = (file) => {
-    const pend = $('attach-pending');
+  const showPendingAttachment = (which, file) => {
+    const pend = attachEls(which).pend;
     pend.innerHTML = '';
     if (file.type.startsWith('image/')) {
       const im = document.createElement('img');
@@ -1986,31 +2003,34 @@ import { createComposer } from './composer.js';
       im.src = URL.createObjectURL(file);
       pend.appendChild(im);
     }
-    pend.appendChild(document.createTextNode('📎 ' + pendingAttachment.filename));
+    pend.appendChild(document.createTextNode('📎 ' + pendingAtt[which].filename));
     const clear = document.createElement('button');
     clear.type = 'button';
     clear.className = 'pending-clear';
     clear.textContent = '✕';
-    clear.onclick = () => { pendingAttachment = null; pend.classList.add('hidden'); };
+    clear.onclick = () => { pendingAtt[which] = null; pend.classList.add('hidden'); };
     pend.appendChild(clear);
     pend.classList.remove('hidden');
   };
 
-  const uploadPending = async (file) => {
+  const uploadPending = async (which, file) => {
     const fd = new FormData();
     fd.append('file', file);
     try {
-      pendingAttachment = await api('/api/v1/attachments', { method: 'POST', body: fd });
-      showPendingAttachment(file);
+      pendingAtt[which] = await api('/api/v1/attachments', { method: 'POST', body: fd });
+      showPendingAttachment(which, file);
     } catch (e) { alert(e.message); }
   };
 
-  $('attach-input').addEventListener('change', async () => {
-    const file = $('attach-input').files[0];
-    if (!file) return;
-    await uploadPending(file);
-    $('attach-input').value = '';
-  });
+  for (const which of ['main', 'thread']) {
+    const input = attachEls(which).input;
+    input.addEventListener('change', async () => {
+      const file = input.files[0];
+      if (!file) return;
+      await uploadPending(which, file);
+      input.value = '';
+    });
+  }
 
   window.addEventListener('focus', () => {
     unreadMentions = 0;
