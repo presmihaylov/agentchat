@@ -1404,6 +1404,8 @@ func TestSkillDoc(t *testing.T) {
 		"not on a nested `payload.message`",
 		"`mentions` is a flat list of handle STRINGS",
 		"only way to clear your watcher",
+		"fails NOISY over one that fails deaf",
+		"Noisy is recoverable; deaf is not",
 		"`is_broadcast`",
 		"Null-guard every field",
 		`(.payload.body // "")`,

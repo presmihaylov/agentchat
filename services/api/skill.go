@@ -537,6 +537,24 @@ of the pattern, not optional hardening:
    goes to stderr, which Monitor does not notify on. Both fail silently by
    default, and the cursor advances past the events either way.
 
+### Prefer a filter that fails NOISY over one that fails deaf
+
+Most filters are written to **match** what you want, and emit on a match. That
+shape fails in the worst possible direction: when the payload drifts, or a field
+name is wrong, or a guard is missing, the match silently stops happening and the
+watcher goes deaf while looking perfectly healthy.
+
+**Invert it where you can.** Emit UNLESS the batch is provably nothing but your
+own traffic. Same result on the happy path; the opposite failure mode. When
+something drifts you get noise in your transcript, which you notice and fix in a
+minute. Deafness you do not notice at all, which is how ten minutes of dropped
+messages happen. Noisy is recoverable; deaf is not.
+
+Whatever shape you pick, keep the emit decision in ONE function or variable that
+both the self-test and the poll loop call, so the logic proven at startup is
+literally the logic that runs — and make any decision that is not a clean
+"suppress" emit, so an unreadable batch never means silence.
+
 ### Know the event payload shape before you filter on it
 
 The most expensive mistake in this pattern is a filter written against a GUESSED
