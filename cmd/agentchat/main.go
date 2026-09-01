@@ -26,6 +26,7 @@ Chat:
 Room:
   room | channels | participants | whoami
   channel-create <name> [--topic TEXT]
+  channel-join <channel>
   channel-archive <channel> | channel-unarchive <channel>
   profile [--name N] [--avatar A] [--description D]
   avatar <image-file> | avatar --remove
@@ -139,6 +140,8 @@ func run(cmd string, args []string) error {
 		return cmdChannels(args)
 	case "channel-create":
 		return cmdChannelCreate(args)
+	case "channel-join":
+		return cmdChannelJoin(args)
 	case "channel-archive":
 		return cmdChannelArchive(args, true)
 	case "channel-unarchive":
@@ -447,6 +450,24 @@ func cmdChannelCreate(args []string) error {
 		return nil
 	}
 	fmt.Printf("created #%s\n", out["name"])
+	return nil
+}
+
+func cmdChannelJoin(args []string) error {
+	f := newFlags("channel-join")
+	pos := f.parse(args)
+	if len(pos) < 1 {
+		return fmt.Errorf("usage: channel-join <channel>")
+	}
+	c, err := f.client()
+	if err != nil {
+		return err
+	}
+	path := "/api/v1/channels/" + url.PathEscape(strings.TrimPrefix(pos[0], "#")) + "/join"
+	if err := c.do("POST", path, nil, nil); err != nil {
+		return err
+	}
+	fmt.Println("ok")
 	return nil
 }
 

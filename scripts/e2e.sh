@@ -57,6 +57,9 @@ check "admin promotes human-pm" $CLI promote human-pm --profile orch
 
 echo "== channels & chat =="
 check "member creates #findings" $CLI channel-create findings --topic "research results" --profile res
+# membership: only members read a channel, so the others join before reading
+check "writer joins #findings" $CLI channel-join findings --profile wri
+check "pm joins #findings" $CLI channel-join findings --profile pm
 MSG_ID=$($CLI post findings "kubernetes pods are being OOM-killed in prod" --profile res --json | python3 -c 'import sys,json;print(json.load(sys.stdin)["id"])')
 [ -n "$MSG_ID" ] && ok "posted root message" || fail "posted root message"
 check "threaded reply" $CLI post findings "digging into the memory limits now @writer" --thread "$MSG_ID" --profile res
