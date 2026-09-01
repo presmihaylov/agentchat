@@ -27,11 +27,17 @@ const assert = (cond, msg) => { if (!cond) throw new Error(msg); };
   const slug = created.room.slug;
   const bot = await api('/api/v1/rooms/join', { method: 'POST', body: { invite_code: created.invite_code, name: 'mentionbot', description: 't' } });
   const viewer = await api('/api/v1/rooms/join', { method: 'POST', body: { invite_code: created.invite_code, name: 'viewer', is_human: true } });
+  const abbott = await api('/api/v1/rooms/join', { method: 'POST', body: { invite_code: created.invite_code, name: 'abbott', description: 't' } });
+  await api('/api/v1/rooms/join', { method: 'POST', body: { invite_code: created.invite_code, name: 'abernathy', description: 't' } });
+  await api('/api/v1/rooms/join', { method: 'POST', body: { invite_code: created.invite_code, name: 'abigail', description: 't' } });
+  await api('/api/v1/rooms/join', { method: 'POST', body: { invite_code: created.invite_code, name: 'data bot', description: 't' } });
+  // joins last on purpose: rank must beat roster order
+  await api('/api/v1/rooms/join', { method: 'POST', body: { invite_code: created.invite_code, name: 'abzu', description: 't' } });
 
   // 1. the roster is fetchable and lists both handles
   const roster = await api('/api/v1/members', { token: bot.token });
   const handles = roster.members.map((m) => m.handle).sort();
-  assert(handles.join(',') === 'mentionbot,viewer', 'roster handles: ' + handles);
+  assert(handles.join(',') === 'abbott,abernathy,abigail,abzu,data bot,mentionbot,viewer', 'roster handles: ' + handles);
   assert(roster.members.every((m) => m.dormant === false), 'a fresh member is dormant');
 
   // 2. an unknown handle is a 422 carrying the roster
@@ -40,7 +46,7 @@ const assert = (cond, msg) => { if (!cond) throw new Error(msg); };
   });
   assert(bad.status === 422, 'unknown mention -> ' + bad.status);
   assert(bad.data.unknown_mentions[0] === 'ghost', 'unknown_mentions: ' + JSON.stringify(bad.data));
-  assert(bad.data.members.length === 2, 'the 422 must carry the roster');
+  assert(bad.data.members.length === 7, 'the 422 must carry the roster');
 
   // 3. an out-of-channel mention posts, with a warning
   const priv = await api('/api/v1/channels', { method: 'POST', token: bot.token, body: { name: 'botonly' } });
@@ -88,6 +94,47 @@ const assert = (cond, msg) => { if (!cond) throw new Error(msg); };
   }, { timeout: 8000 });
 
   await page.screenshot({ path: (process.env.OUT || '.') + '/mention-warning.png' });
+
+  // 6. autocomplete ranking: channel members first, then who just talked, and a
+  // match on a later word still shows up
+  const rank = await api('/api/v1/channels', { method: 'POST', token: viewer.token, body: { name: 'rank-test' } });
+  await api('/api/v1/channels/' + rank.id + '/members', { method: 'POST', token: viewer.token, body: { participant: 'abbott' } });
+  await api('/api/v1/channels/' + rank.id + '/members', { method: 'POST', token: viewer.token, body: { participant: 'data bot' } });
+  await api('/api/v1/channels/' + rank.id + '/members', { method: 'POST', token: viewer.token, body: { participant: 'abzu' } });
+  await api('/api/v1/channels/' + rank.id + '/messages', { method: 'POST', token: abbott.token, body: { body: 'abbott speaks here' } });
+  await page.reload({ waitUntil: 'networkidle2' });
+  await page.waitForSelector('#chat-view:not(.hidden)', { timeout: 8000 });
+  await page.evaluate(() => [...document.querySelectorAll('#channel-list li')]
+    .find((li) => li.textContent.includes('rank-test')).click());
+  await page.waitForFunction(() => document.querySelector('#channel-title').textContent.includes('rank-test'), { timeout: 8000 });
+  await page.waitForFunction(() => [...document.querySelectorAll('#messages .msg')]
+    .some((m) => m.textContent.includes('abbott speaks here')), { timeout: 8000 });
+
+  const suggest = async (typed) => {
+    await page.$eval('#composer-input', (el) => el.__composer.clear());
+    await page.focus('#composer-input');
+    await page.type('#composer-input', '@' + typed);
+    const sel = '.mention-ac:not(.slash-ac):not(.hidden)';
+    await page.waitForSelector(sel, { timeout: 5000 });
+    return page.$$eval(sel + ' .mention-opt', (ns) => ns.map((n) => ({
+      name: n.querySelector('.mention-name').textContent.replace(/^\S+\s/, ''),
+      hint: (n.querySelector('.slash-hint') || {}).textContent || '',
+    })));
+  };
+
+  const abOpts = await suggest('ab');
+  const ab = abOpts.map((o) => o.name);
+  await page.screenshot({ path: (process.env.OUT || '.') + '/mention-rank.png' });
+  assert(ab[0] === 'abbott', 'the channel member who just spoke is not first: ' + JSON.stringify(ab));
+  assert(ab[1] === 'abzu', 'the other channel member is not second: ' + JSON.stringify(ab));
+  assert(ab.includes('abernathy') && ab.includes('abigail'), 'non-members vanished: ' + JSON.stringify(ab));
+  assert(abOpts[0].hint === '' && /not in channel/.test(abOpts[2].hint),
+    'the out-of-channel hint is wrong: ' + JSON.stringify(abOpts));
+
+  // "bot" matches the second word of "data bot"; Slack does the same
+  const botMatch = (await suggest('bot')).map((o) => o.name);
+  assert(botMatch.includes('data bot'), 'a later-word match was dropped: ' + JSON.stringify(botMatch));
+  await page.$eval('#composer-input', (el) => el.__composer.clear());
 
   await browser.close();
   console.log('MENTION_CHECK_OK');

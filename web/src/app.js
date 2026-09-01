@@ -189,7 +189,20 @@ import { createComposer } from './composer.js';
     renderMarkers(msgId);
   };
 
+  // Per-channel interaction recency. Slack ranks the people you are actually
+  // talking to above the rest of the room, so remember who spoke here and who
+  // got mentioned, and reset it when the channel changes.
+  let talkedAt = new Map();
+  const noteTalk = (m) => {
+    if (!m || m.kind === 'system') return;
+    const at = m.created_at || '';
+    const bump = (n) => { if (n && (talkedAt.get(n) || '') < at) talkedAt.set(n, at); };
+    bump(m.author_name);
+    (m.mentions || []).forEach(bump);
+  };
+
   const msgEl = (m, inThread) => {
+    noteTalk(m);
     // membership entries: one muted Slack-style line, no avatar, no actions
     if (m.kind === 'system') {
       const el = document.createElement('div');
@@ -821,6 +834,7 @@ import { createComposer } from './composer.js';
     // close without a push; the channel-change push below covers this transition
     if (current && ch.id !== current.id) closeThread(false);
     const changed = !current || current.id !== ch.id;
+    if (changed) talkedAt = new Map();
     current = ch;
     syncURL(changed && !fromURL); // refreshes replace, real navigation pushes
     $('channel-title').textContent = (ch.private ? '🔒 ' : '# ') + ch.name;
@@ -1247,11 +1261,27 @@ import { createComposer } from './composer.js';
   ];
 
   // the two WYSIWYG composers (Tiptap); the wire format stays markdown
+  // Everything the ranker needs: membership decides who can even see the
+  // message, recency decides who you are mid-conversation with.
+  const DORMANT_MS = 14 * 24 * 3600 * 1000;
+  const mentionOptions = () => {
+    const inCh = new Set(channelMembers.map((p) => p.id));
+    const now = Date.now();
+    return participants.map((p) => ({
+      name: p.name,
+      avatar: p.avatar,
+      inChannel: inCh.has(p.id),
+      online: !!p.online,
+      dormant: !!p.last_seen_at && now - Date.parse(p.last_seen_at) > DORMANT_MS,
+      talkedAt: talkedAt.get(p.name) || '',
+    }));
+  };
+
   const composerBox = createComposer({
     mount: $('composer-mount'), id: 'composer-input',
     placeholder: 'Message… (@name to mention, markdown ok)',
     onSubmit: () => $('composer').requestSubmit(),
-    getMentionOptions: () => participants.map((p) => ({ name: p.name, avatar: p.avatar })),
+    getMentionOptions: mentionOptions,
     slashCommands: SLASH_COMMANDS,
     browseChannels: async () => ((await api('/api/v1/channels/browse')).channels || []).filter((c) => !c.member),
     onImageFile: (f) => uploadPending(new File([f], f.name || 'pasted-image.png', { type: f.type })),
@@ -1260,7 +1290,7 @@ import { createComposer } from './composer.js';
     mount: $('thread-mount'), id: 'thread-input',
     placeholder: 'Reply…',
     onSubmit: () => $('thread-composer').requestSubmit(),
-    getMentionOptions: () => participants.map((p) => ({ name: p.name, avatar: p.avatar })),
+    getMentionOptions: mentionOptions,
     slashCommands: SLASH_COMMANDS,
     browseChannels: async () => ((await api('/api/v1/channels/browse')).channels || []).filter((c) => !c.member),
   });

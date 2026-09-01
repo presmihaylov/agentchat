@@ -63,8 +63,19 @@ export const createComposer = ({ mount, id, placeholder, onSubmit, getMentionOpt
     box.classList.toggle('hidden', st.items.length === 0);
   };
 
-  const renderMention = () => renderList(mentionBox, mention,
-    (d, it) => { d.textContent = `${it.avatar} ${it.name}`; }, applyMention);
+  const renderMention = () => renderList(mentionBox, mention, (d, it) => {
+    const name = document.createElement('span');
+    name.className = 'mention-name';
+    name.textContent = `${it.avatar} ${it.name}`;
+    d.appendChild(name);
+    // they rank last, so say why instead of letting the sender guess
+    if (it.inChannel === false) {
+      const hint = document.createElement('span');
+      hint.className = 'slash-hint';
+      hint.textContent = 'not in channel';
+      d.appendChild(hint);
+    }
+  }, applyMention);
   const renderSlash = () => renderList(slashBox, slash, (d, it) => {
     d.innerHTML = it.kind === 'cmd'
       ? '/' + esc(it.name) + (it.args ? ' <span class="slash-args">' + esc(it.args) + '</span>' : '') +
@@ -92,6 +103,33 @@ export const createComposer = ({ mount, id, placeholder, onSubmit, getMentionOpt
     closeSlash();
   }
 
+  // Mirrors Slack: a match on the start of the name beats a match on a later
+  // word, somebody who is in this channel beats somebody who is not (they would
+  // never see the message), and recency of the conversation breaks the tie.
+  const matchScore = (name, typed) => {
+    if (!typed) return 1;
+    const low = name.toLowerCase();
+    if (low.startsWith(typed)) return 2;
+    return low.split(/[\s_-]+/).some((w) => w.startsWith(typed)) ? 1 : 0;
+  };
+
+  const rankMentions = (opts, typed) => {
+    const scored = [];
+    opts.forEach((o) => {
+      const m = matchScore(o.name, typed);
+      if (!m) return;
+      let score = m * 1000;
+      if (o.inChannel) score += 400;
+      if (o.online) score += 60;
+      if (o.dormant) score -= 300;   // a real handle nobody is behind any more
+      scored.push({ o, score, at: o.talkedAt || '' });
+    });
+    scored.sort((a, b) => b.score - a.score
+      || (a.at < b.at ? 1 : a.at > b.at ? -1 : 0)
+      || a.o.name.localeCompare(b.o.name));
+    return scored.map((s) => s.o);
+  };
+
   const updateMention = () => {
     const { $from, empty } = editor.state.selection;
     if (!empty || !$from.parent.isTextblock) return closeMention();
@@ -99,10 +137,11 @@ export const createComposer = ({ mount, id, placeholder, onSubmit, getMentionOpt
     const m = head.match(/(^|\s)@([A-Za-z0-9_-]*(?: [A-Za-z0-9_-]*){0,3})$/);
     if (!m) return closeMention();
     mention.from = $from.pos - m[2].length - 1;
-    const opts = getMentionOptions()
-      .concat([{ name: 'channel', avatar: '📣' }, { name: 'everyone', avatar: '📣' }, { name: 'here', avatar: '📣' }]);
-    const typed = m[2].toLowerCase();
-    mention.items = opts.filter((o) => o.name.toLowerCase().startsWith(typed)).slice(0, 8);
+    // broadcasts always apply to the channel you are in, so they rank with the
+    // members rather than below the whole room
+    const opts = getMentionOptions().concat(
+      ['channel', 'everyone', 'here'].map((name) => ({ name, avatar: '📣', inChannel: true })));
+    mention.items = rankMentions(opts, m[2].toLowerCase()).slice(0, 8);
     mention.sel = 0;
     renderMention();
   };
