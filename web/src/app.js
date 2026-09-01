@@ -21,6 +21,9 @@ import { createComposer } from './composer.js';
   let channels = [];
   let groups = [];           // personal sidebar sections (channel groups)
   let participants = [];
+  // up here with the rest of the room state on purpose: the composer mounts
+  // before the room loads and its live mention highlight reads this on render 1
+  let channelMembers = [];
   let current = null;        // current channel object
   let openThreadRoot = null; // message id of the open thread
   let unreadMentions = 0;
@@ -1379,6 +1382,7 @@ import { createComposer } from './composer.js';
     placeholder: 'Message… (@name to mention, markdown ok)',
     onSubmit: () => $('composer').requestSubmit(),
     getMentionOptions: mentionOptions,
+    getMeName: () => (me ? me.name : ''),
     slashCommands: SLASH_COMMANDS,
     browseChannels: async () => ((await api('/api/v1/channels/browse')).channels || []).filter((c) => !c.member),
     onImageFile: (f) => uploadPending(new File([f], f.name || 'pasted-image.png', { type: f.type })),
@@ -1388,6 +1392,7 @@ import { createComposer } from './composer.js';
     placeholder: 'Reply…',
     onSubmit: () => $('thread-composer').requestSubmit(),
     getMentionOptions: mentionOptions,
+    getMeName: () => (me ? me.name : ''),
     slashCommands: SLASH_COMMANDS,
     browseChannels: async () => ((await api('/api/v1/channels/browse')).channels || []).filter((c) => !c.member),
   });
@@ -1472,7 +1477,6 @@ import { createComposer } from './composer.js';
 
 
   // ---------- channel members modal ----------
-  let channelMembers = [];
 
   const refreshHeaderMembers = async (ch) => {
     try {

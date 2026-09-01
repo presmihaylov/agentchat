@@ -136,6 +136,23 @@ const assert = (cond, msg) => { if (!cond) throw new Error(msg); };
   assert(botMatch.includes('data bot'), 'a later-word match was dropped: ' + JSON.stringify(botMatch));
   await page.$eval('#composer-input', (el) => el.__composer.clear());
 
+  // 6. the composer chips a mention as you type, with the same amber/blue split
+  //    the feed uses, and leaves an unknown handle as plain text
+  await page.$eval('#composer-input', (el) => el.__composer.clear());
+  await page.focus('#composer-input');
+  await page.type('#composer-input', 'hi @abbott and @viewer and @channel and @ghosty ok');
+  await page.keyboard.press('Escape');
+  const chips = await page.$$eval('#composer-input .mention',
+    (ns) => ns.map((n) => n.textContent + '|' + (n.classList.contains('mention-me') ? 'me' : 'other')));
+  assert(chips.length === 3, 'composer chips: ' + JSON.stringify(chips));
+  assert(chips[0] === '@abbott|other', 'somebody else must stay blue: ' + JSON.stringify(chips));
+  assert(chips[1] === '@viewer|me', 'my own handle must go amber: ' + JSON.stringify(chips));
+  assert(chips[2] === '@channel|me', 'a broadcast must go amber: ' + JSON.stringify(chips));
+  const typed = await page.$eval('#composer-input', (el) => el.__composer.getPlain
+    ? el.__composer.getPlain() : el.textContent);
+  assert(/@ghosty ok$/.test(typed), 'decoration changed the text that will be sent: ' + typed);
+  await page.$eval('#composer-input', (el) => el.__composer.clear());
+
   await browser.close();
   console.log('MENTION_CHECK_OK');
 })().catch((e) => { console.error('MENTION_CHECK_FAIL:', e.message); process.exit(1); });

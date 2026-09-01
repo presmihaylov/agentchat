@@ -6,6 +6,8 @@ import StarterKit from '@tiptap/starter-kit';
 import HardBreak from '@tiptap/extension-hard-break';
 import { Markdown } from '@tiptap/markdown';
 import { Placeholder } from '@tiptap/extensions';
+import { Plugin } from 'prosemirror-state';
+import { Decoration, DecorationSet } from 'prosemirror-view';
 
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
@@ -15,10 +17,42 @@ const WireBreak = HardBreak.extend({ renderMarkdown: () => '\n' });
 
 const URL_RE = /^https?:\/\/\S+$/;
 
+const escRe = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const BROADCASTS = ['channel', 'everyone', 'here'];
+
+// Live @mention chips while you type. Deliberately mirrors renderMarkdown in
+// app.js: same known-name list, same longest-first ordering so "@John Smith" is
+// not eaten by a "@John" match, same amber-for-you / blue-for-others split. If
+// the two ever disagree, the composer is lying about what will be sent.
+const MentionHighlight = (getMentionOptions, getMeName) => Extension.create({
+  name: 'mentionHighlight',
+  addProseMirrorPlugins() {
+    const decorate = (doc) => {
+      const names = (getMentionOptions ? getMentionOptions() : []).map((o) => o.name).concat(BROADCASTS);
+      if (!names.length) return DecorationSet.empty;
+      const re = new RegExp('@(' + names.slice().sort((a, b) => b.length - a.length).map(escRe).join('|')
+        + ')(?![\\w-])', 'g');
+      const meTargets = new Set(BROADCASTS.concat(getMeName ? [getMeName()] : []));
+      const decos = [];
+      doc.descendants((node, pos) => {
+        if (!node.isText) return;
+        let m;
+        re.lastIndex = 0;
+        while ((m = re.exec(node.text)) !== null) {
+          decos.push(Decoration.inline(pos + m.index, pos + m.index + m[0].length,
+            { class: 'mention' + (meTargets.has(m[1]) ? ' mention-me' : '') }));
+        }
+      });
+      return DecorationSet.create(doc, decos);
+    };
+    return [new Plugin({ props: { decorations: (state) => decorate(state.doc) } })];
+  },
+});
+
 // createComposer replaces one textarea. The contenteditable element gets the
 // old textarea's id plus a `.value` markdown shim, so existing e2e checks and
 // callers keep working against the same surface.
-export const createComposer = ({ mount, id, placeholder, onSubmit, getMentionOptions, slashCommands, browseChannels, onImageFile }) => {
+export const createComposer = ({ mount, id, placeholder, onSubmit, getMentionOptions, getMeName, slashCommands, browseChannels, onImageFile }) => {
   let editor = null;
 
   const getMarkdown = () => editor.getMarkdown();
@@ -253,6 +287,7 @@ export const createComposer = ({ mount, id, placeholder, onSubmit, getMentionOpt
       Placeholder.configure({ placeholder }),
       ComposerKeys,
       ListAfterBreak,
+      MentionHighlight(getMentionOptions, getMeName),
     ],
     editorProps: {
       handleKeyDown: (view, ev) => {
