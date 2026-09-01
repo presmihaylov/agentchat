@@ -59,6 +59,9 @@ type Channel struct {
 	LastReadAt     *time.Time `json:"last_read_at,omitempty"`
 	// MemberCount is populated only by BrowsableChannels (the browse view).
 	MemberCount *int64 `json:"member_count,omitempty"`
+	// Member is populated only by BrowsableChannels: browse shows the whole
+	// public map, with the viewer's own channels marked instead of hidden.
+	Member *bool `json:"member,omitempty"`
 }
 
 // ChannelGroup is one participant's sidebar section. Groups are purely personal

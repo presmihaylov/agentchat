@@ -284,6 +284,24 @@ import { createComposer } from './composer.js';
       if (act === 'edit') editMessage(m);
       if (act === 'delete') deleteMessage(m);
     });
+    el.oncontextmenu = (ev) => {
+      // right-clicks inside rendered markdown still get the message menu, but
+      // text selection keeps the native menu
+      if (String(window.getSelection())) return;
+      ev.preventDefault();
+      const root = m.thread_root_id || m.id;
+      const th = threads.find((x) => x.root_id === root);
+      const subscribed = !!(th && th.subscribed);
+      openContextMenu(ev.clientX, ev.clientY, [{
+        label: subscribed ? 'Unsubscribe' : 'Subscribe',
+        run: async () => {
+          try {
+            await api(`/api/v1/threads/${root}/subscribe`, { method: 'POST', body: { subscribed: !subscribed } });
+            loadThreads();
+          } catch (e) { alert(e.message); }
+        },
+      }]);
+    };
     return el;
   };
 
@@ -370,6 +388,7 @@ import { createComposer } from './composer.js';
     li.oncontextmenu = (ev) => {
       ev.preventDefault();
       openContextMenu(ev.clientX, ev.clientY, [
+        { label: t.subscribed ? 'Unsubscribe' : 'Subscribe', run: () => act('subscribe', { subscribed: !t.subscribed }) },
         { label: t.muted ? 'Unmute thread' : 'Mute thread', run: () => act('mute', { muted: !t.muted }) },
         { label: 'Archive thread', danger: true, run: () => act('resolve', { resolved: true }) },
       ]);
@@ -687,10 +706,13 @@ import { createComposer } from './composer.js';
 
   // ---------- URL <-> view sync ----------
 
-  let navFromURL = false; // suppress pushState while applying a URL we didn't create
+  // A URL apply spans awaits, so a click can land in the middle of one. navSeq
+  // lets the stale apply bail instead of undoing the newer navigation, and the
+  // fromURL flag (not a shared flag) is what keeps popstate from pushing.
+  let navSeq = 0;
 
   const syncURL = (push) => {
-    if (!room || navFromURL) return;
+    if (!room) return;
     let path = '/r/' + encodeURIComponent(room.slug);
     if (current) path += '/c/' + encodeURIComponent(current.name);
     if (openThreadRoot) path += '/t/' + encodeURIComponent(openThreadRoot);
@@ -699,25 +721,28 @@ import { createComposer } from './composer.js';
   };
 
   const applyURL = async () => {
-    navFromURL = true;
-    try {
-      const segs = location.pathname.split('/').filter(Boolean);
-      const chName = segs[2] === 'c' ? decodeURIComponent(segs[3] || '') : '';
-      const rootID = segs[4] === 't' ? decodeURIComponent(segs[5] || '') : '';
-      const ch = channels.find((c) => c.name === chName)
-        || channels.find((c) => c.name === 'general') || channels[0];
-      if (ch && (!current || current.id !== ch.id)) await selectChannel(ch);
-      if (rootID) {
-        try { await openThread(rootID); }
-        catch (e) { closeThread(); }
-      }
-      if (!rootID && openThreadRoot) closeThread();
-    } finally { navFromURL = false; }
+    const seq = ++navSeq;
+    const segs = location.pathname.split('/').filter(Boolean);
+    const chName = segs[2] === 'c' ? decodeURIComponent(segs[3] || '') : '';
+    const rootID = segs[4] === 't' ? decodeURIComponent(segs[5] || '') : '';
+    const ch = channels.find((c) => c.name === chName)
+      || channels.find((c) => c.name === 'general') || channels[0];
+    if (ch && (!current || current.id !== ch.id)) {
+      await selectChannel(ch, true);
+      if (seq !== navSeq) return; // a click navigated while we were fetching
+    }
+    if (rootID) {
+      try { await openThread(rootID, true); }
+      catch (e) { if (seq === navSeq) closeThread(false); }
+      return;
+    }
+    if (seq === navSeq && openThreadRoot) closeThread(false);
   };
 
   window.addEventListener('popstate', () => { if (me) applyURL(); });
 
   const closeThread = (push = true) => {
+    if (push) navSeq++;
     const had = openThreadRoot !== null;
     $('thread-panel').classList.add('hidden');
     openThreadRoot = null;
@@ -725,14 +750,15 @@ import { createComposer } from './composer.js';
     if (had && push) syncURL(true);
   };
 
-  const selectChannel = async (ch) => {
+  const selectChannel = async (ch, fromURL = false) => {
+    if (!fromURL) navSeq++;
     // a thread belongs to its channel; leaving the channel closes it, else a
     // reply would post against a root in another channel (server 400)
     // close without a push; the channel-change push below covers this transition
     if (current && ch.id !== current.id) closeThread(false);
     const changed = !current || current.id !== ch.id;
     current = ch;
-    syncURL(changed); // refreshes replace, real navigation pushes
+    syncURL(changed && !fromURL); // refreshes replace, real navigation pushes
     $('channel-title').textContent = (ch.private ? '🔒 ' : '# ') + ch.name;
     $('channel-topic').innerHTML = ch.topic ? linkify(ch.topic) : '';
     refreshHeaderMembers(ch); // header member count, not worth blocking the feed on
@@ -796,19 +822,20 @@ import { createComposer } from './composer.js';
   };
 
   let openThreadSeq = 0;
-  const openThread = async (rootID) => {
+  const openThread = async (rootID, fromURL = false) => {
+    if (!fromURL) navSeq++;
     const seq = ++openThreadSeq;
     const out = await api('/api/v1/threads/' + rootID);
     // the main column must show the thread's channel, whatever opened it
     // (sidebar tree, mention, search, deep link)
     const ch = channels.find((c) => c.id === out.messages[0]?.channel_id);
-    if (ch && (!current || current.id !== ch.id)) await selectChannel(ch);
+    if (ch && (!current || current.id !== ch.id)) await selectChannel(ch, true);
     if (seq !== openThreadSeq) return; // a newer open won
     const changed = openThreadRoot !== rootID;
     openThreadRoot = rootID;
     if (changed) renderChannels(); // move the active highlight to this thread leaf
     $('thread-panel').classList.remove('hidden');
-    syncURL(changed);
+    syncURL(changed && !fromURL);
     const box = $('thread-messages');
     box.innerHTML = '';
     out.messages.forEach((m) => box.appendChild(msgEl(m, true)));
@@ -1122,7 +1149,7 @@ import { createComposer } from './composer.js';
     onSubmit: () => $('composer').requestSubmit(),
     getMentionOptions: () => participants.map((p) => ({ name: p.name, avatar: p.avatar })),
     slashCommands: SLASH_COMMANDS,
-    browseChannels: async () => (await api('/api/v1/channels/browse')).channels || [],
+    browseChannels: async () => ((await api('/api/v1/channels/browse')).channels || []).filter((c) => !c.member),
     onImageFile: (f) => uploadPending(new File([f], f.name || 'pasted-image.png', { type: f.type })),
   });
   const threadBox = createComposer({
@@ -1131,7 +1158,7 @@ import { createComposer } from './composer.js';
     onSubmit: () => $('thread-composer').requestSubmit(),
     getMentionOptions: () => participants.map((p) => ({ name: p.name, avatar: p.avatar })),
     slashCommands: SLASH_COMMANDS,
-    browseChannels: async () => (await api('/api/v1/channels/browse')).channels || [],
+    browseChannels: async () => ((await api('/api/v1/channels/browse')).channels || []).filter((c) => !c.member),
   });
 
   // format toolbar drives editor commands; mousedown keeps the editor focus
@@ -1661,23 +1688,33 @@ import { createComposer } from './composer.js';
     } catch (e) { alert('Make private failed: ' + e.message); }
   };
 
-  // Browse view: the public channels you are not in yet, each with a Join button.
+  // Browse view: the whole public channel map. Channels you are already in are
+  // grayed with a note instead of a Join button, so the list stays a complete
+  // picture of the workspace instead of only the gaps.
   const renderBrowse = (list) => {
     const box = $('browse-list');
     box.innerHTML = '';
     if (list.length === 0) {
-      box.innerHTML = '<p class="browse-empty">You are in every channel. Nothing to browse.</p>';
+      box.innerHTML = '<p class="browse-empty">No public channels to browse.</p>';
       return;
     }
     list.forEach((ch) => {
       const row = document.createElement('div');
-      row.className = 'browse-row';
+      row.className = 'browse-row' + (ch.member ? ' member' : '');
       const n = ch.member_count || 0;
       row.innerHTML = `<div class="browse-meta">
           <span class="browse-name">#${esc(ch.name)}</span>
           <span class="browse-topic">${esc(ch.topic || '')}</span>
           <span class="browse-count">${n} member${n === 1 ? '' : 's'}</span>
         </div>`;
+      if (ch.member) {
+        const note = document.createElement('span');
+        note.className = 'browse-member-note';
+        note.textContent = 'already a member';
+        row.appendChild(note);
+        box.appendChild(row);
+        return;
+      }
       const join = document.createElement('button');
       join.className = 'browse-join';
       join.textContent = 'Join';
@@ -1688,7 +1725,7 @@ import { createComposer } from './composer.js';
           await refreshRoom();
           const joined = channels.find((c) => c.id === ch.id);
           if (joined) await selectChannel(joined);
-          await openBrowse(); // refresh the list so the joined channel drops off
+          await openBrowse(); // refresh: the joined channel flips to a member row
         } catch (e) { alert(e.message); join.disabled = false; }
       };
       row.appendChild(join);

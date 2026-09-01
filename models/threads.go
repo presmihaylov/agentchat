@@ -21,6 +21,9 @@ type ThreadSummary struct {
 	// UnreadMentions counts the unread replies that @mention the viewer
 	// (direct or broadcast); the sidebar leaf badges this, glow otherwise.
 	UnreadMentions int64 `json:"unread_mentions"`
+	// Subscribed marks an explicit right-click follow, as opposed to the
+	// implicit involvement from posting or being mentioned.
+	Subscribed bool `json:"subscribed"`
 }
 
 // ListInvolvedThreads returns the channel's threads the participant is part of.
@@ -48,6 +51,12 @@ func (s *Store) involvedThreads(ctx context.Context, roomID, participantID strin
 		   LEFT JOIN mentions mn ON mn.message_id = m.id AND mn.participant_id = $2
 		   WHERE m.room_id = $1 AND ($3::uuid IS NULL OR m.channel_id = $3::uuid)
 		     AND (m.author_id = $2 OR mn.participant_id IS NOT NULL)
+		   UNION
+		   SELECT ts2.root_id
+		   FROM thread_states ts2
+		   JOIN messages rm ON rm.id = ts2.root_id
+		   WHERE ts2.participant_id = $2 AND ts2.subscribed
+		     AND rm.room_id = $1 AND ($3::uuid IS NULL OR rm.channel_id = $3::uuid)
 		 )
 		 SELECT r.id, r.channel_id, r.body, r.author_id, ap.name, r.created_at,
 		        (SELECT count(*) FROM messages c WHERE c.thread_root_id = r.id) AS reply_count,
@@ -62,14 +71,16 @@ func (s *Store) involvedThreads(ctx context.Context, roomID, participantID strin
 		           AND c.created_at > COALESCE(ts.last_read_at, p.created_at)
 		           AND (c.is_broadcast OR EXISTS (
 		                SELECT 1 FROM mentions mn2
-		                WHERE mn2.message_id = c.id AND mn2.participant_id = $2))) AS unread_mentions
+		                WHERE mn2.message_id = c.id AND mn2.participant_id = $2))) AS unread_mentions,
+		        COALESCE(ts.subscribed, false)
 		 FROM involved i
 		 JOIN messages r ON r.id = i.root_id
 		 JOIN participants ap ON ap.id = r.author_id
 		 JOIN participants p ON p.id = $2
 		 JOIN channel_members cm ON cm.channel_id = r.channel_id AND cm.participant_id = $2
 		 LEFT JOIN thread_states ts ON ts.root_id = r.id AND ts.participant_id = $2
-		 WHERE EXISTS (SELECT 1 FROM messages c WHERE c.thread_root_id = r.id)
+		 WHERE (EXISTS (SELECT 1 FROM messages c WHERE c.thread_root_id = r.id)
+		        OR COALESCE(ts.subscribed, false))
 		   AND ts.resolved_at IS NULL
 		 ORDER BY COALESCE((SELECT max(c.created_at) FROM messages c WHERE c.thread_root_id = r.id), r.created_at) DESC`,
 		roomID, participantID, channelID)
@@ -82,7 +93,7 @@ func (s *Store) involvedThreads(ctx context.Context, roomID, participantID strin
 	for rows.Next() {
 		var t ThreadSummary
 		if err := rows.Scan(&t.RootID, &t.ChannelID, &t.Body, &t.AuthorID, &t.AuthorName, &t.CreatedAt,
-			&t.ReplyCount, &t.LastReplyAt, &t.Muted, &t.LastReadAt, &t.UnreadCount, &t.UnreadMentions); err != nil {
+			&t.ReplyCount, &t.LastReplyAt, &t.Muted, &t.LastReadAt, &t.UnreadCount, &t.UnreadMentions, &t.Subscribed); err != nil {
 			return nil, err
 		}
 		out = append(out, t)
@@ -108,6 +119,18 @@ func (s *Store) SetThreadMuted(ctx context.Context, participantID, rootID string
 		 VALUES ($1, $2, $3)
 		 ON CONFLICT (participant_id, root_id) DO UPDATE SET muted = $3`,
 		participantID, rootID, muted)
+	return err
+}
+
+// SetThreadSubscribed adds (true) or removes (false) an explicit follow of the
+// thread for the participant. An unsubscribed thread the participant posted or
+// was mentioned in stays in the tree via the implicit involvement rules.
+func (s *Store) SetThreadSubscribed(ctx context.Context, participantID, rootID string, subscribed bool) error {
+	_, err := s.pool.Exec(ctx,
+		`INSERT INTO thread_states (participant_id, root_id, subscribed)
+		 VALUES ($1, $2, $3)
+		 ON CONFLICT (participant_id, root_id) DO UPDATE SET subscribed = $3`,
+		participantID, rootID, subscribed)
 	return err
 }
 

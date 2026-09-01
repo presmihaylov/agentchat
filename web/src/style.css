@@ -43,9 +43,12 @@ button { cursor: pointer; }
 #copy-link, #invite-agent { background: none; border: 1px solid var(--border); color: var(--dim); border-radius: 6px; font-size: 11px; padding: 4px 8px; cursor: pointer; }
 #copy-link:hover, #invite-agent:hover { border-color: var(--accent); color: var(--text); }
 #sidebar section { padding: 12px 8px 4px; }
-#sidebar h3 { margin: 0 8px 6px; font-size: 12px; text-transform: uppercase; color: var(--dim); display: flex; justify-content: space-between; }
-#new-channel, #browse-channels { background: none; border: 0; color: var(--dim); font-size: 14px; cursor: pointer; }
-#new-channel:hover, #browse-channels:hover { color: var(--text); }
+#sidebar h3 { margin: 0 8px 6px; font-size: 12px; text-transform: uppercase; color: var(--dim); display: flex; justify-content: space-between; align-items: center; }
+/* both header affordances live in one aligned group so browse reads as an equal
+   sibling of +, not an afterthought pushed to the far side of the row */
+#sidebar h3 .head-actions { display: flex; align-items: center; gap: 2px; }
+#new-channel, #browse-channels { display: flex; align-items: center; justify-content: center; background: none; border: 0; color: var(--text); font-size: 17px; line-height: 1; width: 20px; height: 20px; padding: 0; cursor: pointer; border-radius: 4px; }
+#new-channel:hover, #browse-channels:hover { color: var(--text); background: var(--panel2); }
 #sidebar ul { list-style: none; margin: 0; padding: 0; }
 #sidebar li { padding: 4px 10px; border-radius: 6px; cursor: pointer; display: flex; align-items: center; gap: 6px; font-size: 14px; overflow: hidden; white-space: nowrap; }
 #sidebar li:hover { background: var(--panel2); }
@@ -293,6 +296,8 @@ button { cursor: pointer; }
 .browse-topic { color: var(--text); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .browse-count { color: var(--dim); font-size: 11px; }
 /* deeper than --accent so white label clears WCAG AA (4.5:1) */
+.browse-row.member .browse-name, .browse-row.member .browse-topic { color: var(--dim); }
+.browse-member-note { color: var(--dim); font-size: 12px; font-style: italic; white-space: nowrap; }
 .browse-join { background: #15568a; color: #fff; border: 0; border-radius: 8px; padding: 7px 16px; font: inherit; font-weight: 600; cursor: pointer; }
 .browse-join:hover { filter: brightness(1.08); }
 .browse-join:active { transform: scale(.97); }

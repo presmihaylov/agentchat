@@ -350,6 +350,27 @@ func (s *Server) handleThreadMute(w http.ResponseWriter, r *http.Request, p mode
 	writeJSON(w, http.StatusOK, map[string]any{"root_id": root, "muted": req.Muted})
 }
 
+type threadSubscribeReq struct {
+	Subscribed bool `json:"subscribed"`
+}
+
+func (s *Server) handleThreadSubscribe(w http.ResponseWriter, r *http.Request, p models.Participant) {
+	root, err := s.resolveThreadRoot(r, p)
+	if err != nil {
+		writeStoreErr(w, err)
+		return
+	}
+	var req threadSubscribeReq
+	if !readJSON(w, r, &req) {
+		return
+	}
+	if err := s.store.SetThreadSubscribed(r.Context(), p.ID, root, req.Subscribed); err != nil {
+		writeStoreErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"root_id": root, "subscribed": req.Subscribed})
+}
+
 type threadResolveReq struct {
 	Resolved bool `json:"resolved"`
 }

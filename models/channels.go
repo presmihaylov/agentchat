@@ -227,18 +227,18 @@ func (s *Store) ListChannelsUnread(ctx context.Context, roomID, participantID st
 	return out, rows.Err()
 }
 
-// BrowsableChannels lists the channels the caller can join but has not joined:
-// every non-archived, non-private channel in the room they are not already a
-// member of, with a live member count. Private channels are invite-only and
+// BrowsableChannels lists every non-archived public channel in the room — the
+// complete public map — with a live member count and a member flag for the
+// channels the caller is already in. Private channels are invite-only and
 // never appear here. Sorted by name so the browse list reads alphabetically.
 func (s *Store) BrowsableChannels(ctx context.Context, roomID, participantID string) ([]Channel, error) {
 	rows, err := s.pool.Query(ctx,
 		`SELECT c.id, c.room_id, c.name, c.topic, c.created_by, c.archived, c.private, c.created_at,
-		        (SELECT count(*) FROM channel_members m WHERE m.channel_id = c.id) AS member_count
+		        (SELECT count(*) FROM channel_members m WHERE m.channel_id = c.id) AS member_count,
+		        EXISTS (SELECT 1 FROM channel_members cm
+		                WHERE cm.channel_id = c.id AND cm.participant_id = $2) AS member
 		 FROM channels c
 		 WHERE c.room_id = $1 AND NOT c.archived AND NOT c.private
-		   AND NOT EXISTS (SELECT 1 FROM channel_members cm
-		                   WHERE cm.channel_id = c.id AND cm.participant_id = $2)
 		 ORDER BY c.name ASC`, roomID, participantID)
 	if err != nil {
 		return nil, err
@@ -249,11 +249,13 @@ func (s *Store) BrowsableChannels(ctx context.Context, roomID, participantID str
 	for rows.Next() {
 		var c Channel
 		var count int64
+		var member bool
 		if err := rows.Scan(&c.ID, &c.RoomID, &c.Name, &c.Topic, &c.CreatedBy,
-			&c.Archived, &c.Private, &c.CreatedAt, &count); err != nil {
+			&c.Archived, &c.Private, &c.CreatedAt, &count, &member); err != nil {
 			return nil, err
 		}
 		c.MemberCount = &count
+		c.Member = &member
 		out = append(out, c)
 	}
 	return out, rows.Err()

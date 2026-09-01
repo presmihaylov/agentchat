@@ -1466,6 +1466,9 @@ func TestChannelMembership(t *testing.T) {
 	if found["member_count"].(float64) != 1 {
 		t.Fatalf("browse member_count = %v, want 1", found["member_count"])
 	}
+	if found["member"].(bool) != false {
+		t.Fatal("browse marks unjoined #secret as member")
+	}
 
 	bob.must("POST", "/api/v1/channels/secret/join", nil, 200)
 	// now a member: read + post succeed, and the two earlier messages are visible
@@ -1480,11 +1483,16 @@ func TestChannelMembership(t *testing.T) {
 		t.Fatalf("after join bob sees %d top-level messages, want 2", real)
 	}
 	bob.must("POST", "/api/v1/channels/secret/messages", map[string]any{"body": "thanks"}, 201)
-	// once joined, #secret is gone from browse and present in the channel list
+	// once joined, #secret STAYS in browse (the list is the whole public map)
+	// but flips to member=true so the UI grays it instead of offering Join
+	joined := false
 	for _, raw := range bob.must("GET", "/api/v1/channels/browse", nil, 200)["channels"].([]any) {
 		if raw.(map[string]any)["id"] == secretID {
-			t.Fatal("browse still lists #secret after bob joined")
+			joined = raw.(map[string]any)["member"].(bool)
 		}
+	}
+	if !joined {
+		t.Fatal("browse dropped or unmarked #secret after bob joined; want listed with member=true")
 	}
 
 	// --- leave: bob leaves #secret and is gated out again; #general cannot be left ---
@@ -1956,5 +1964,77 @@ func TestRemovalEventDelivery(t *testing.T) {
 	evs, _ = eventsAfter(t, carol, carolCursor)
 	if sawLeft(evs) {
 		t.Fatalf("non-member received channel.member_left")
+	}
+}
+
+// TestThreadSubscribe: an explicit right-click follow puts a thread in the
+// tree of a participant who never posted or was mentioned in it, unsubscribe
+// removes it again, and implicit involvement is unaffected by unsubscribe.
+func TestThreadSubscribe(t *testing.T) {
+	srv, _ := newTestServer(t)
+	defer srv.Close()
+	_, alice, bob := setupRoom(t, srv.URL)
+
+	threadsOf := func(c *testClient) []map[string]any {
+		out := c.must("GET", "/api/v1/threads", nil, 200)
+		list := []map[string]any{}
+		for _, raw := range out["threads"].([]any) {
+			list = append(list, raw.(map[string]any))
+		}
+		return list
+	}
+
+	root := alice.must("POST", "/api/v1/channels/general/messages", map[string]any{"body": "alice topic"}, 201)
+	rootID := root["id"].(string)
+	reply := alice.must("POST", "/api/v1/channels/general/messages",
+		map[string]any{"body": "alice reply", "thread_root_id": rootID}, 201)
+
+	// bob never posted and was never mentioned: no tree entry
+	if n := len(threadsOf(bob)); n != 0 {
+		t.Fatalf("uninvolved bob sees %d threads, want 0", n)
+	}
+
+	// subscribing via a REPLY id resolves to the root
+	out := bob.must("POST", "/api/v1/threads/"+reply["id"].(string)+"/subscribe",
+		map[string]any{"subscribed": true}, 200)
+	if out["root_id"].(string) != rootID {
+		t.Fatalf("subscribe resolved root %v, want %v", out["root_id"], rootID)
+	}
+	bt := threadsOf(bob)
+	if len(bt) != 1 || bt[0]["root_id"].(string) != rootID || bt[0]["subscribed"].(bool) != true {
+		t.Fatalf("after subscribe bob sees %+v, want the root marked subscribed", bt)
+	}
+
+	// activity in the subscribed thread counts as unread for bob
+	alice.must("POST", "/api/v1/channels/general/messages",
+		map[string]any{"body": "more activity", "thread_root_id": rootID}, 201)
+	if n := threadsOf(bob)[0]["unread_count"].(float64); n < 1 {
+		t.Fatalf("subscribed thread unread=%v, want >=1", n)
+	}
+
+	// unsubscribe removes it from bob's tree
+	bob.must("POST", "/api/v1/threads/"+rootID+"/subscribe", map[string]any{"subscribed": false}, 200)
+	if n := len(threadsOf(bob)); n != 0 {
+		t.Fatalf("after unsubscribe bob sees %d threads, want 0", n)
+	}
+
+	// a bare message with no replies still appears once subscribed
+	bare := alice.must("POST", "/api/v1/channels/general/messages", map[string]any{"body": "bare note"}, 201)
+	bob.must("POST", "/api/v1/threads/"+bare["id"].(string)+"/subscribe", map[string]any{"subscribed": true}, 200)
+	bt = threadsOf(bob)
+	if len(bt) != 1 || bt[0]["root_id"].(string) != bare["id"].(string) || bt[0]["reply_count"].(float64) != 0 {
+		t.Fatalf("bare subscribe: got %+v, want the replyless root", bt)
+	}
+
+	// alice is implicitly involved; unsubscribe does not remove involvement
+	alice.must("POST", "/api/v1/threads/"+rootID+"/subscribe", map[string]any{"subscribed": false}, 200)
+	found := false
+	for _, th := range threadsOf(alice) {
+		if th["root_id"].(string) == rootID {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("unsubscribe removed alice's implicitly involved thread")
 	}
 }
