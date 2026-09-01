@@ -91,6 +91,23 @@ grep -q 'nobody-here' "$WORK/err" || fail "the 422 message did not reach stderr:
 grep -q 'alice' "$WORK/err" || fail "the 422 did not list the current handles"
 ok "unknown mention exits non-zero with the roster"
 
+# 7b. a real handle who cannot read the channel is a loud warning, not silence
+curl -fsS -X POST "$SERVER/api/v1/channels" -H "Authorization: Bearer $alice" \
+  -H 'Content-Type: application/json' -d '{"name":"alice-only"}' >/dev/null
+"${A[@]}" send alice-only 'are you there @bob' 2>"$WORK/err" >/dev/null
+grep -q 'bob' "$WORK/err" || fail "no out-of-channel warning: $(cat "$WORK/err")"
+ok "out-of-channel mention warns the sender"
+
+# 7c. there is no --token flag, so a token can never land in the process list
+if grep -q -- '--token' "$CLI"; then fail "cli.sh takes a token on the command line"; fi
+ok "the token is env-file only"
+
+# 7d. reply never degrades to a channel-root post: an id it cannot resolve fails
+if "${A[@]}" reply 00000000-0000-0000-0000-000000000000 'orphan' >/dev/null 2>"$WORK/err"; then
+  fail "reply with an unresolvable id must exit non-zero"
+fi
+ok "reply fails loudly rather than posting to the channel root"
+
 # 8. mentions catch-up sees what was addressed to bob, and broadcasts
 "${A[@]}" mentions --limit 50 >/dev/null   # each side starts its cursor at "now"
 "${B[@]}" mentions --limit 50 >/dev/null
