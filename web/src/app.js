@@ -243,17 +243,16 @@ import { createComposer } from './composer.js';
           ${m.edited_at ? '<span class="edited"> (edited)</span>' : ''}
           ${m.is_broadcast ? ' 📣' : ''}</div>
         <div class="content">${renderMarkdown(m.body)}</div>
-        ${atts}${replyBar}
+        ${atts}<div class="msg-markers"></div>${replyBar}
       </div>
       <div class="msg-actions">${actions.join('')}</div>`;
     el.querySelector('.avatar').appendChild(
       avatarEl(participants.find((x) => x.id === m.author_id), 'avatar-msg'));
-    // "working on it" markers sit under the content; live-updated via events
+    // "working on it" markers sit under the whole message, attachments
+    // included, so an image never splits the text from its status line;
+    // live-updated via events
     markerMap[m.id] = m.markers || [];
-    const mbox = document.createElement('div');
-    mbox.className = 'msg-markers';
-    el.querySelector('.content').after(mbox);
-    fillMarkerBox(mbox, markerMap[m.id]);
+    fillMarkerBox(el.querySelector('.msg-markers'), markerMap[m.id]);
     const bar = el.querySelector('.reply-bar');
     if (bar) {
       const avs = document.createElement('span');

@@ -83,6 +83,27 @@ async function api(path, opts = {}) {
   await api(`/api/v1/messages/${root.id}/working`, { method: 'DELETE', token: qa.token });
   await waitMarkers(0, 'after qa clears');
 
+  // an image must not split the text from its status line: the marker renders
+  // UNDER the attachment, not between the body and the image (Maya FR)
+  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
+  const fd = new FormData();
+  fd.append('file', new Blob([png], { type: 'image/png' }), 'shot.png');
+  const upResp = await fetch(SERVER + '/api/v1/attachments', { method: 'POST', headers: { Authorization: 'Bearer ' + viewer.token }, body: fd });
+  const up = await upResp.json();
+  if (!upResp.ok) throw new Error('upload -> ' + upResp.status + ' ' + JSON.stringify(up));
+  const withImg = await api('/api/v1/channels/general/messages', { method: 'POST', token: viewer.token, body: { body: 'see this', attachment_ids: [up.id] } });
+  await api(`/api/v1/messages/${withImg.id}/working`, { method: 'POST', token: dev.token, body: { status: 'looking' } });
+  await page.waitForFunction((id) =>
+    document.querySelectorAll(`.msg[data-id="${id}"] .msg-marker`).length === 1, { timeout: 4000 }, withImg.id);
+  const order = await page.evaluate((id) => {
+    const msg = document.querySelector(`.msg[data-id="${id}"]`);
+    const img = msg.querySelector('img.inline-img');
+    const box = msg.querySelector('.msg-markers');
+    return { after: !!(img.compareDocumentPosition(box) & Node.DOCUMENT_POSITION_FOLLOWING), imgBottom: img.getBoundingClientRect().bottom, markerTop: box.getBoundingClientRect().top };
+  }, withImg.id);
+  if (!order.after) fail('the marker must render after the attachment in the DOM');
+  if (!(order.markerTop >= order.imgBottom)) fail(`the marker sits above the image bottom: ${JSON.stringify(order)}`);
+
   await browser.close();
   if (!process.exitCode) console.log('MARKER_CHECK_OK');
 })().catch((e) => { console.error(e); process.exit(1); });
