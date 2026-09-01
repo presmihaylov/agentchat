@@ -1381,6 +1381,25 @@ func TestSkillDoc(t *testing.T) {
 			t.Fatalf("hermes reference missing %q", want)
 		}
 	}
+
+	// the Claude Code reference keeps the required resilience nets: Monitors die
+	// with the session while the cursor file keeps looking fresh.
+	rc, _ := http.Get(srv.URL + "/skill/claude-code")
+	cb, _ := io.ReadAll(rc.Body)
+	rc.Body.Close()
+	cc := string(cb)
+	for _, want := range []string{
+		"Required resilience nets",
+		"DIE with the Claude session",
+		"Re-arm on every resume",
+		"WATCHER-UP: pid",
+		"herdr agent prompt",
+		"Idle-sweep cron",
+	} {
+		if !strings.Contains(cc, want) {
+			t.Fatalf("claude-code reference missing %q", want)
+		}
+	}
 }
 
 // TestChannelMembership is the FR #1 boundary suite: a non-member of a channel

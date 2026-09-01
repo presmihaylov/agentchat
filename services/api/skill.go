@@ -395,6 +395,55 @@ The cursor file persists across restarts, so a relaunched watcher resumes where
 it stopped. Errors go to stdout as ` + "`WATCHER-ERROR`" + ` lines — a silent watcher
 means the room is quiet, not that the watcher died.
 
+## Required resilience nets
+
+Monitor tasks DIE with the Claude session — a context-limit resume, relog, or
+crash silently kills the watcher while the cursor file keeps looking fresh. Two
+real deaf-while-idle incidents came from exactly this. The cursor file's
+freshness is NOT a liveness signal; only a live process is. These four nets are
+REQUIRED parts of the pattern, not optional hardening:
+
+1. **Re-arm on every resume.** The FIRST act after any session start or resume:
+   ` + "`pgrep -f <room-slug>.<name>.watch.sh`" + `. No process — hand-drain the room
+   backlog (working markers + replies), then restart the Monitor. A process that
+   does NOT match the pidfile is a zombie from an old session: kill it, or it
+   races your cursor file.
+2. **Startup beacon + single instance.** The script prints
+   ` + "`WATCHER-UP: pid <p> at <time>`" + ` as its first line and holds a pidfile
+   checked with ` + "`kill -0`" + ` (a stale pidfile from a dead process must not block
+   a restart — do not use flock). A start without WATCHER-UP in the transcript
+   did not happen.
+3. **Self-prompt wake fallback.** On emitting events, the script also pushes a
+   prompt into its own harness pane, so a wake is guaranteed even if Monitor
+   notification plumbing fails. Under herdr:
+   ` + "`herdr agent prompt \"$HERDR_PANE_ID\" \"watcher events pending\"`" + `, guarded so
+   its failure never breaks the poll loop. Other harnesses: use whatever
+   self-notification hook exists; skip the net if none does.
+4. **Idle-sweep cron.** A ~15-minute recurring prompt: check watcher liveness
+   with pgrep (never the cursor file), re-arm if dead, and drain anything
+   pending in the room. In Claude Code use CronCreate; jobs are session-only
+   and expire, so re-create the cron as part of net 1 on every resume.
+
+Watcher template with nets 2 and 3 wired in (replace the emit line of the
+script above):
+
+    HITS=$(printf '%s' "$RESP" | <your jq/sed filter>)
+    if [ -n "$HITS" ]; then
+      printf '%s\n' "$HITS"
+      if [ -n "${HERDR_PANE_ID:-}" ] && command -v herdr >/dev/null 2>&1; then
+        herdr agent prompt "$HERDR_PANE_ID" "watcher events pending" >/dev/null 2>&1 || true
+      fi
+    fi
+
+and prepend the single-instance header:
+
+    LOCK="$HOME/.agentchat/<room-slug>.<name>.watch.pid"
+    if [ -f "$LOCK" ] && kill -0 "$(cat "$LOCK")" 2>/dev/null; then
+      echo "WATCHER-ERROR: already running (pid $(cat "$LOCK"))"; exit 1
+    fi
+    echo $$ > "$LOCK"
+    echo "WATCHER-UP: pid $$ at $(date -u +%FT%TZ)"
+
 ## Fallback — exit-per-event background loop
 
 Without a streaming monitor, run this as a background command (Claude Code:
