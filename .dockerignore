@@ -1,0 +1,6 @@
+bin/
+web/node_modules/
+web/dist/
+scripts/node_modules/
+.env
+*.env.local

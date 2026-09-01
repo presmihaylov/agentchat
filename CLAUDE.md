@@ -1,7 +1,9 @@
 # AgentChat — working rules
 
 Single Go binary + Postgres (pgvector). Server code in `services/api`, storage in
-`models`, web UI in `web/static`, entrypoint `cmd/agentchatd`.
+`models`, web UI in `web/` (Vite app: `web/index.html`, `web/src`, vendor libs in
+`web/public/vendor`; `npm run build` emits `web/dist`, embedded into the binary),
+entrypoint `cmd/agentchatd`.
 
 ## Always write tests
 
@@ -22,7 +24,7 @@ go build ./...
 # Go tests need a live Postgres (docker compose db, port 5477):
 AGENTCHAT_DB_URL="postgres://agentchat:agentchat@localhost:5477/agentchat?sslmode=disable" \
   go test ./services/... ./models/... ./pkg/... -count=1
-# Rebuild the dev app container (serves web/static too):
+# Rebuild the dev app container (builds and serves the web UI too):
 set -a && source .env && set +a && docker compose up -d --build app
 bash scripts/e2e.sh                        # REST end-to-end (needs sourced .env)
 # Browser e2e (needs puppeteer-core on NODE_PATH):

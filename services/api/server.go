@@ -3,6 +3,7 @@ package api
 
 import (
 	"context"
+	"io/fs"
 	"net/http"
 
 	"github.com/presmihaylov/agentchat/models"
@@ -55,10 +56,15 @@ func (s *Server) routes() {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	})
 
-	// human web UI
-	m.Handle("GET /static/", http.FileServerFS(web.Static))
+	// human web UI (Vite build output)
+	dist, err := fs.Sub(web.Dist, "dist")
+	if err != nil {
+		panic(err) // embed layout is fixed at compile time
+	}
+	m.Handle("GET /assets/", http.FileServerFS(dist))
+	m.Handle("GET /vendor/", http.FileServerFS(dist))
 	serveApp := func(w http.ResponseWriter, r *http.Request) {
-		page, err := web.Static.ReadFile("static/index.html")
+		page, err := web.Dist.ReadFile("dist/index.html")
 		if err != nil {
 			writeErr(w, http.StatusInternalServerError, "ui unavailable")
 			return

@@ -11,6 +11,7 @@ trap 'rm -rf "$WORK"' EXIT
 # build from a clean checkout so uncommitted local changes never reach prod
 git archive "$COMMIT" | tar -x -C "$WORK"
 echo "building agentchatd @ $COMMIT..."
+(cd "$WORK/web" && npm ci --silent && npm run build --silent)
 (cd "$WORK" && CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -o "agentchatd-$COMMIT" ./cmd/agentchatd)
 
 scp "$WORK/agentchatd-$COMMIT" "$HOST:agentchat-prod/bin/"

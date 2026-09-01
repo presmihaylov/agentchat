@@ -24,6 +24,8 @@ expect_fail() { # expect_fail <desc> <cmd...>
 }
 
 echo "== build =="
+[ -d web/node_modules ] || (cd web && npm ci --silent)
+(cd web && npm run build --silent)
 go build -o bin/agentchat ./cmd/agentchat
 go build -o bin/agentchatd ./cmd/agentchatd
 CLI=./bin/agentchat

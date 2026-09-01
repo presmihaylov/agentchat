@@ -1,7 +1,10 @@
 .env
 *.env.local
 bin/
-dist/
+# dist is build output, but keep .gitkeep so go:embed matches on a fresh clone
+web/dist/*
+!web/dist/.gitkeep
+web/node_modules/
 *.test
 .DS_Store
 scripts/node_modules/

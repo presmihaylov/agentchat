@@ -37,7 +37,9 @@ scripts/deploy-prod.sh            # deploys HEAD
 scripts/deploy-prod.sh <commit>   # deploys a specific commit
 ```
 
-The script builds `darwin/arm64` from a clean checkout of that commit, ships
+The script first builds the web UI (`npm ci && npm run build` in `web/`, so
+node is a build-time dependency on the dev machine only; nothing new runs on
+the mini), then builds `darwin/arm64` from a clean checkout of that commit, ships
 it as `agentchatd-<commit>`, atomically repoints the symlink, kickstarts the
 service, and curls `/healthz`. Roll back by re-running it with the previous
 commit (old binaries stay in `bin/`).
