@@ -1161,16 +1161,6 @@ import { createComposer } from './composer.js';
     browseChannels: async () => ((await api('/api/v1/channels/browse')).channels || []).filter((c) => !c.member),
   });
 
-  // format toolbar drives editor commands; mousedown keeps the editor focus
-  for (const [inputID, box] of [['composer-input', composerBox], ['thread-input', threadBox]]) {
-    document.querySelector('.composer-tools[data-for="' + inputID + '"]').addEventListener('mousedown', (ev) => {
-      const btn = ev.target.closest('button[data-fmt]');
-      if (!btn) return;
-      ev.preventDefault();
-      box.format(btn.dataset.fmt);
-    });
-  }
-
   // inline confirmation / error in the composer area, auto-fades
   const slashStatus = (form, text, isErr) => {
     const host = form;

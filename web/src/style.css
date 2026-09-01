@@ -357,12 +357,6 @@ button { cursor: pointer; }
 #composer > button[type="submit"], #thread-composer > button[type="submit"], .composer-main > button[type="submit"] { background: var(--accent); color: #fff; border: 0; border-radius: 8px; padding: 10px 16px; font-weight: 600; }
 
 /* composer format toolbar */
-.composer-tools { display: flex; align-items: center; gap: 1px; }
-.composer-tools button { background: none; border: 0; color: var(--dim); font: inherit; font-size: 12px; line-height: 1; padding: 4px 7px; border-radius: 5px; cursor: pointer; }
-.composer-tools button:hover { background: var(--panel2); color: var(--text); }
-.composer-tools button[data-fmt="bold"] { font-weight: 800; }
-.composer-tools button[data-fmt="italic"] { font-style: italic; }
-.composer-tools button[data-fmt="code"], .composer-tools button[data-fmt="codeblock"] { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 .tools-spacer { flex: 1; }
 
 /* composer live preview */

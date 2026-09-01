@@ -56,6 +56,15 @@ async function api(path, opts = {}) {
   await page.keyboard.press('Enter');
   await page.waitForFunction(() => document.querySelector('#messages .content strong') !== null, { timeout: 5000 });
 
+  // the format toolbar is gone; the shortcuts it duplicated still work
+  if (await page.$('.composer-tools')) throw new Error('format toolbar still rendered');
+  await page.focus('#composer-input');
+  await page.keyboard.down('Meta'); await page.keyboard.press('b'); await page.keyboard.up('Meta');
+  await page.type('#composer-input', 'shortcut');
+  const md = await page.$eval('#composer-input', (el) => el.__composer.getMarkdown());
+  if (!md.includes('**shortcut**')) throw new Error('cmd-b lost its bold: ' + md);
+  await page.$eval('#composer-input', (el) => el.__composer.clear());
+
   // agent mentions the human -> message appears live with an amber self-mention chip
   await api('/api/v1/channels/general/messages', { method: 'POST', token: agent.token, body: { body: 'hey @humantester look' } });
   await page.waitForFunction(() =>

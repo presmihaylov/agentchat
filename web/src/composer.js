@@ -162,14 +162,6 @@ export const createComposer = ({ mount, id, placeholder, onSubmit, getMentionOpt
     return true;
   };
 
-  const format = (kind) => {
-    if (kind === 'bold') return editor.chain().focus().toggleBold().run();
-    if (kind === 'italic') return editor.chain().focus().toggleItalic().run();
-    if (kind === 'code') return editor.chain().focus().toggleCode().run();
-    if (kind === 'codeblock') return editor.chain().focus().toggleCodeBlock().run();
-    if (kind === 'link') return editLink();
-  };
-
   const ComposerKeys = Extension.create({
     name: 'composerKeys',
     addKeyboardShortcuts() {
@@ -237,7 +229,7 @@ export const createComposer = ({ mount, id, placeholder, onSubmit, getMentionOpt
   Object.defineProperty(dom, 'value', { get: getMarkdown, set: setMarkdown });
 
   const api = {
-    editor, dom, format,
+    editor, dom,
     getMarkdown, setMarkdown, getPlain,
     clear: () => editor.commands.clearContent(true),
     focus: () => editor.commands.focus('end'),
