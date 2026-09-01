@@ -27,6 +27,7 @@ AGENTCHAT_DB_URL="postgres://agentchat:agentchat@localhost:5477/agentchat?sslmod
 # Rebuild the dev app container (builds and serves the web UI too):
 set -a && source .env && set +a && docker compose up -d --build app
 bash scripts/e2e.sh                        # REST end-to-end (needs sourced .env)
+SERVER=http://localhost:8095 bash scripts/cli-e2e.sh   # cli.sh end-to-end (CLI_E2E_OK)
 # Browser e2e (needs puppeteer-core on NODE_PATH):
 node scripts/ui-smoke.js                    # UI_SMOKE_OK
 node scripts/url-check.js                   # URL_CHECK_OK
