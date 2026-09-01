@@ -782,13 +782,19 @@ import { createComposer } from './composer.js';
     } catch (e) { console.error('markRead', e); }
   };
 
+  let openThreadSeq = 0;
   const openThread = async (rootID) => {
+    const seq = ++openThreadSeq;
+    const out = await api('/api/v1/threads/' + rootID);
+    // the main column must show the thread's channel, whatever opened it
+    // (sidebar tree, mention, search, deep link)
+    const ch = channels.find((c) => c.id === out.messages[0]?.channel_id);
+    if (ch && (!current || current.id !== ch.id)) await selectChannel(ch);
+    if (seq !== openThreadSeq) return; // a newer open won
     const changed = openThreadRoot !== rootID;
     openThreadRoot = rootID;
     if (changed) renderChannels(); // move the active highlight to this thread leaf
     $('thread-panel').classList.remove('hidden');
-    const out = await api('/api/v1/threads/' + rootID);
-    if (openThreadRoot !== rootID) return; // stale response
     syncURL(changed);
     const box = $('thread-messages');
     box.innerHTML = '';
