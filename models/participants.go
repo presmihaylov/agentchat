@@ -133,7 +133,7 @@ func (s *Store) ParticipantByTokenHash(ctx context.Context, hash []byte) (Partic
 }
 
 func (s *Store) ParticipantByID(ctx context.Context, roomID, id string) (Participant, error) {
-	list, err := s.listParticipants(ctx, roomID, &id, nil)
+	list, err := s.listParticipants(ctx, roomID, &id, nil, nil)
 	if err != nil {
 		return Participant{}, err
 	}
@@ -144,7 +144,7 @@ func (s *Store) ParticipantByID(ctx context.Context, roomID, id string) (Partici
 }
 
 func (s *Store) ParticipantByName(ctx context.Context, roomID, name string) (Participant, error) {
-	list, err := s.listParticipants(ctx, roomID, nil, &name)
+	list, err := s.listParticipants(ctx, roomID, nil, &name, nil)
 	if err != nil {
 		return Participant{}, err
 	}
@@ -156,10 +156,15 @@ func (s *Store) ParticipantByName(ctx context.Context, roomID, name string) (Par
 
 // ListParticipants returns active (non-revoked) members.
 func (s *Store) ListParticipants(ctx context.Context, roomID string) ([]Participant, error) {
-	return s.listParticipants(ctx, roomID, nil, nil)
+	return s.listParticipants(ctx, roomID, nil, nil, nil)
 }
 
-func (s *Store) listParticipants(ctx context.Context, roomID string, id, name *string) ([]Participant, error) {
+// ListChannelMembers lists a channel's members with the full participant shape.
+func (s *Store) ListChannelMembers(ctx context.Context, roomID, channelID string) ([]Participant, error) {
+	return s.listParticipants(ctx, roomID, nil, nil, &channelID)
+}
+
+func (s *Store) listParticipants(ctx context.Context, roomID string, id, name, channelID *string) ([]Participant, error) {
 	rows, err := s.pool.Query(ctx,
 		`SELECT p.id, p.room_id, p.name, p.avatar, p.avatar_attachment_id, p.description, p.is_human, p.role,
 		        p.owner_id, o.name AS owner_name,
@@ -176,8 +181,10 @@ func (s *Store) listParticipants(ctx context.Context, roomID string, id, name *s
 		 WHERE p.room_id = $1 AND NOT p.revoked
 		   AND ($3::uuid IS NULL OR p.id = $3)
 		   AND ($4::text IS NULL OR p.name = $4)
+		   AND ($5::uuid IS NULL OR p.id IN
+		        (SELECT participant_id FROM channel_members WHERE channel_id = $5))
 		 ORDER BY p.created_at ASC`,
-		roomID, OnlineWindow.String(), id, name)
+		roomID, OnlineWindow.String(), id, name, channelID)
 	if err != nil {
 		return nil, err
 	}

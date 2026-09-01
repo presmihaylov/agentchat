@@ -52,6 +52,25 @@ func (s *Server) handleJoinChannel(w http.ResponseWriter, r *http.Request, p mod
 	writeJSON(w, http.StatusOK, ch)
 }
 
+// handleListChannelMembers lists a channel's members. Member-gated: who is in
+// a channel (a private one especially) is itself channel content.
+func (s *Server) handleListChannelMembers(w http.ResponseWriter, r *http.Request, p models.Participant) {
+	ch, err := s.resolveChannel(r, p, r.PathValue("id"))
+	if err != nil {
+		writeStoreErr(w, err)
+		return
+	}
+	if !s.requireChannelMember(w, r, p, ch.ID) {
+		return
+	}
+	list, err := s.store.ListChannelMembers(r.Context(), p.RoomID, ch.ID)
+	if err != nil {
+		writeStoreErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"members": list})
+}
+
 type addMemberReq struct {
 	Participant string `json:"participant"`
 }

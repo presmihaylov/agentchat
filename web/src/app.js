@@ -731,6 +731,7 @@ import { createComposer } from './composer.js';
     syncURL(changed); // refreshes replace, real navigation pushes
     $('channel-title').textContent = '# ' + ch.name;
     $('channel-topic').innerHTML = ch.topic ? linkify(ch.topic) : '';
+    refreshHeaderMembers(ch); // header member count, not worth blocking the feed on
     renderChannels();
     const out = await api(`/api/v1/channels/${ch.id}/messages?limit=100`);
     if (!current || current.id !== ch.id) return; // stale response, a newer click won
@@ -986,6 +987,9 @@ import { createComposer } from './composer.js';
     }
     // everything else changes room structure or people — refresh the sidebar
     await refreshRoom();
+    if ((t === 'channel.member_joined' || t === 'channel.member_left') && current) {
+      refreshHeaderMembers(current); // keeps the header count and open modal live
+    }
     // profile changes (avatar, name) must also repaint already-rendered messages
     if (t === 'participant.updated') {
       if (current) await selectChannel(current);
@@ -1087,6 +1091,7 @@ import { createComposer } from './composer.js';
   // the existing APIs and never post the raw "/command" text as a message.
   const SLASH_COMMANDS = [
     { name: 'invite', args: '@participant', hint: 'add someone to this channel' },
+    { name: 'remove', args: '@participant', hint: 'remove someone from this channel (admin)' },
     { name: 'join', args: '#channel', hint: 'join a public channel' },
     { name: 'leave', args: '', hint: 'leave this channel' },
     { name: 'archive', args: '', hint: 'archive the open thread' },
@@ -1152,6 +1157,13 @@ import { createComposer } from './composer.js';
         await api('/api/v1/channels/' + current.id + '/members', { method: 'POST', body: { participant: who } });
         return done('Added ' + who + ' to #' + current.name);
       }
+      if (cmd === 'remove') {
+        if (!current) return fail('No channel selected.');
+        const who = arg.replace(/^@/, '');
+        if (!who) return fail('Usage: /remove @participant');
+        await api('/api/v1/channels/' + current.id + '/members/' + encodeURIComponent(who), { method: 'DELETE' });
+        return done('Removed ' + who + ' from #' + current.name);
+      }
       if (cmd === 'join') {
         const name = arg.replace(/^#/, '');
         if (!name) return fail('Usage: /join channel');
@@ -1192,6 +1204,116 @@ import { createComposer } from './composer.js';
     runSlash(box, ev.target);
   }, true);
 
+
+  // ---------- channel members modal ----------
+  let channelMembers = [];
+
+  const refreshHeaderMembers = async (ch) => {
+    try {
+      const out = await api('/api/v1/channels/' + ch.id + '/members');
+      if (!current || current.id !== ch.id) return;
+      channelMembers = out.members || [];
+      $('members-count').textContent = channelMembers.length;
+      $('members-btn').classList.remove('hidden');
+      if (!$('members-modal').classList.contains('hidden')) renderMembersModal();
+    } catch (e) { $('members-btn').classList.add('hidden'); }
+  };
+
+  const memberRow = (p, action) => {
+    const row = document.createElement('div');
+    row.className = 'mm-row';
+    row.appendChild(avatarEl(p, 'avatar-rb'));
+    const name = document.createElement('span');
+    name.className = 'mm-name';
+    name.textContent = p.name;
+    const dot = document.createElement('span');
+    dot.className = 'mm-dot' + (p.online ? ' on' : '');
+    dot.title = p.online ? 'online' : 'offline';
+    row.append(name, dot);
+    if (p.owner_name) {
+      const ow = document.createElement('span');
+      ow.className = 'mm-owner';
+      ow.textContent = p.owner_name + "'s agent";
+      row.appendChild(ow);
+    }
+    if (action) row.appendChild(action);
+    return row;
+  };
+
+  const renderMembersModal = () => {
+    if (!current) return;
+    $('members-title').textContent = '#' + current.name + ' · ' + channelMembers.length +
+      (channelMembers.length === 1 ? ' member' : ' members');
+    const list = $('members-list');
+    list.innerHTML = '';
+    // removal is admin-only server-side (public and private alike); #general is pinned
+    const canRemove = me.role === 'admin' && current.name !== 'general';
+    const groups = [
+      ['Humans', channelMembers.filter((p) => p.is_human)],
+      ['Agents', channelMembers.filter((p) => !p.is_human)],
+    ];
+    for (const [label, members] of groups) {
+      if (!members.length) continue;
+      const h = document.createElement('div');
+      h.className = 'mm-group';
+      h.textContent = label;
+      list.appendChild(h);
+      for (const p of members) {
+        let btn = null;
+        if (canRemove && p.id !== me.id) {
+          btn = document.createElement('button');
+          btn.className = 'mm-remove';
+          btn.textContent = 'Remove';
+          btn.onclick = async () => {
+            try {
+              await api('/api/v1/channels/' + current.id + '/members/' + p.id, { method: 'DELETE' });
+              await refreshHeaderMembers(current);
+            } catch (e) { alert('Remove failed: ' + e.message); }
+          };
+        }
+        list.appendChild(memberRow(p, btn));
+      }
+    }
+  };
+
+  const renderAddList = () => {
+    const box = $('members-addlist');
+    box.innerHTML = '';
+    const outside = participants.filter((p) => !channelMembers.some((m) => m.id === p.id));
+    if (!outside.length) {
+      box.textContent = 'Everyone in the room is already here.';
+      return;
+    }
+    for (const p of outside) {
+      const btn = document.createElement('button');
+      btn.className = 'mm-add';
+      btn.textContent = 'Add';
+      btn.onclick = async () => {
+        try {
+          await api('/api/v1/channels/' + current.id + '/members', { method: 'POST', body: { participant: p.name } });
+          await refreshHeaderMembers(current);
+          renderAddList();
+        } catch (e) { alert('Add failed: ' + e.message); }
+      };
+      box.appendChild(memberRow(p, btn));
+    }
+  };
+
+  const openMembers = async () => {
+    if (!current) return;
+    await refreshHeaderMembers(current);
+    renderMembersModal();
+    $('members-addlist').classList.add('hidden');
+    $('members-modal').classList.remove('hidden');
+  };
+  const closeMembers = () => $('members-modal').classList.add('hidden');
+  $('members-btn').onclick = openMembers;
+  $('members-close').onclick = closeMembers;
+  $('members-modal').onclick = (ev) => { if (ev.target.id === 'members-modal') closeMembers(); };
+  $('members-invite').onclick = () => { renderAddList(); $('members-addlist').classList.toggle('hidden'); };
+  document.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Escape' && !$('members-modal').classList.contains('hidden')) closeMembers();
+  });
 
   $('thread-close').onclick = closeThread;
 

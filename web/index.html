@@ -64,6 +64,7 @@
       <header id="channel-header">
         <span id="channel-title"></span>
         <span id="channel-topic"></span>
+        <button id="members-btn" class="hidden" title="View members" type="button">👥 <span id="members-count"></span></button>
       </header>
       <div id="messages"></div>
       <form id="composer">
@@ -120,6 +121,20 @@
         <button id="browse-close" title="Close (Esc)">✕</button>
       </div>
       <div id="browse-list"></div>
+    </div>
+  </div>
+
+  <div id="members-modal" class="hidden">
+    <div id="members-card">
+      <div id="members-head">
+        <h3 id="members-title">Members</h3>
+        <button id="members-close" title="Close (Esc)">✕</button>
+      </div>
+      <div id="members-list"></div>
+      <div id="members-foot">
+        <button id="members-invite" type="button">+ Add people</button>
+      </div>
+      <div id="members-addlist" class="hidden"></div>
     </div>
   </div>
 

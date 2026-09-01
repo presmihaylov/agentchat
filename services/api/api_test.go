@@ -1693,3 +1693,48 @@ func TestMembershipSystemEntries(t *testing.T) {
 		t.Fatal("no system message.created event reached alice")
 	}
 }
+
+func TestChannelMembersList(t *testing.T) {
+	srv, _ := newTestServer(t)
+	secret, alice, bob := setupRoom(t, srv.URL)
+	carol := &testClient{t: t, base: srv.URL}
+	out := carol.must("POST", "/api/v1/rooms/join", map[string]any{
+		"invite_code": secret, "name": "carol", "is_human": true,
+	}, 201)
+	carol.token = out["token"].(string)
+
+	alice.must("POST", "/api/v1/channels", map[string]any{"name": "team"}, 201)
+	alice.must("POST", "/api/v1/channels/team/members", map[string]any{"participant": "bob"}, 200)
+
+	// members: the creator plus the added member, in the full participant shape
+	got := bob.must("GET", "/api/v1/channels/team/members", nil, 200)["members"].([]any)
+	names := map[string]bool{}
+	for _, raw := range got {
+		m := raw.(map[string]any)
+		names[m["name"].(string)] = true
+		if _, ok := m["online"]; !ok {
+			t.Fatalf("member row missing online: %v", m)
+		}
+		if _, ok := m["is_human"]; !ok {
+			t.Fatalf("member row missing is_human: %v", m)
+		}
+	}
+	if len(got) != 2 || !names["alice"] || !names["bob"] {
+		t.Fatalf("members = %v", names)
+	}
+
+	// the roster is channel content: a non-member gets 403 even on a public channel
+	if code, _ := carol.do("GET", "/api/v1/channels/team/members", nil); code != 403 {
+		t.Fatalf("non-member GET members = %d, want 403", code)
+	}
+
+	// removal is admin-only (alice is the room's first joiner, so the admin)
+	if code, _ := bob.do("DELETE", "/api/v1/channels/team/members/alice", nil); code != 403 {
+		t.Fatalf("non-admin remove = %d, want 403", code)
+	}
+	alice.must("DELETE", "/api/v1/channels/team/members/bob", nil, 200)
+	got = alice.must("GET", "/api/v1/channels/team/members", nil, 200)["members"].([]any)
+	if len(got) != 1 || got[0].(map[string]any)["name"] != "alice" {
+		t.Fatalf("after remove members = %v", got)
+	}
+}

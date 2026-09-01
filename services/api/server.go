@@ -115,6 +115,7 @@ func (s *Server) routes() {
 	m.HandleFunc("PATCH /api/v1/channels/{id}", s.authed(s.handleUpdateChannel))
 	m.HandleFunc("POST /api/v1/channels/{id}/join", s.authed(s.handleJoinChannel))
 	m.HandleFunc("POST /api/v1/channels/{id}/leave", s.authed(s.handleLeaveChannel))
+	m.HandleFunc("GET /api/v1/channels/{id}/members", s.authed(s.handleListChannelMembers))
 	m.HandleFunc("POST /api/v1/channels/{id}/members", s.authed(s.handleAddChannelMember))
 	m.HandleFunc("DELETE /api/v1/channels/{id}/members/{pid}", s.authed(s.handleRemoveChannelMember))
 	m.HandleFunc("POST /api/v1/channels/{id}/read", s.authed(s.handleMarkRead))
