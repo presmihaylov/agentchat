@@ -167,7 +167,7 @@ func (s *Server) authed(h authedHandler) http.HandlerFunc {
 			return
 		}
 		// any authenticated request counts as activity
-		_ = s.store.TouchPresence(r.Context(), p.ID)
+		_ = s.store.TouchPresence(r.Context(), p.RoomID, p.ID)
 		h(w, r, p)
 	}
 }

@@ -80,6 +80,23 @@ func run() error {
 		}
 	}()
 
+	// passive presence: a participant whose heartbeat stopped goes offline
+	// without any request, so a sweeper announces that transition as an event
+	go func() {
+		ticker := time.NewTicker(15 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if _, err := store.SweepPresence(ctx); err != nil {
+					slog.Error("presence sweep failed", "err", err)
+				}
+			}
+		}
+	}()
+
 	httpServer := &http.Server{
 		Addr:              ":" + port,
 		Handler:           server.Handler(),

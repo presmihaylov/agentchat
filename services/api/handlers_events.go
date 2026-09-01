@@ -133,6 +133,18 @@ func gatedChannel(e models.Event) (string, bool) {
 	return "", false
 }
 
+// isOwnRemoval reports whether the event is this participant's own
+// channel.member_left, which must bypass the membership gate.
+func isOwnRemoval(e models.Event, participantID string) bool {
+	if e.Type != "channel.member_left" {
+		return false
+	}
+	var pl struct {
+		ParticipantID string `json:"participant_id"`
+	}
+	return json.Unmarshal(e.Payload, &pl) == nil && pl.ParticipantID == participantID
+}
+
 func (s *Server) filterEvents(ctx context.Context, events []models.Event, p models.Participant, members, types map[string]bool, relevant bool) ([]models.Event, error) {
 	kept := []models.Event{}
 	// message events whose fate depends on thread participation, keyed by root
@@ -142,8 +154,10 @@ func (s *Server) filterEvents(ctx context.Context, events []models.Event, p mode
 	for _, e := range events {
 		// membership gate first, so it runs on every path including the web UI
 		// firehose (types empty, relevant=false): a non-member of a channel
-		// never receives its messages or its membership events.
-		if chID, gated := gatedChannel(e); gated && !members[chID] {
+		// never receives its messages or its membership events. One exception:
+		// your own removal — by then you are no longer a member, but you must
+		// still learn the channel is gone from under you.
+		if chID, gated := gatedChannel(e); gated && !members[chID] && !isOwnRemoval(e, p.ID) {
 			continue
 		}
 		if len(types) > 0 && !types[e.Type] {

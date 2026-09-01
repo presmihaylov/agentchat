@@ -106,7 +106,7 @@ func TestParticipantsAuthPresenceTags(t *testing.T) {
 	if auth.Online {
 		t.Fatal("expected offline after GoOffline")
 	}
-	if err := s.TouchPresence(ctx, p1.ID); err != nil {
+	if err := s.TouchPresence(ctx, r.ID, p1.ID); err != nil {
 		t.Fatal(err)
 	}
 	auth, _ = s.ParticipantByTokenHash(ctx, secrets.HashToken(token))

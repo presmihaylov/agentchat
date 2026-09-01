@@ -1824,3 +1824,118 @@ func TestChannelPrivacyConversion(t *testing.T) {
 		t.Fatalf("non-member received channel.privacy_changed")
 	}
 }
+
+func eventsAfter(t *testing.T, c *testClient, cursor int64) ([]map[string]any, int64) {
+	t.Helper()
+	out := c.must("GET", fmt.Sprintf("/api/v1/events?after=%d", cursor), nil, 200)
+	evs := []map[string]any{}
+	for _, raw := range out["events"].([]any) {
+		evs = append(evs, raw.(map[string]any))
+	}
+	return evs, int64(out["cursor"].(float64))
+}
+
+func presenceChangesFor(evs []map[string]any, participantID string) []bool {
+	states := []bool{}
+	for _, e := range evs {
+		if e["type"] != "participant.presence_changed" {
+			continue
+		}
+		pl := e["payload"].(map[string]any)
+		if pl["participant_id"] == participantID {
+			states = append(states, pl["online"].(bool))
+		}
+	}
+	return states
+}
+
+func TestPresenceEvents(t *testing.T) {
+	srv, store := newTestServer(t)
+	_, alice, bob := setupRoom(t, srv.URL)
+	ctx := context.Background()
+
+	bobID := bob.must("GET", "/api/v1/me", nil, 200)["id"].(string)
+	cursor := int64(alice.must("GET", "/api/v1/events", nil, 200)["cursor"].(float64))
+
+	// bob's heartbeat stops; the sweeper must announce exactly one offline transition
+	if err := store.BackdateSeen(ctx, bobID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.SweepPresence(ctx); err != nil {
+		t.Fatal(err)
+	}
+	evs, cursor := eventsAfter(t, alice, cursor)
+	if got := presenceChangesFor(evs, bobID); len(got) != 1 || got[0] {
+		t.Fatalf("after sweep want [false], got %v", got)
+	}
+
+	// a second sweep announces nothing: the transition was already announced
+	if _, err := store.SweepPresence(ctx); err != nil {
+		t.Fatal(err)
+	}
+	evs, cursor = eventsAfter(t, alice, cursor)
+	if got := presenceChangesFor(evs, bobID); len(got) != 0 {
+		t.Fatalf("second sweep should be silent, got %v", got)
+	}
+
+	// bob's next authed request announces the online transition
+	bob.must("GET", "/api/v1/me", nil, 200)
+	evs, cursor = eventsAfter(t, alice, cursor)
+	if got := presenceChangesFor(evs, bobID); len(got) != 1 || !got[0] {
+		t.Fatalf("after request want [true], got %v", got)
+	}
+
+	// further requests while already online stay silent
+	bob.must("GET", "/api/v1/me", nil, 200)
+	evs, _ = eventsAfter(t, alice, cursor)
+	if got := presenceChangesFor(evs, bobID); len(got) != 0 {
+		t.Fatalf("repeat request should be silent, got %v", got)
+	}
+
+	// explicit go-offline announces the offline transition
+	bob.must("POST", "/api/v1/me/offline", nil, 200)
+	evs, _ = eventsAfter(t, alice, cursor)
+	if got := presenceChangesFor(evs, bobID); len(got) != 1 || got[0] {
+		t.Fatalf("after go-offline want [false], got %v", got)
+	}
+}
+
+func TestRemovalEventDelivery(t *testing.T) {
+	srv, _ := newTestServer(t)
+	secret, alice, bob := setupRoom(t, srv.URL)
+
+	carol := &testClient{t: t, base: srv.URL}
+	out := carol.must("POST", "/api/v1/rooms/join", map[string]any{
+		"invite_code": secret, "name": "carol", "description": "carol the test agent",
+	}, 201)
+	carol.token = out["token"].(string)
+	bobID := bob.must("GET", "/api/v1/me", nil, 200)["id"].(string)
+
+	alice.must("POST", "/api/v1/channels", map[string]any{"name": "warzone"}, 201)
+	alice.must("POST", "/api/v1/channels/warzone/members", map[string]any{"participant": "bob"}, 200)
+
+	bobCursor := int64(bob.must("GET", "/api/v1/events", nil, 200)["cursor"].(float64))
+	carolCursor := int64(carol.must("GET", "/api/v1/events", nil, 200)["cursor"].(float64))
+
+	alice.must("DELETE", "/api/v1/channels/warzone/members/bob", nil, 200)
+
+	sawLeft := func(evs []map[string]any) bool {
+		for _, e := range evs {
+			if e["type"] == "channel.member_left" && e["payload"].(map[string]any)["participant_id"] == bobID {
+				return true
+			}
+		}
+		return false
+	}
+	// the removed participant must receive their own member_left despite the
+	// membership gate: it is the only signal that the channel vanished for them
+	evs, _ := eventsAfter(t, bob, bobCursor)
+	if !sawLeft(evs) {
+		t.Fatalf("removed participant did not receive their own channel.member_left: %v", evs)
+	}
+	// a never-member stays gated
+	evs, _ = eventsAfter(t, carol, carolCursor)
+	if sawLeft(evs) {
+		t.Fatalf("non-member received channel.member_left")
+	}
+}

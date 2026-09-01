@@ -991,8 +991,15 @@ import { createComposer } from './composer.js';
     }
     // everything else changes room structure or people — refresh the sidebar
     await refreshRoom();
-    if ((t === 'channel.member_joined' || t === 'channel.member_left') && current) {
-      refreshHeaderMembers(current); // keeps the header count and open modal live
+    if ((t === 'channel.member_joined' || t === 'channel.member_left' || t === 'participant.presence_changed') && current) {
+      refreshHeaderMembers(current); // keeps the header count, dots, and open modal live
+    }
+    // my own removal: the channel is gone from my sidebar; leave it if I'm inside
+    if (t === 'channel.member_left' && ev.payload.participant_id === me.id
+        && current && ev.payload.channel_id === current.id) {
+      current = null;
+      await selectChannel(channels.find((c) => c.name === 'general') || channels[0]);
+      return;
     }
     if (t === 'channel.privacy_changed' && current && ev.payload.channel_id === current.id) {
       const ch = channels.find((c) => c.id === current.id);

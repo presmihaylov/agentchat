@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+
+	"github.com/jackc/pgx/v5"
 )
 
 var ErrLastAdmin = errors.New("a room must keep at least one admin")
@@ -28,8 +30,8 @@ func (s *Store) CreateParticipant(ctx context.Context, roomID, name, avatar, des
 	}
 
 	err = tx.QueryRow(ctx,
-		`INSERT INTO participants (room_id, name, avatar, description, is_human, token_hash, owner_id, role)
-		 SELECT $1, $2, $3, $4, $5, $6, $7,
+		`INSERT INTO participants (room_id, name, avatar, description, is_human, token_hash, owner_id, presence_online, role)
+		 SELECT $1, $2, $3, $4, $5, $6, $7, TRUE,
 		        CASE WHEN EXISTS (SELECT 1 FROM participants WHERE room_id = $1 AND NOT revoked)
 		             THEN 'member' ELSE 'admin' END
 		 RETURNING id, room_id, name, avatar, description, is_human, role, owner_id, last_seen_at, created_at`,
@@ -103,7 +105,7 @@ func (s *Store) ReclaimParticipant(ctx context.Context, roomID, name string, tok
 	// room code) drops to member, so an offline admin can't be impersonated into
 	// admin. An existing admin must re-grant the role explicitly.
 	if _, err := tx.Exec(ctx,
-		`UPDATE participants SET token_hash = $2, last_seen_at = now(), owner_id = $3, role = 'member' WHERE id = $1`,
+		`UPDATE participants SET token_hash = $2, last_seen_at = now(), presence_online = TRUE, owner_id = $3, role = 'member' WHERE id = $1`,
 		id, tokenHash, ownerID); err != nil {
 		return p, err
 	}
@@ -380,21 +382,150 @@ func (s *Store) Revoke(ctx context.Context, roomID, id string) error {
 	return tx.Commit(ctx)
 }
 
-// TouchPresence marks the participant as recently seen.
-func (s *Store) TouchPresence(ctx context.Context, id string) error {
-	_, err := s.pool.Exec(ctx,
-		`UPDATE participants SET last_seen_at = now() WHERE id = $1`, id)
-	return err
+// TouchPresence marks the participant as recently seen. Crossing from an
+// announced-offline state emits participant.presence_changed exactly once.
+func (s *Store) TouchPresence(ctx context.Context, roomID, id string) error {
+	// fast path: already announced online, no event to write
+	tag, err := s.pool.Exec(ctx,
+		`UPDATE participants SET last_seen_at = now() WHERE id = $1 AND presence_online`, id)
+	if err != nil || tag.RowsAffected() == 1 {
+		return err
+	}
+
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	if err := lockRoomEvents(ctx, tx, roomID); err != nil {
+		return err
+	}
+	var name string
+	err = tx.QueryRow(ctx,
+		`UPDATE participants SET last_seen_at = now(), presence_online = TRUE
+		 WHERE id = $1 AND NOT presence_online RETURNING name`, id,
+	).Scan(&name)
+	if err != nil {
+		// a concurrent request won the transition; nothing left to announce
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil
+		}
+		return err
+	}
+	payload, _ := json.Marshal(map[string]any{"participant_id": id, "name": name, "online": true})
+	if err := appendEventTx(ctx, tx, roomID, "participant.presence_changed", payload); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
 
 // GoOffline makes the participant immediately count as offline.
 func (s *Store) GoOffline(ctx context.Context, roomID, id string) error {
-	_, err := s.pool.Exec(ctx,
-		`UPDATE participants SET last_seen_at = now() - interval '1 day' WHERE id = $1`, id)
+	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return err
 	}
-	return s.AppendEvent(ctx, roomID, "participant.offline", map[string]string{"participant_id": id})
+	defer tx.Rollback(ctx)
+	if err := lockRoomEvents(ctx, tx, roomID); err != nil {
+		return err
+	}
+	var name string
+	err = tx.QueryRow(ctx,
+		`UPDATE participants SET last_seen_at = now() - interval '1 day', presence_online = FALSE
+		 WHERE id = $1 RETURNING name`, id,
+	).Scan(&name)
+	if err != nil {
+		return mapRowErr(err)
+	}
+	payload, _ := json.Marshal(map[string]any{"participant_id": id, "name": name, "online": false})
+	if err := appendEventTx(ctx, tx, roomID, "participant.presence_changed", payload); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+// BackdateSeen is a test hook: ages last_seen_at past the online window without
+// touching the announced presence flag, so a sweep sees a stale-online row.
+func (s *Store) BackdateSeen(ctx context.Context, id string) error {
+	_, err := s.pool.Exec(ctx,
+		`UPDATE participants SET last_seen_at = now() - interval '1 day' WHERE id = $1`, id)
+	return err
+}
+
+// SweepPresence announces the online->offline transition for participants whose
+// heartbeat stopped: still flagged online but last seen outside the window.
+// Meant to run on a ticker. Returns how many transitions it announced.
+func (s *Store) SweepPresence(ctx context.Context) (int, error) {
+	rows, err := s.pool.Query(ctx,
+		`SELECT DISTINCT room_id FROM participants
+		 WHERE presence_online AND last_seen_at < now() - $1::interval`,
+		OnlineWindow.String())
+	if err != nil {
+		return 0, err
+	}
+	roomIDs := []string{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return 0, err
+		}
+		roomIDs = append(roomIDs, id)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return 0, err
+	}
+
+	total := 0
+	for _, roomID := range roomIDs {
+		n, err := s.sweepRoomPresence(ctx, roomID)
+		if err != nil {
+			return total, err
+		}
+		total += n
+	}
+	return total, nil
+}
+
+func (s *Store) sweepRoomPresence(ctx context.Context, roomID string) (int, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback(ctx)
+	if err := lockRoomEvents(ctx, tx, roomID); err != nil {
+		return 0, err
+	}
+	rows, err := tx.Query(ctx,
+		`UPDATE participants SET presence_online = FALSE
+		 WHERE room_id = $1 AND presence_online AND last_seen_at < now() - $2::interval
+		 RETURNING id, name`,
+		roomID, OnlineWindow.String())
+	if err != nil {
+		return 0, err
+	}
+	type gone struct{ id, name string }
+	dropped := []gone{}
+	for rows.Next() {
+		var g gone
+		if err := rows.Scan(&g.id, &g.name); err != nil {
+			rows.Close()
+			return 0, err
+		}
+		dropped = append(dropped, g)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return 0, err
+	}
+	for _, g := range dropped {
+		payload, _ := json.Marshal(map[string]any{"participant_id": g.id, "name": g.name, "online": false})
+		if err := appendEventTx(ctx, tx, roomID, "participant.presence_changed", payload); err != nil {
+			return 0, err
+		}
+	}
+	return len(dropped), tx.Commit(ctx)
 }
 
 func (s *Store) AddTag(ctx context.Context, roomID, participantID, tag, taggedBy string) error {
