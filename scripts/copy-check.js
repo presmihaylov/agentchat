@@ -6,7 +6,7 @@
 // headless browser's real clipboard, which is unreliable.
 // Run: NODE_PATH=<dir with puppeteer-core> node scripts/copy-check.js
 const puppeteer = require('puppeteer-core');
-const SERVER = 'http://localhost:8090';
+const SERVER = process.env.SERVER || 'http://localhost:8095';
 
 async function api(path, opts = {}) {
   const resp = await fetch(SERVER + path, {

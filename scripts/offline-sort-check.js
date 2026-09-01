@@ -47,11 +47,6 @@ async function api(path, opts = {}) {
   await page.reload({ waitUntil: 'networkidle2' });
   await page.waitForSelector('#participant-list li', { timeout: 6000 });
 
-  // reveal offline participants (the global offline toggle at the bottom).
-  await page.evaluate(() => {
-    const t = [...document.querySelectorAll('#participant-list li.offline-toggle')][0];
-    if (t) t.click();
-  });
   // expand H's agent list (click the human row's chevron/toggle).
   await page.waitForFunction((name) => {
     return [...document.querySelectorAll('#participant-list li')].some((li) => (li.querySelector('.pname') || {}).textContent === name);
@@ -60,6 +55,11 @@ async function api(path, opts = {}) {
     const li = [...document.querySelectorAll('#participant-list li')].find((x) => (x.querySelector('.pname') || {}).textContent === name);
     (li.querySelector('.p-toggle') || li).click(); // the chevron expands; the row itself opens a profile
   }, 'boss');
+  // the offline marker now nests INSIDE the expanded tree; offline agents hide behind it.
+  await page.waitForSelector('#participant-list li.offline-toggle.participant-leaf', { timeout: 4000 });
+  await page.evaluate(() => {
+    document.querySelector('#participant-list li.offline-toggle.participant-leaf').click();
+  });
 
   // read the rendered order of H's four owned agents (nested rows, in DOM order).
   await page.waitForFunction(() => {
@@ -67,9 +67,21 @@ async function api(path, opts = {}) {
     return ['on-alpha', 'off-bravo', 'on-charlie', 'off-delta'].every((n) => names.includes(n));
   }, { timeout: 4000 });
 
+  // include the divider row so we can assert offline agents render BELOW it.
   const rows = await page.$$eval('#participant-list li', (lis) => lis
-    .filter((li) => li.querySelector('.pname'))
-    .map((li) => ({ name: li.querySelector('.pname').textContent, offline: li.classList.contains('offline') })));
+    .filter((li) => li.querySelector('.pname') || li.classList.contains('offline-toggle'))
+    .map((li) => ({
+      name: li.querySelector('.pname') ? li.querySelector('.pname').textContent : '<offline-divider>',
+      offline: li.classList.contains('offline'),
+      divider: li.classList.contains('offline-toggle'),
+    })));
+  const dividerIdx = rows.findIndex((r) => r.divider);
+  if (dividerIdx === -1) throw new Error('no offline divider row rendered');
+  rows.forEach((r, i) => {
+    if (r.divider || !['on-alpha', 'off-bravo', 'on-charlie', 'off-delta'].includes(r.name)) return;
+    if (r.offline && i < dividerIdx) throw new Error('offline agent above the divider: ' + r.name);
+    if (!r.offline && i > dividerIdx) throw new Error('online agent below the divider: ' + r.name);
+  });
 
   // isolate the four owned agents in render order.
   const agentNames = ['on-alpha', 'off-bravo', 'on-charlie', 'off-delta'];

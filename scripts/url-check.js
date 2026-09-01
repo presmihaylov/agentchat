@@ -1,7 +1,7 @@
 // E2E: channel + thread persist in the URL (deep links, refresh, back/forward).
 // Run: NODE_PATH=<dir with puppeteer-core> node scripts/url-check.js
 const puppeteer = require('puppeteer-core');
-const SERVER = 'http://localhost:8090';
+const SERVER = process.env.SERVER || 'http://localhost:8095';
 
 async function api(path, opts = {}) {
   const resp = await fetch(SERVER + path, {

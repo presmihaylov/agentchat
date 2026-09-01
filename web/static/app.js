@@ -509,7 +509,9 @@
     });
   };
 
-  let showOffline = false;
+  // per-section offline reveal: keys are a human's id, 'unowned', or 'root'.
+  // in-memory only — collapses back on reload by design.
+  const offlineOpen = new Set();
 
   const showProfile = (p) => {
     const slot = $('profile-avatar');
@@ -584,17 +586,39 @@
     const humans = participants.filter((p) => p.is_human);
     const agents = participants.filter((p) => !p.is_human);
     const ownerOf = (a) => (a.owner_id && humans.find((h) => h.id === a.owner_id)) ? a.owner_id : null;
-    const vis = (p) => p.online || showOffline;
-    // within an expanded parent, online agents come first; offline sink below.
-    // stable sort preserves each group's existing order.
-    const onlineFirst = (list) => [...list].sort((a, b) => (b.online ? 1 : 0) - (a.online ? 1 : 0));
-    const offlineTotal = participants.filter((p) => !p.online).length;
     const expanded = expandedSet();
 
-    humans.forEach((h) => {
-      const kids = onlineFirst(agents.filter((a) => ownerOf(a) === h.id && vis(a)));
-      // show a human if it is visible itself, or it has a visible owned agent
-      if (!vis(h) && kids.length === 0) return;
+    // "▸ offline (n)" divider row inside the tree: offline rows render BELOW it,
+    // and only when its section is toggled open. leaf=true indents it to agent depth.
+    const offlineDivider = (key, count, leaf) => {
+      const t = document.createElement('li');
+      t.className = 'offline-toggle' + (leaf ? ' participant-leaf' : '');
+      t.textContent = `${offlineOpen.has(key) ? '▾' : '▸'} offline (${count})`;
+      t.onclick = () => {
+        offlineOpen.has(key) ? offlineOpen.delete(key) : offlineOpen.add(key);
+        renderParticipants();
+      };
+      ul.appendChild(t);
+    };
+
+    // renders a parent's kid list: online kids, then the offline divider,
+    // then (if open) the offline kids beneath it.
+    const renderKids = (key, kids) => {
+      const on = kids.filter((a) => a.online);
+      const off = kids.filter((a) => !a.online);
+      on.forEach((a) => ul.appendChild(participantLi(a, true)));
+      if (off.length === 0) return;
+      offlineDivider(key, off.length, true);
+      if (offlineOpen.has(key)) off.forEach((a) => ul.appendChild(participantLi(a, true)));
+    };
+
+    // an offline human with an online agent stays above the root divider so the
+    // agent's presence is never hidden; fully-offline humans sink below it.
+    const sunk = (h, kids) => !h.online && !kids.some((a) => a.online);
+    const kidsOf = (h) => agents.filter((a) => ownerOf(a) === h.id);
+
+    const renderHuman = (h) => {
+      const kids = kidsOf(h);
       const hasKids = kids.length > 0;
       const collapsed = hasKids && !expanded.has(h.id);
       const rollup = collapsed && kids.some((a) => a.online); // hidden child's green dot, surfaced
@@ -602,24 +626,24 @@
         hasKids, collapsed, kidCount: kids.length, rollup,
         onToggle: hasKids ? () => toggleHuman(h.id) : null,
       }));
-      if (!collapsed) kids.forEach((a) => ul.appendChild(participantLi(a, true)));
-    });
+      if (!collapsed) renderKids(h.id, kids);
+    };
 
-    const ownerless = onlineFirst(agents.filter((a) => ownerOf(a) === null && vis(a)));
+    humans.filter((h) => !sunk(h, kidsOf(h))).forEach(renderHuman);
+
+    const ownerless = agents.filter((a) => ownerOf(a) === null);
     if (ownerless.length > 0) {
-      const h = document.createElement('li');
-      h.className = 'group-label';
-      h.textContent = 'unowned agents';
-      ul.appendChild(h);
-      ownerless.forEach((a) => ul.appendChild(participantLi(a, true)));
+      const g = document.createElement('li');
+      g.className = 'group-label';
+      g.textContent = 'unowned agents';
+      ul.appendChild(g);
+      renderKids('unowned', ownerless);
     }
 
-    if (offlineTotal === 0) return;
-    const t = document.createElement('li');
-    t.className = 'offline-toggle';
-    t.textContent = `${showOffline ? '▾' : '▸'} offline (${offlineTotal})`;
-    t.onclick = () => { showOffline = !showOffline; renderParticipants(); };
-    ul.appendChild(t);
+    const sunkHumans = humans.filter((h) => sunk(h, kidsOf(h)));
+    if (sunkHumans.length === 0) return;
+    offlineDivider('root', sunkHumans.length, false);
+    if (offlineOpen.has('root')) sunkHumans.forEach(renderHuman);
   };
 
   const setTitle = () => {

@@ -48,6 +48,18 @@ const mint = (tok) => api('/api/v1/invites', { method: 'POST', token: tok }).the
   await page.waitForSelector('#chat-view:not(.hidden)', { timeout: 5000 });
   await page.waitForSelector('#participant-list li.participant-leaf', { timeout: 8000 });
 
+  // humans collapse their agents by default; expand maya and dana via the chevron.
+  for (const name of ['maya', 'dana']) {
+    await page.evaluate((n) => {
+      const li = [...document.querySelectorAll('#participant-list li')].find((x) => (x.querySelector('.pname') || {}).textContent === n);
+      if (li) (li.querySelector('.p-toggle') || li).click();
+    }, name);
+  }
+  await page.waitForFunction(() => {
+    const names = [...document.querySelectorAll('#participant-list li .pname')].map((e) => e.textContent);
+    return ['mayabot1', 'mayabot2', 'danabot'].every((n) => names.includes(n));
+  }, { timeout: 4000 });
+
   // walk the flat <li> list into parent -> [children] using the leaf class
   const rows = await page.evaluate(() => {
     const out = []; let cur = null;

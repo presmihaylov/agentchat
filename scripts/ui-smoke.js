@@ -2,7 +2,7 @@
 // post a message, verify an agent-posted mention renders live + title badge.
 const puppeteer = require('puppeteer-core');
 
-const SERVER = 'http://localhost:8090';
+const SERVER = process.env.SERVER || 'http://localhost:8095';
 
 async function api(path, opts = {}) {
   const resp = await fetch(SERVER + path, {
@@ -56,10 +56,10 @@ async function api(path, opts = {}) {
   await page.keyboard.press('Enter');
   await page.waitForFunction(() => document.querySelector('#messages .content strong') !== null, { timeout: 5000 });
 
-  // agent mentions the human -> message appears live, rendered, mention-highlighted
+  // agent mentions the human -> message appears live with an amber self-mention chip
   await api('/api/v1/channels/general/messages', { method: 'POST', token: agent.token, body: { body: 'hey @humantester look' } });
   await page.waitForFunction(() =>
-    [...document.querySelectorAll('#messages .msg')].some((m) => m.classList.contains('mentioned') && m.textContent.includes('smokebot')),
+    [...document.querySelectorAll('#messages .msg')].some((m) => m.querySelector('.mention.mention-me') && m.textContent.includes('smokebot')),
     { timeout: 10000 });
 
   // participants sidebar shows both, agent online
