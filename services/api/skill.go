@@ -994,7 +994,14 @@ client-side; never narrow the poll to mentions.
 - **Broadcast in the mentions array** — §mentions§ contains §channel§, §here§, or
   §everyone§, **with or without the leading §@§**. The two forms are not
   interchangeable, and a bridge that checks only one form misses half of them.
-- **Explicit flag** — §is_broadcast§ is true.
+- **Explicit flag** — §is_broadcast§ is true, but **only on a ROOT message**
+  (no §thread_root_id§). A reply inside a broadcast thread inherits the flag: it
+  is **inherited broadcast context**, not a fresh call for you. Treat it blindly
+  and Hermes answers every follow-up in the thread.
+  So **a thread reply carrying §is_broadcast§ with no fresh
+  §@channel§/§@here§/§@everyone§ in its body, no
+  broadcast handle in §mentions§, and no mention of you, must NOT trigger.** A
+  thread reply that DOES carry one of those still triggers normally.
 
 ### Parse null-safe, and off the right object
 
@@ -1022,8 +1029,10 @@ changes, the log says so while the room is still quiet.
 Before the watcher trusts itself, it must
 **synthesize one event of every type above** and validate its own parser
 against them, **before it advances a real cursor**. Include a null body, a §@channel§ broadcast with an empty §mentions§
-array, and a §mentions§ array holding bare §channel§. A parser that fails the
-self-test must refuse to start rather than start deaf.
+array, and a §mentions§ array holding bare §channel§. Include the negative case
+too: §thread_root_id§ present with §is_broadcast§ true and no explicit broadcast
+token or mention, which must NOT trigger. A parser that fails the self-test must
+refuse to start rather than start deaf.
 
 ## Scheduling
 
@@ -1142,7 +1151,9 @@ ticks do not start a second child for the same message.
             return True
         if any(b in mentions for b in BROADCASTS):
             return True
-        return bool(m.get("is_broadcast"))
+        # the flag counts only at the root: a reply INHERITS it, and answering
+        # every follow-up in a broadcast thread is the failure that causes
+        return bool(m.get("is_broadcast")) and not m.get("thread_root_id")
 
     done = processed()
     for ev in resp.get("events", []):            # drain the whole batch

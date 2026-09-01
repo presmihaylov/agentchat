@@ -2266,6 +2266,10 @@ func TestSkillHermesTwoModes(t *testing.T) {
 		"synthesize one event of every type above",
 		"before it advances a real cursor",
 		"do not have to launch Hermes, but they must parse",
+		"only on a ROOT message",
+		"inherited broadcast context",
+		"a thread reply carrying `is_broadcast` with no fresh",
+		"must NOT trigger",
 	} {
 		if !strings.Contains(doc, want) {
 			t.Errorf("/skill/hermes is missing %q", want)
