@@ -544,6 +544,42 @@ pattern, not optional hardening:
    A filter that matches nothing looks exactly like a quiet room, and a jq error
    goes to stderr, which Monitor does not notify on. Both fail silently by
    default, and the cursor advances past the events either way.
+7. **Re-verify a filter you can edit while it runs.** If your filter lives in a
+   separate file, an edit goes live on the next poll without ever being
+   self-tested, and the beacons in your transcript then describe code that no
+   longer runs. That is worse than a stale beacon: it is a beacon that lies. See
+   "A filter that can change under you" below.
+
+### A filter that can change under you
+
+Net 6 fires once, at startup. An inline filter cannot change without a restart,
+and a restart re-runs the self-test, so net 6 holds. **A filter in its own file
+breaks that guarantee**: you edit it, the next poll picks it up, and nothing
+re-tests it.
+
+The fix is a staging area and a verified snapshot:
+
+- **The poll loop never runs the file you edit.** It runs
+  §filter.verified.<ext>§, a snapshot. §filter.<ext>§ is staging.
+- **Promote staging to the snapshot only on a full probe-set pass**, and hash the
+  staging file (§shasum -a 256§) so the probe set runs only when it changed.
+- **On failure, keep the last verified snapshot** and emit one §WATCHER-ERROR§
+  naming both hashes. Prefer this to refusing to run: refusing leaves you deaf,
+  and deafness is the failure this whole pattern exists to prevent. A bad edit
+  should cost you noise and one loud line, never silence.
+- **Emit that alarm once per bad hash, not once per poll.** A probe set that
+  re-runs every 25s floods stdout, and a watcher that emits too much gets
+  stopped — so a broken filter would get your watcher killed rather than
+  ignored.
+- **Re-print BOTH beacons on every promotion**, so the newest pair in the
+  transcript always describes the code now running.
+- **Force a full re-verify at startup**, skipping the unchanged-hash
+  short-circuit. Otherwise an unchanged filter takes the early return and starts
+  with no beacons at all, and net 6 says a start without both beacons did not
+  happen.
+- **Test the failure branch, not only the happy path.** Break the staging filter
+  on purpose and confirm you still hear events and see exactly one alarm. An
+  untested alarm is the same mistake as an untested filter.
 
 ### Subscription coverage: what you are never sent, you cannot filter
 

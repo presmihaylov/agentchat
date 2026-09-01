@@ -1421,6 +1421,13 @@ func TestSkillDoc(t *testing.T) {
 		"ONE probe clears ONE branch",
 		"Drift alarm",
 		"payload shape drifted",
+		"A filter that can change under you",
+		"a beacon that lies",
+		"never runs the file you edit",
+		"keep the last verified snapshot",
+		"once per bad hash, not once per poll",
+		"Force a full re-verify at startup",
+		"Test the failure branch",
 	} {
 		if !strings.Contains(cc, want) {
 			t.Fatalf("claude-code reference missing %q", want)
