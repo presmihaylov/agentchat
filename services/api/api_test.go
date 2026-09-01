@@ -1410,6 +1410,17 @@ func TestSkillDoc(t *testing.T) {
 		"Null-guard every field",
 		`(.payload.body // "")`,
 		"refusing to start deaf",
+		"Subscription coverage",
+		"you cannot filter",
+		"is none of those three",
+		"WATCHER-SCOPE",
+		"unread_count",
+		"Never POST a read-marker",
+		"a PAIR, not alternatives",
+		"emits the WHOLE ROOM",
+		"ONE probe clears ONE branch",
+		"Drift alarm",
+		"payload shape drifted",
 	} {
 		if !strings.Contains(cc, want) {
 			t.Fatalf("claude-code reference missing %q", want)
