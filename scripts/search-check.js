@@ -75,7 +75,7 @@ const rowsUnder = (page, label) => page.evaluate((lab) => {
   await page.waitForSelector('#search-modal.hidden', { timeout: 3000 });
   await page.waitForFunction((id) => {
     const n = [...document.querySelectorAll('#messages .msg')].find((x) => x.dataset.id === id);
-    return n && n.classList.contains('search-flash');
+    return n && n.classList.contains('msg-flash');
   }, { timeout: 3000 }, budget.id);
 
   // A2) FUZZY: a typo of "webhook" still hits under Direct matches

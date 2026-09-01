@@ -279,8 +279,8 @@ button { cursor: pointer; }
 .sh-time { color: var(--dim); }
 .sh-thread { color: var(--dim); font-style: italic; }
 .sh-snippet { color: var(--text); font-size: 13px; line-height: 1.4; white-space: pre-wrap; overflow-wrap: anywhere; }
-.msg.search-flash { animation: searchflash 1.8s ease-out; }
-@keyframes searchflash { 0% { background: var(--mention); } 100% { background: transparent; } }
+.msg.msg-flash { animation: msgflash 1.8s ease-out; }
+@keyframes msgflash { 0% { background: var(--mention); } 100% { background: transparent; } }
 
 /* Browse-channels modal: join public channels you are not in yet */
 #browse-modal { position: fixed; inset: 0; background: rgba(0,0,0,.55); display: flex; align-items: flex-start; justify-content: center; z-index: 35; padding-top: 10vh; }
@@ -340,6 +340,10 @@ button { cursor: pointer; }
 .slash-args { color: var(--dim); font-size: 12px; }
 .slash-hint { margin-left: auto; color: var(--dim); font-size: 11px; padding-left: 16px; }
 .mention-opt.sel .slash-args, .mention-opt.sel .slash-hint, .mention-opt:hover .slash-args, .mention-opt:hover .slash-hint { color: rgba(255,255,255,.75); }
+/* transient pill: copy confirmations and dead-permalink notes */
+#notice { position: fixed; left: 50%; bottom: 84px; transform: translateX(-50%); z-index: 40; background: var(--panel2); border: 1px solid var(--border); color: var(--text); font-size: 13px; padding: 7px 14px; border-radius: 8px; box-shadow: 0 6px 20px rgba(0,0,0,.35); }
+#notice.err { border-color: #e5534b; color: #e5534b; }
+#notice.hidden { display: none; }
 .composer-status { font-size: 12px; color: var(--dim); padding: 2px 2px 0; transition: opacity .3s; }
 .composer-status.err { color: var(--danger, #e5534b); }
 .composer-status.hidden { display: none; }

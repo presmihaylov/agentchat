@@ -196,6 +196,7 @@ import { createComposer } from './composer.js';
       el.className = 'msg system-entry';
       el.dataset.id = m.id;
       el.innerHTML = `<span class="sys-text"><span class="sys-name">${esc(m.author_name)}</span> ${esc(m.body)}</span><span class="sys-time">${fmtTime(m.created_at)}</span>`;
+      attachMsgMenu(el, m);
       return el;
     }
     const el = document.createElement('div');
@@ -284,25 +285,66 @@ import { createComposer } from './composer.js';
       if (act === 'edit') editMessage(m);
       if (act === 'delete') deleteMessage(m);
     });
+    attachMsgMenu(el, m);
+    return el;
+  };
+
+  // /r/<room>/c/<channel>/t/<thread>/m/<id> — the thread segment only when the
+  // message lives in one, so the link opens the same view the copier saw.
+  const permalinkFor = (m) => {
+    const ch = channels.find((c) => c.id === m.channel_id) || current;
+    let path = '/r/' + encodeURIComponent(room.slug);
+    if (ch) path += '/c/' + encodeURIComponent(ch.name);
+    if (m.thread_root_id) path += '/t/' + encodeURIComponent(m.thread_root_id);
+    return location.origin + path + '/m/' + encodeURIComponent(m.id);
+  };
+
+  const attachMsgMenu = (el, m) => {
     el.oncontextmenu = (ev) => {
       // right-clicks inside rendered markdown still get the message menu, but
       // text selection keeps the native menu
       if (String(window.getSelection())) return;
       ev.preventDefault();
-      const root = m.thread_root_id || m.id;
-      const th = threads.find((x) => x.root_id === root);
-      const subscribed = !!(th && th.subscribed);
-      openContextMenu(ev.clientX, ev.clientY, [{
-        label: subscribed ? 'Unsubscribe' : 'Subscribe',
+      const items = [{
+        label: 'Copy link to message',
         run: async () => {
-          try {
-            await api(`/api/v1/threads/${root}/subscribe`, { method: 'POST', body: { subscribed: !subscribed } });
-            loadThreads();
-          } catch (e) { alert(e.message); }
+          const ok = await copyText(permalinkFor(m));
+          notice(ok ? 'Link copied' : 'Copy failed', !ok);
         },
-      }]);
+      }];
+      if (m.kind !== 'system') {
+        const root = m.thread_root_id || m.id;
+        const th = threads.find((x) => x.root_id === root);
+        const subscribed = !!(th && th.subscribed);
+        items.push({
+          label: subscribed ? 'Unsubscribe' : 'Subscribe',
+          run: async () => {
+            try {
+              await api(`/api/v1/threads/${root}/subscribe`, { method: 'POST', body: { subscribed: !subscribed } });
+              loadThreads();
+            } catch (e) { alert(e.message); }
+          },
+        });
+      }
+      openContextMenu(ev.clientX, ev.clientY, items);
     };
-    return el;
+  };
+
+  // small transient pill at the bottom of the message area: copy confirmations
+  // and "this permalink went nowhere" notes, neither of which deserve a dialog
+  let noticeTimer = 0;
+  const notice = (text, isErr) => {
+    let el = document.getElementById('notice');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'notice';
+      document.body.appendChild(el);
+    }
+    el.textContent = text;
+    el.classList.toggle('err', !!isErr);
+    el.classList.remove('hidden');
+    clearTimeout(noticeTimer);
+    noticeTimer = setTimeout(() => el.classList.add('hidden'), 2600);
   };
 
   // A single themed context menu, reused for every right-click target. items is
@@ -725,6 +767,9 @@ import { createComposer } from './composer.js';
     const segs = location.pathname.split('/').filter(Boolean);
     const chName = segs[2] === 'c' ? decodeURIComponent(segs[3] || '') : '';
     const rootID = segs[4] === 't' ? decodeURIComponent(segs[5] || '') : '';
+    // a permalink ends in /m/<id>, with or without the thread segment
+    const msgID = segs[4] === 'm' ? decodeURIComponent(segs[5] || '')
+      : (segs[6] === 'm' ? decodeURIComponent(segs[7] || '') : '');
     const ch = channels.find((c) => c.name === chName)
       || channels.find((c) => c.name === 'general') || channels[0];
     if (ch && (!current || current.id !== ch.id)) {
@@ -734,9 +779,28 @@ import { createComposer } from './composer.js';
     if (rootID) {
       try { await openThread(rootID, true); }
       catch (e) { if (seq === navSeq) closeThread(false); }
+      if (seq === navSeq && msgID) await revealPermalink(msgID, !!rootID);
       return;
     }
     if (seq === navSeq && openThreadRoot) closeThread(false);
+    if (seq === navSeq && msgID) await revealPermalink(msgID, false);
+  };
+
+  // A permalink can point at a deleted message, or one in a channel you cannot
+  // read. Say so and keep the channel view rather than failing the navigation.
+  const revealPermalink = async (msgID, inThread) => {
+    if (await revealMessage(msgID, inThread)) return;
+    try {
+      const m = await api('/api/v1/messages/' + msgID);
+      // it exists but did not render here: follow it to its own thread
+      if (!inThread && m.thread_root_id) {
+        try {
+          await openThread(m.thread_root_id, true);
+          if (await revealMessage(msgID, true)) return;
+        } catch (e) { /* thread gone too */ }
+      }
+      notice('Message unavailable', true);
+    } catch (e) { notice('Message unavailable', true); }
   };
 
   window.addEventListener('popstate', () => { if (me) applyURL(); });
@@ -784,6 +848,42 @@ import { createComposer } from './composer.js';
     box.scrollTop = box.scrollHeight;
     markRead(ch);
     loadThreads();
+  };
+
+  // Pull one page of history above what is rendered, keeping the reader's
+  // anchor still. Returns false at the top of the channel.
+  const prependOlderPage = async () => {
+    const box = $('messages');
+    const anchor = box.querySelector('.msg');
+    if (!anchor || !current) return false;
+    const out = await api(`/api/v1/channels/${current.id}/messages?limit=100&before_id=${anchor.dataset.id}`);
+    const older = out.messages || [];
+    if (!older.length) return false;
+    const wasAt = anchor.getBoundingClientRect().top;
+    const frag = document.createDocumentFragment();
+    older.forEach((m) => frag.appendChild(msgEl(m, false)));
+    box.insertBefore(frag, box.firstChild);
+    box.scrollTop += anchor.getBoundingClientRect().top - wasAt;
+    return true;
+  };
+
+  // Scroll a message into view and flash it. A permalink to an old message can
+  // point above the loaded window, so page back until it shows up. Threads load
+  // whole, so only the channel feed paginates.
+  const REVEAL_MAX_PAGES = 20;
+  const revealMessage = async (id, inThread) => {
+    const container = inThread ? $('thread-messages') : $('messages');
+    const find = () => [...container.querySelectorAll('.msg')].find((n) => n.dataset.id === id);
+    let node = find();
+    for (let i = 0; !node && !inThread && i < REVEAL_MAX_PAGES; i++) {
+      if (!(await prependOlderPage())) break;
+      node = find();
+    }
+    if (!node) return false;
+    node.scrollIntoView({ block: 'center' });
+    node.classList.add('msg-flash');
+    setTimeout(() => node.classList.remove('msg-flash'), 1800);
+    return true;
   };
 
   let threads = [];
@@ -1561,13 +1661,7 @@ import { createComposer } from './composer.js';
     const ch = channels.find((c) => c.id === r.channel_id);
     if (ch && (!current || current.id !== ch.id)) await selectChannel(ch);
     if (r.thread_root_id) { try { await openThread(r.thread_root_id); } catch (e) { /* thread gone */ } }
-    const container = r.thread_root_id ? $('thread-messages') : $('messages');
-    const node = [...container.querySelectorAll('.msg')].find((n) => n.dataset.id === r.id);
-    if (node) {
-      node.scrollIntoView({ block: 'center' });
-      node.classList.add('search-flash');
-      setTimeout(() => node.classList.remove('search-flash'), 1800);
-    }
+    await revealMessage(r.id, !!r.thread_root_id);
   };
 
   // show the platform-correct shortcut in the search field's hint chip

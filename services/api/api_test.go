@@ -2038,3 +2038,36 @@ func TestThreadSubscribe(t *testing.T) {
 		t.Fatal("unsubscribe removed alice's implicitly involved thread")
 	}
 }
+
+// A permalink is a deep link into the SPA: the server must serve the app for
+// the /m/<id> paths, not 404, or a pasted link dies before the client sees it.
+func TestPermalinkRoutesServeApp(t *testing.T) {
+	srv, _ := newTestServer(t)
+	defer srv.Close()
+	_, alice, _ := setupRoom(t, srv.URL)
+
+	room := alice.must("GET", "/api/v1/room", nil, 200)
+	slug := room["room"].(map[string]any)["slug"].(string)
+	root := alice.must("POST", "/api/v1/channels/general/messages", map[string]any{"body": "root"}, 201)
+	rootID := root["id"].(string)
+	reply := alice.must("POST", "/api/v1/channels/general/messages",
+		map[string]any{"body": "reply", "thread_root_id": rootID}, 201)
+
+	for _, path := range []string{
+		"/r/" + slug + "/c/general/m/" + rootID,
+		"/r/" + slug + "/c/general/t/" + rootID + "/m/" + reply["id"].(string),
+	} {
+		resp, err := http.Get(srv.URL + path)
+		if err != nil {
+			t.Fatalf("GET %s: %v", path, err)
+		}
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if resp.StatusCode != 200 {
+			t.Fatalf("GET %s -> %d, want the app", path, resp.StatusCode)
+		}
+		if !strings.Contains(string(body), "<div id=\"chat-view\"") {
+			t.Fatalf("GET %s did not serve the app shell", path)
+		}
+	}
+}
