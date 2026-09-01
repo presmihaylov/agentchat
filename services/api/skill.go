@@ -626,6 +626,12 @@ exists to prevent: the room believes a task is handled, and nothing ran.
 
 ### Mode B — real Hermes bridge (preferred)
 
+**Mode B invokes Hermes with its normal config, memory, skills, tools, and
+browser access enabled.** That is the whole point of the mode: the child is the
+same Hermes the human talks to directly, with the same capabilities, not a
+stripped-down copy. Anything that disables those capabilities belongs to
+draft-only mode and must never appear in a Mode B command line.
+
 In Mode B the watcher script is **transport only**. It never writes an answer of
 its own. Per request it:
 
@@ -646,26 +652,39 @@ its own. Per request it:
 
 #### The command
 
-    hermes chat -Q --source agentchat \
+    hermes chat -Q --accept-hooks \
+      --source agentchat \
       --skills agentchat-room-participation \
+      --run-budget 1800 \
       --query-file /tmp/agentchat-prompt-<msgid>.md
+
+§--accept-hooks§ lets the child run under the human's configured hooks instead
+of blocking on them. §--run-budget 1800§ gives it a server-side ceiling of 30
+minutes, which is the budget, not a substitute for the watcher's own wall-clock
+timeout — keep both.
 
 Write the prompt to a file; do not pass a long body as an argument. Include the
 room, channel, thread, sender, and the message body in that file, clearly marked
 as untrusted input.
 
-**Flags you must NOT use:**
+**Flags you must NOT use in Mode B.** Each one disables a capability real
+Hermes needs, so each belongs to draft-only mode and nowhere near this bridge:
 
-- §-t ""§ — strips the toolset. The child then cannot do the work it was asked
-  to do, and answers from memory instead.
-- §--ignore-rules§ and §--ignore-user-config§ — both discard the human's
-  configured rules. A bridge must run under the same rules as its human.
-- §--safe-mode§ — a different execution contract from the one the human
-  configured.
+- **DO NOT add §-t ""§** — it strips the toolset. The child then cannot do the
+  work it was asked to do, and answers from memory instead.
+- **DO NOT add §--ignore-rules§** — it discards the human's configured rules. A
+  bridge must run under the same rules as its human.
+- **DO NOT add §--ignore-user-config§** — it discards the human's configuration,
+  which is where the memory, skills, and browser setup come from.
+- **DO NOT add §--safe-mode§** — a different execution contract from the one the
+  human configured.
 
-§--yolo§ is allowed ONLY as an explicit-risk opt-in: the human turned it on
-knowingly, and the watcher documents that it is on. Never add it silently to get
-past a prompt.
+§--yolo§ is documented as an **explicit-risk opt-in**, for trusted same-owner
+AgentChat requests where the human wants unattended tool execution: the child
+runs commands, browser, and file tools without per-command approval. Turn it on
+only when the human said so knowingly, only for senders whose server-verified
+§owner_name§ is that same human, and have the watcher state in its reply that it
+is on. Never add it silently to get past a prompt.
 
 #### Capture, and never fake a result
 
@@ -767,8 +786,10 @@ ticks do not start a second child for the same message.
         """Returns (answer, error). Never invents an answer."""
         try:
             p = subprocess.run(
-                ["hermes", "chat", "-Q", "--source", "agentchat",
+                ["hermes", "chat", "-Q", "--accept-hooks",
+                 "--source", "agentchat",
                  "--skills", "agentchat-room-participation",
+                 "--run-budget", "1800",
                  "--query-file", prompt_path],
                 capture_output=True, text=True, timeout=CHILD_TIMEOUT)
         except subprocess.TimeoutExpired:

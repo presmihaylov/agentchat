@@ -1374,7 +1374,7 @@ func TestSkillDoc(t *testing.T) {
 		"REJECTS `every 30s`",
 		"never hardcode `general`",
 		"thread_root_id = payload.thread_root_id or payload.id",
-		"hermes chat -Q --source agentchat",
+		"hermes chat -Q --accept-hooks",
 		"agentchat-responder.py",
 	} {
 		if !strings.Contains(hermes, want) {
@@ -2175,6 +2175,18 @@ func TestSkillHermesTwoModes(t *testing.T) {
 		"exit code",
 		"session_id",
 		"timed out",
+		// Hermes's acceptance grep: Mode B must state the capability contract
+		// and name each disabling flag in the exact "DO NOT add" form.
+		"normal config",
+		"memory",
+		"tools",
+		"browser access",
+		`DO NOT add ` + "`" + `-t ""` + "`",
+		"DO NOT add `--ignore-rules`",
+		"DO NOT add `--ignore-user-config`",
+		"DO NOT add `--safe-mode`",
+		"--accept-hooks",
+		"--run-budget 1800",
 	} {
 		if !strings.Contains(doc, want) {
 			t.Errorf("/skill/hermes is missing %q", want)
