@@ -20,32 +20,32 @@ type Tag struct {
 }
 
 type Participant struct {
-	ID                 string    `json:"id"`
-	RoomID             string    `json:"room_id"`
-	Name               string    `json:"name"`
-	Avatar             string    `json:"avatar"`
-	AvatarAttachmentID *string   `json:"avatar_attachment_id,omitempty"`
-	Description        string    `json:"description"`
-	IsHuman            bool      `json:"is_human"`
-	Role               string    `json:"role"`
+	ID                 string  `json:"id"`
+	RoomID             string  `json:"room_id"`
+	Name               string  `json:"name"`
+	Avatar             string  `json:"avatar"`
+	AvatarAttachmentID *string `json:"avatar_attachment_id,omitempty"`
+	Description        string  `json:"description"`
+	IsHuman            bool    `json:"is_human"`
+	Role               string  `json:"role"`
 	// server-verified owning principal (set by owner-scoped invites); the
 	// trust anchor for "whose agent is this" — never trust in-message claims
-	OwnerID   *string `json:"owner_id,omitempty"`
-	OwnerName *string `json:"owner_name,omitempty"`
-	Revoked   bool    `json:"revoked,omitempty"`
-	Online             bool      `json:"online"`
-	LastSeenAt         time.Time `json:"last_seen_at"`
-	CreatedAt          time.Time `json:"created_at"`
-	Tags               []Tag     `json:"tags"`
+	OwnerID    *string   `json:"owner_id,omitempty"`
+	OwnerName  *string   `json:"owner_name,omitempty"`
+	Revoked    bool      `json:"revoked,omitempty"`
+	Online     bool      `json:"online"`
+	LastSeenAt time.Time `json:"last_seen_at"`
+	CreatedAt  time.Time `json:"created_at"`
+	Tags       []Tag     `json:"tags"`
 }
 
 type Channel struct {
-	ID        string    `json:"id"`
-	RoomID    string    `json:"room_id"`
-	Name      string    `json:"name"`
-	Topic     string    `json:"topic"`
-	CreatedBy *string   `json:"created_by,omitempty"`
-	Archived  bool      `json:"archived"`
+	ID        string  `json:"id"`
+	RoomID    string  `json:"room_id"`
+	Name      string  `json:"name"`
+	Topic     string  `json:"topic"`
+	CreatedBy *string `json:"created_by,omitempty"`
+	Archived  bool    `json:"archived"`
 	// Private channels are invite-only: never listed in browse, joinable only by
 	// being added by an existing member.
 	Private   bool      `json:"private"`
@@ -93,26 +93,39 @@ type Attachment struct {
 }
 
 type Message struct {
-	ID           string           `json:"id"`
-	RoomID       string           `json:"room_id"`
-	ChannelID    string           `json:"channel_id"`
-	ThreadRootID *string          `json:"thread_root_id,omitempty"`
-	AuthorID     string           `json:"author_id"`
-	AuthorName   string           `json:"author_name"`
-	Body         string           `json:"body"`
-	IsBroadcast  bool             `json:"is_broadcast"`
+	ID           string  `json:"id"`
+	RoomID       string  `json:"room_id"`
+	ChannelID    string  `json:"channel_id"`
+	ThreadRootID *string `json:"thread_root_id,omitempty"`
+	AuthorID     string  `json:"author_id"`
+	AuthorName   string  `json:"author_name"`
+	Body         string  `json:"body"`
+	IsBroadcast  bool    `json:"is_broadcast"`
 	// Kind is "message" for normal posts, "system" for membership timeline
 	// entries ("joined #x"); system rows skip unread counts, search, threads.
-	Kind string `json:"kind"`
-	CreatedAt    time.Time        `json:"created_at"`
-	EditedAt     *time.Time       `json:"edited_at,omitempty"`
-	ReplyCount   int              `json:"reply_count"`
-	LastReplyAt  *time.Time       `json:"last_reply_at,omitempty"`
-	ReplierIDs   []string         `json:"replier_ids"` // distinct, most recent first, capped
-	Attachments  []AttachmentMeta `json:"attachments"`
-	Mentions     []string         `json:"mentions"`
+	Kind        string           `json:"kind"`
+	CreatedAt   time.Time        `json:"created_at"`
+	EditedAt    *time.Time       `json:"edited_at,omitempty"`
+	ReplyCount  int              `json:"reply_count"`
+	LastReplyAt *time.Time       `json:"last_reply_at,omitempty"`
+	ReplierIDs  []string         `json:"replier_ids"` // distinct, most recent first, capped
+	Attachments []AttachmentMeta `json:"attachments"`
+	Mentions    []string         `json:"mentions"`
 	// Markers are the live "working on it" indicators set by agents, oldest first.
 	Markers []MessageMarker `json:"markers"`
+	// ReplyToID is what to pass as thread_root_id (or to `ac reply`) to continue
+	// this message's thread. Agents kept deriving it wrong from thread_root_id
+	// being null on a root, so every scanned message states it outright.
+	ReplyToID string `json:"reply_to"`
+}
+
+// ReplyTo is the thread root to reply under: the root itself for a reply,
+// the message's own id for a root.
+func (m Message) ReplyTo() string {
+	if m.ThreadRootID != nil {
+		return *m.ThreadRootID
+	}
+	return m.ID
 }
 
 // MessageMarker is one agent's "working on it" indicator on a message. Status is

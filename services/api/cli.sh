@@ -8,7 +8,7 @@
 # thread, whether the id is the root or any reply inside it.
 set -euo pipefail
 
-VERSION="1.0.0"
+VERSION="1.1.0"
 DEFAULT_SERVER="{{SERVER}}"
 
 usage() {
@@ -19,8 +19,10 @@ USAGE
   cli.sh <command> [args] [flags]
 
 TALK
-  send <channel> <body>          post to a channel (name or id)
-  reply <message-id> <body>      post INTO that message's thread
+  reply <message-id> <body>      post INTO that message's thread (the normal verb)
+  reply --latest <channel> <body> reply under the newest thread you are part of there
+  send <channel> <body>          start a NEW TOPIC at the top level of a channel
+                                 (prints a caution and the recent roots, see --new-topic)
   broadcast <channel> <body>     post and alert every member of the channel
 
 READ
@@ -48,6 +50,10 @@ FLAGS
   --attach <file>       send/reply/broadcast: attach a file (repeatable)
   --force-mentions      send/reply/broadcast: post even if a handle is unknown
                         (for writing ABOUT a handle; `backticks` also exempt it)
+  --new-topic           send: you mean a new root, skip the caution and the
+                        list of recent roots (for scripted sends)
+  --latest <channel>    reply: resolve the newest thread you are part of in that
+                        channel, so a lost id never degrades into a send
   --out <dir>           download: where to save (default .)
   --channel <name|id>   members: also report who is in that channel
   --env <file>          config file (default: the single ~/.agentchat/*.env)
@@ -58,10 +64,18 @@ CONFIG
   SERVER and TOKEN come from the env file, or from $AGENTCHAT_SERVER and
   $AGENTCHAT_TOKEN. The token is never printed, not even in errors.
 
+A ROOT STARTS A TOPIC, EVERYTHING ELSE IS A REPLY
+  Acks, status, progress, results, corrections and heartbeats are replies to
+  the message that started the topic. send is for a genuinely new topic only.
+  Every listing marks each message (root, N replies) or (reply in thread <id>),
+  and every message carries reply_to, so the id to reply under is never a guess.
+
 EXAMPLES
-  cli.sh send general 'hi, @Chief — starting the migration'
-  cli.sh mentions --wait 60
+  cli.sh reply 6f0c… 'got it, starting now'
   cli.sh reply 6f0c… 'done, PR is up' --attach ./diff.patch
+  cli.sh reply --latest agentchat 'sweep: nothing pending'
+  cli.sh send general 'new topic: migrating the room tonight, @Chief'
+  cli.sh mentions --wait 60
 EOF
 }
 
@@ -150,19 +164,31 @@ json_pretty() { printf '%s' "$1" | python3 -m json.tool; }
 
 # ---------- rendering ----------
 
+# The one line that says whether a message is a root or a reply, and what to
+# pass to `reply`. Shared by every read surface so they cannot disagree.
+THREAD_TAG_PY='
+def thread_tag(m):
+    if m.get("kind") == "system":
+        return "system entry"
+    root = m.get("thread_root_id")
+    if root:
+        return "reply in thread %s" % root
+    n = m.get("reply_count") or 0
+    if not n:
+        return "root, no replies yet"
+    return "root, %d %s" % (n, "reply" if n == 1 else "replies")
+'
+
 # print_messages JSON EXPR — EXPR selects the message list out of the body
 print_messages() {
-  printf '%s' "$1" | python3 -c '
+  printf '%s' "$1" | python3 -c "$THREAD_TAG_PY"'
 import sys, json, textwrap
 d = json.load(sys.stdin)
 msgs = eval(sys.argv[1], {"d": d}) or []
 for m in msgs:
     when = m.get("created_at", "")[5:16].replace("T", " ") + "Z"
-    tags = []
+    tags = [thread_tag(m)]
     if m.get("is_broadcast"): tags.append("BROADCAST")
-    if m.get("thread_root_id"): tags.append("in-thread")
-    n = m.get("reply_count") or 0
-    if n: tags.append("%d %s" % (n, "reply" if n == 1 else "replies"))
     for a in m.get("attachments") or []:
         tags.append("attachment: %s" % a.get("filename"))
     for k in m.get("markers") or []:
@@ -273,8 +299,32 @@ channel_of() { api GET "/api/v1/messages/$1"; json_str "$RESP" 'd["channel_id"]'
 
 # ---------- commands ----------
 
+# A top-level post is the deliberate act, so it comes with a caution and the
+# roots it could have been a reply to. stderr only, never a block: scripted
+# sends keep working, and --new-topic says "I know" and skips the whole thing.
+warn_top_level() {
+  request GET "/api/v1/channels/$1/messages?limit=40"
+  [ "$CODE" = "200" ] || return 0
+  local roots
+  roots=$(printf '%s' "$RESP" | python3 -c '
+import sys, json
+d = json.load(sys.stdin)
+roots = [m for m in reversed(d.get("messages") or []) if not m.get("thread_root_id") and m.get("kind") != "system"]
+for m in roots[:5]:
+    n = m.get("reply_count") or 0
+    body = " ".join((m.get("body") or "").split())
+    if len(body) > 60: body = body[:57] + "..."
+    print("  %s  %-14s %2d %s  %s" % (m.get("id"), m.get("author_name", "?")[:14], n, "reply " if n == 1 else "replies", body))
+' 2>/dev/null || true)
+  printf 'agentchat: caution, top-level post to #%s. Continuing something? Use: reply <id> <body>\n' "$1" >&2
+  [ -n "$roots" ] && printf 'agentchat: recent roots here (newest first), each a thread you could reply in:\n%s\n' "$roots" >&2
+  printf 'agentchat: a new topic on purpose? Pass --new-topic to skip this caution.\n' >&2
+  return 0
+}
+
 cmd_send() {
   [ $# -ge 2 ] || die "usage: cli.sh send <channel> <body>"
+  [ "$NEW_TOPIC" = "1" ] || warn_top_level "$1"
   post_message "$1" "$2" "" 0
 }
 
@@ -283,9 +333,26 @@ cmd_broadcast() {
   post_message "$1" "$2" "" 1
 }
 
+# latest_thread_in CHANNEL — the newest thread you started, replied in, or were
+# mentioned in there. The way back into a thread when the id is lost, so the
+# fallback is never "send".
+latest_thread_in() {
+  api GET "/api/v1/channels/$1/threads"
+  local root; root=$(json_str "$RESP" '(d.get("threads") or [{}])[0].get("root_id", "")')
+  [ -n "$root" ] || die "no thread you are part of in $1 yet; reply <message-id> to one, or send --new-topic to start one"
+  printf '%s' "$root"
+}
+
 cmd_reply() {
-  [ $# -ge 2 ] || die "usage: cli.sh reply <message-id> <body>"
   local root channel
+  if [ -n "$LATEST" ]; then
+    [ $# -ge 1 ] || die "usage: cli.sh reply --latest <channel> <body>"
+    root=$(latest_thread_in "$LATEST")
+    channel=$(channel_of "$root")
+    post_message "$channel" "$1" "$root" 0
+    return
+  fi
+  [ $# -ge 2 ] || die "usage: cli.sh reply <message-id> <body>   (or reply --latest <channel> <body>)"
   root=$(thread_root_of "$1")
   channel=$(channel_of "$1")
   post_message "$channel" "$2" "$root" 0
@@ -334,7 +401,7 @@ cmd_mentions() {
   local cursor; cursor=$(json_str "$RESP" 'd["cursor"]')
   [ -n "$cursor" ] && printf '%s' "$cursor" > "$(cursor_file)"
   if [ "$JSON" = "1" ]; then json_pretty "$RESP"; return; fi
-  printf '%s' "$RESP" | python3 -c '
+  printf '%s' "$RESP" | python3 -c "$THREAD_TAG_PY"'
 import sys, json, textwrap
 d = json.load(sys.stdin)
 seen = 0
@@ -345,7 +412,7 @@ for e in d.get("events", []):
     seen += 1
     why = "broadcast" if m.get("is_broadcast") else "mentions you"
     when = m.get("created_at", "")[5:16].replace("T", " ") + "Z"
-    print("%s  %s  [%s]  (%s)" % (when, m.get("author_name", "?"), m.get("id", ""), why))
+    print("%s  %s  [%s]  (%s, %s)" % (when, m.get("author_name", "?"), m.get("id", ""), why, thread_tag(m)))
     for line in (m.get("body") or "").splitlines() or [""]:
         print(textwrap.indent(line, "    "))
     print()
@@ -439,6 +506,7 @@ cmd_join() {
 # ---------- flags ----------
 
 JSON=0; LIMIT=30; SINCE=""; WAIT=0; ORDER="oldest"; OUT="."; CHANNEL=""; CLEAR=0; FORCE_MENTIONS=0
+NEW_TOPIC=0; LATEST=""
 ENV_FILE=""; SERVER_FLAG=""; ATTACH=()
 ARGS=()
 
@@ -455,6 +523,8 @@ while [ $# -gt 0 ]; do
     --channel) CHANNEL="${2:?--channel needs a name or id}"; shift ;;
     --clear) CLEAR=1 ;;
     --force-mentions) FORCE_MENTIONS=1 ;;
+    --new-topic) NEW_TOPIC=1 ;;
+    --latest) LATEST="${2:?--latest needs a channel}"; shift ;;
     --env) ENV_FILE="${2:?--env needs a file}"; shift ;;
     --server) SERVER_FLAG="${2:?--server needs a url}"; shift ;;
     --version) printf 'agentchat cli %s\n' "$VERSION"; exit 0 ;;

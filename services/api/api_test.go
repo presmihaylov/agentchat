@@ -2350,3 +2350,74 @@ func TestListOwnMarkers(t *testing.T) {
 		t.Fatalf("after clear, markers = %v", got)
 	}
 }
+
+// Every read surface states the id to reply under, so no agent derives it from
+// a null thread_root_id and lands its answer at the top level.
+func TestReplyToOnEveryReadSurface(t *testing.T) {
+	srv, _ := newTestServer(t)
+	_, alice, bob := setupRoom(t, srv.URL)
+
+	cur := alice.must("GET", "/api/v1/events", nil, 200)
+	cursor := int64(cur["cursor"].(float64))
+
+	root := alice.must("POST", "/api/v1/channels/general/messages", map[string]any{"body": "reply_to root"}, 201)
+	rootID := root["id"].(string)
+	if root["reply_to"] != rootID {
+		t.Fatalf("POST root: reply_to = %v, want own id %s", root["reply_to"], rootID)
+	}
+	reply := bob.must("POST", "/api/v1/channels/general/messages", map[string]any{"body": "reply_to child", "thread_root_id": rootID}, 201)
+	replyID := reply["id"].(string)
+	if reply["reply_to"] != rootID {
+		t.Fatalf("POST reply: reply_to = %v, want root %s", reply["reply_to"], rootID)
+	}
+
+	one := alice.must("GET", "/api/v1/messages/"+replyID, nil, 200)
+	if one["reply_to"] != rootID {
+		t.Fatalf("GET message: reply_to = %v, want %s", one["reply_to"], rootID)
+	}
+
+	list := alice.must("GET", "/api/v1/channels/general/messages", nil, 200)
+	for _, raw := range list["messages"].([]any) {
+		m := raw.(map[string]any)
+		if m["id"] == rootID && m["reply_to"] != rootID {
+			t.Fatalf("channel list root: reply_to = %v", m["reply_to"])
+		}
+	}
+
+	thread := alice.must("GET", "/api/v1/threads/"+rootID, nil, 200)
+	for _, raw := range thread["messages"].([]any) {
+		m := raw.(map[string]any)
+		if m["reply_to"] != rootID {
+			t.Fatalf("thread message %v: reply_to = %v, want %s", m["id"], m["reply_to"], rootID)
+		}
+	}
+
+	evs := alice.must("GET", fmt.Sprintf("/api/v1/events?after=%d&wait=0", cursor), nil, 200)
+	seen := map[string]string{}
+	for _, raw := range evs["events"].([]any) {
+		ev := raw.(map[string]any)
+		if ev["type"] != "message.created" {
+			continue
+		}
+		p := ev["payload"].(map[string]any)
+		seen[p["id"].(string)], _ = p["reply_to"].(string)
+	}
+	if seen[rootID] != rootID || seen[replyID] != rootID {
+		t.Fatalf("event payloads: reply_to root=%q reply=%q, want both %s", seen[rootID], seen[replyID], rootID)
+	}
+
+	res := alice.must("GET", "/api/v1/search?q=reply_to", nil, 200)
+	hits := res["results"].([]any)
+	if len(hits) == 0 {
+		t.Fatal("search found nothing")
+	}
+	for _, raw := range hits {
+		m := raw.(map[string]any)
+		if m["reply_to"] != rootID {
+			t.Fatalf("search hit %v: reply_to = %v, want %s", m["id"], m["reply_to"], rootID)
+		}
+		if _, ok := m["score"]; !ok {
+			t.Fatalf("search hit lost its score: %v", m)
+		}
+	}
+}

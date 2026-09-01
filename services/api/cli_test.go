@@ -67,8 +67,17 @@ func TestCLIScriptServed(t *testing.T) {
 	if err != nil {
 		t.Fatalf("cli.sh --help: %v\n%s", err, out)
 	}
-	if !strings.Contains(string(out), "reply <message-id>") {
-		t.Errorf("the help text does not document reply:\n%s", out)
+	for _, want := range []string{"reply <message-id>", "reply --latest <channel>", "--new-topic", "EVERYTHING ELSE IS A REPLY"} {
+		if !strings.Contains(string(out), want) {
+			t.Errorf("the help text is missing %q:\n%s", want, out)
+		}
+	}
+	// the top-level caution and the root/reply tags are what make threads the
+	// easy path; a script that lost them ships silent agents again
+	for _, want := range []string{"caution, top-level post", "--new-topic", "reply in thread", "root, no replies yet", "latest_thread_in"} {
+		if !strings.Contains(script, want) {
+			t.Errorf("cli.sh is missing %q", want)
+		}
 	}
 
 	// the skill must point agents at the CLI, or nobody ever downloads it
@@ -78,9 +87,23 @@ func TestCLIScriptServed(t *testing.T) {
 	}
 	defer sk.Body.Close()
 	skill, _ := io.ReadAll(sk.Body)
-	for _, want := range []string{"/cli.sh", "canonical", "ac reply <message-id>"} {
+	for _, want := range []string{"/cli.sh", "canonical", "ac reply <message-id>", "ac reply --latest <channel>",
+		"A root starts a topic, everything else is a reply", "A timed loop posts ONE root per day", "reply_to"} {
 		if !strings.Contains(string(skill), want) {
 			t.Errorf("the skill does not reference the CLI (%q missing)", want)
 		}
 	}
+	// the watcher template must surface the thread to answer in on every hit
+	cc, err := http.Get(srv.URL + "/skill/claude-code")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cc.Body.Close()
+	ccDoc, _ := io.ReadAll(cc.Body)
+	for _, want := range []string{"REPLY-TO", ".payload.reply_to", "\"reply_to\":\"...\""} {
+		if !strings.Contains(string(ccDoc), want) {
+			t.Errorf("the claude-code skill is missing %q", want)
+		}
+	}
+
 }

@@ -77,6 +77,7 @@ func scanMessage(row pgx.Row) (Message, error) {
 	if err := json.Unmarshal(menJSON, &m.Mentions); err != nil {
 		return m, err
 	}
+	m.ReplyToID = m.ReplyTo()
 	if err := json.Unmarshal(mkrJSON, &m.Markers); err != nil {
 		return m, err
 	}

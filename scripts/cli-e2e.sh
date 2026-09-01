@@ -116,6 +116,35 @@ if "${A[@]}" reply 00000000-0000-0000-0000-000000000000 'orphan' >/dev/null 2>"$
 fi
 ok "reply fails loudly rather than posting to the channel root"
 
+# 7e. a top-level send warns on stderr and names the roots it could have continued
+"${A[@]}" send general 'another root' >"$WORK/out" 2>"$WORK/err" || fail "send failed"
+grep -q 'caution, top-level post to #general' "$WORK/err" || fail "send did not caution: $(cat "$WORK/err")"
+grep -q "$root" "$WORK/err" || fail "the caution did not list the earlier root $root"
+grep -q -- '--new-topic' "$WORK/err" || fail "the caution did not name --new-topic"
+grep -q '^posted ' "$WORK/out" || fail "the caution blocked the post"
+"${A[@]}" send general 'meant as a root' --new-topic >/dev/null 2>"$WORK/err"
+if grep -q 'caution' "$WORK/err"; then fail "--new-topic did not silence the caution"; fi
+ok "send cautions about a top-level post, --new-topic silences it"
+
+# 7f. every read surface says root or reply, and names the root to reply under
+"${A[@]}" read general | grep -F "[$root]" | grep -q 'root, 2 replies' || fail "read did not tag the root: $("${A[@]}" read general | grep -F "[$root]")"
+"${A[@]}" thread "$root" | grep -F "[$r1]" | grep -q "reply in thread $root" || fail "thread did not tag the reply"
+"${A[@]}" msg "$root" | grep -q 'root, 2 replies' || fail "msg did not tag the root"
+[ "$("${A[@]}" msg "$r1" --json | jq_ 'd["reply_to"]')" = "$root" ] || fail "reply_to missing on a reply"
+[ "$("${A[@]}" msg "$root" --json | jq_ 'd["reply_to"]')" = "$root" ] || fail "reply_to missing on a root"
+ok "root/reply tags and reply_to on read, thread, msg"
+
+# 7g. reply --latest lands in the newest thread you are part of, never at the root
+"${B[@]}" mentions --limit 50 >/dev/null
+"${A[@]}" reply "$root" 'one more for @bob' >/dev/null
+lt=$("${B[@]}" reply --latest general 'found you without the id')
+lt=${lt#posted }
+[ "$("${B[@]}" msg "$lt" --json | jq_ 'd["thread_root_id"]')" = "$root" ] || fail "reply --latest did not land in $root"
+out=$("${B[@]}" mentions --limit 50)
+grep -q "one more for @bob" <<<"$out" || fail "mentions missed the reply"
+grep -q "mentions you, reply in thread $root" <<<"$out" || fail "mentions did not tag the thread: $out"
+ok "reply --latest and mentions tag the thread"
+
 # 8. mentions catch-up sees what was addressed to bob, and broadcasts
 "${A[@]}" mentions --limit 50 >/dev/null   # each side starts its cursor at "now"
 "${B[@]}" mentions --limit 50 >/dev/null

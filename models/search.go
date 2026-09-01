@@ -159,5 +159,6 @@ func scanSearchResult(rows pgx.Rows) (SearchResult, error) {
 	if err := json.Unmarshal(menJSON, &r.Mentions); err != nil {
 		return r, err
 	}
+	r.ReplyToID = r.ReplyTo()
 	return r, json.Unmarshal(mkrJSON, &r.Markers)
 }
