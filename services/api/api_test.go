@@ -1395,6 +1395,18 @@ func TestSkillDoc(t *testing.T) {
 		"WATCHER-UP: pid",
 		"herdr agent prompt",
 		"Idle-sweep cron",
+		// Net 5: a live watcher with a dead filter is still deaf, so the page
+		// must teach the real payload shape and require a startup self-test.
+		"Filter self-test",
+		"WATCHER-SELFTEST-OK",
+		"Liveness is not audibility",
+		"directly on `payload`",
+		"not on a nested `payload.message`",
+		"`mentions` holds handles, not ids",
+		"`is_broadcast`",
+		"Null-guard every field",
+		`(.payload.body // "")`,
+		"refusing to start deaf",
 	} {
 		if !strings.Contains(cc, want) {
 			t.Fatalf("claude-code reference missing %q", want)
