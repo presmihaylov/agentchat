@@ -1,7 +1,7 @@
 /* Tiptap WYSIWYG composer. The wire format stays markdown: the editor
    serializes to markdown on send and parses markdown on restore, so agents
    and the feed renderer see exactly what the old textarea produced. */
-import { Editor, Extension } from '@tiptap/core';
+import { Editor, Extension, InputRule } from '@tiptap/core';
 import StarterKit from '@tiptap/starter-kit';
 import HardBreak from '@tiptap/extension-hard-break';
 import { Markdown } from '@tiptap/markdown';
@@ -211,6 +211,35 @@ export const createComposer = ({ mount, id, placeholder, onSubmit, getMentionOpt
     },
   });
 
+  // StarterKit's list input rules only fire when the marker starts the whole
+  // paragraph, so after Shift-Enter they never fire: the line begins after a
+  // hard break. Tiptap renders that break as "\n" in the text it matches, but
+  // the break must stay OUT of match[0]: Tiptap re-checks the match against the
+  // document with textBetween, where a hard break is the empty string, so a
+  // match that includes it never verifies. A lookbehind keeps it out. Then drop
+  // the break, split the paragraph there, and wrap the new block in the list.
+  const listAfterBreak = (find, toggle) => new InputRule({
+    find,
+    handler: ({ range, chain }) => {
+      chain().deleteRange({ from: range.from - 1, to: range.to }).splitBlock()[toggle]().run();
+    },
+  });
+
+  const ListAfterBreak = Extension.create({
+    name: 'listAfterBreak',
+    addInputRules() {
+      return [
+        listAfterBreak(/(?<=\n)[-+*] $/, 'toggleBulletList'),
+        listAfterBreak(/(?<=\n)\d+[.)] $/, 'toggleOrderedList'),
+      ];
+    },
+  });
+
+  const inList = ($from) => {
+    for (let d = $from.depth; d > 0; d -= 1) if ($from.node(d).type.name === 'listItem') return true;
+    return false;
+  };
+
   editor = new Editor({
     element: mount,
     contentType: 'markdown',
@@ -223,6 +252,7 @@ export const createComposer = ({ mount, id, placeholder, onSubmit, getMentionOpt
       Markdown.configure({ markedOptions: { breaks: true } }),
       Placeholder.configure({ placeholder }),
       ComposerKeys,
+      ListAfterBreak,
     ],
     editorProps: {
       handleKeyDown: (view, ev) => {
@@ -234,6 +264,9 @@ export const createComposer = ({ mount, id, placeholder, onSubmit, getMentionOpt
         if (ev.shiftKey) return false; // hard break
         // Enter makes a newline inside a code block; ⌘Enter still sends
         if (view.state.selection.$from.parent.type.name === 'codeBlock') return false;
+        // in a list, Enter makes the next item; an empty item lifts out of the
+        // list, so a second Enter sends as usual
+        if (inList(view.state.selection.$from)) return false;
         onSubmit();
         return true;
       },

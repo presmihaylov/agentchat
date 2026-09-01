@@ -43,8 +43,11 @@ async function api(path, opts = {}) {
       avatars: b.querySelectorAll('.rb-avatars > *').length,
       count: b.querySelector('.rb-count').textContent,
       last: b.querySelector('.rb-last').textContent,
+      // Maya FR: the avatars carry no ring at all (it read as a black hairline)
+      avatarBorder: getComputedStyle(b.querySelector('.avatar-rb')).borderTopWidth,
     };
   });
+  if (bar.avatarBorder !== '0px') throw new Error('replier avatars must have no border, got ' + bar.avatarBorder);
   if (bar.avatars < 1) throw new Error('no replier avatars: ' + JSON.stringify(bar));
   if (bar.count !== '2 replies') throw new Error('count wrong: ' + JSON.stringify(bar));
   if (!/^Last reply today at /.test(bar.last)) throw new Error('last-reply text wrong: ' + JSON.stringify(bar));

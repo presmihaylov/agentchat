@@ -2,6 +2,8 @@
   --bg: #1a1d21; --panel: #222529; --panel2: #2b2e33; --border: #3a3d42;
   --text: #d1d2d3; --dim: #9a9b9c; --accent: #4a9eda; --mention: #3d3222;
   --broadcast: #402b2b; --online: #2bac76;
+  /* selection fill: translucent so the row reads as a highlight, not a slab */
+  --accent-soft: rgba(74, 158, 218, .45);
 }
 * { box-sizing: border-box; }
 body { margin: 0; font: 15px/1.45 -apple-system, "Segoe UI", Helvetica, sans-serif; background: var(--bg); color: var(--text); height: 100vh; }
@@ -52,7 +54,9 @@ button { cursor: pointer; }
 #sidebar ul { list-style: none; margin: 0; padding: 0; }
 #sidebar li { padding: 4px 10px; border-radius: 6px; cursor: pointer; display: flex; align-items: center; gap: 6px; font-size: 14px; overflow: hidden; white-space: nowrap; }
 #sidebar li:hover { background: var(--panel2); }
-#sidebar li.active { background: var(--accent); color: #fff; }
+/* translucent, so the selection reads as a highlight over the panel rather than
+   a solid slab; white text still clears AA against the blended colour */
+#sidebar li.active { background: var(--accent-soft); color: #fff; }
 #sidebar li .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--dim); flex: none; opacity: .4; }
 #sidebar li .dot.online { background: var(--online); opacity: 1; }
 #sidebar li .tags { color: var(--dim); font-size: 11px; overflow: hidden; text-overflow: ellipsis; }
@@ -105,7 +109,8 @@ button { cursor: pointer; }
 .unread-divider::before, .unread-divider::after { content: ''; flex: 1; border-top: 1px solid #e0666b55; }
 .unread-divider span { flex: none; }
 /* Thread leaves nest under their parent channel: indented, with a branch guide. */
-#channel-list li.thread-leaf { margin-left: 16px; padding-left: 12px; border-left: 1px solid var(--border); border-radius: 0 6px 6px 0; font-size: 13px; }
+/* fully rounded, so a selected leaf reads as the same pill as a channel row */
+#channel-list li.thread-leaf { margin-left: 16px; padding-left: 12px; border-left: 1px solid var(--border); border-radius: 6px; font-size: 13px; }
 #channel-list li.thread-leaf .t-icon { flex: none; font-size: 11px; opacity: .8; }
 #channel-list li.thread-leaf .t-snippet { overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1; color: var(--dim); }
 #channel-list li.thread-leaf.unread .t-snippet { color: #fff; }
@@ -258,9 +263,10 @@ button { cursor: pointer; }
 .msg-actions button:hover { color: var(--text); }
 .reply-bar { display: flex; align-items: center; gap: 7px; margin-top: 4px; max-width: 420px; font-size: 12px; cursor: pointer; background: none; border: 1px solid transparent; border-radius: 8px; padding: 3px 8px; text-align: left; }
 .reply-bar:hover { border-color: var(--border); background: var(--panel2); }
-.rb-avatars { display: flex; flex: none; }
-.avatar-rb { width: 20px; height: 20px; border-radius: 5px; font-size: 12px; flex: none; margin-right: -5px; border: 1px solid var(--panel); }
-.rb-avatars > :last-child { margin-right: 5px; }
+/* No ring: it read as a black hairline on any message whose background is not
+   --panel. Without it the avatars cannot overlap, so they sit side by side. */
+.rb-avatars { display: flex; flex: none; gap: 3px; margin-right: 2px; }
+.avatar-rb { width: 20px; height: 20px; border-radius: 5px; font-size: 12px; flex: none; }
 .rb-count { color: var(--accent); font-weight: 600; flex: none; }
 .rb-last { color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .reply-bar.unread .rb-count { color: #fff; background: var(--accent); border-radius: 8px; padding: 0 7px; }

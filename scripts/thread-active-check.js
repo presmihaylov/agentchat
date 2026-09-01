@@ -22,7 +22,8 @@ const leaves = (page) => page.evaluate(() => {
   const lis = [...document.querySelectorAll('#channel-list li.thread-leaf')];
   return lis.map((li) => {
     const bg = getComputedStyle(li).backgroundColor;
-    return { snippet: (li.querySelector('.t-snippet') || {}).textContent || '', active: li.classList.contains('active'), bg };
+    const cs = getComputedStyle(li);
+    return { snippet: (li.querySelector('.t-snippet') || {}).textContent || '', active: li.classList.contains('active'), bg, radius: cs.borderRadius };
   });
 });
 const clickLeaf = (page, snippetPrefix) => page.evaluate((pre) => {
@@ -77,6 +78,11 @@ const isAccent = (bg) => {
   if (!alpha.active) throw new Error('alpha leaf should be active: ' + JSON.stringify(ls));
   if (bravo.active) throw new Error('bravo leaf should stay inactive: ' + JSON.stringify(ls));
   if (!isAccent(alpha.bg)) throw new Error('active leaf should have an accent fill, got ' + alpha.bg);
+  // Maya FR: the highlight is rounded on every corner, not square down its left
+  // edge, and translucent enough to read as a highlight over the sidebar
+  if (/^0px/.test(alpha.radius) || !/^\d+px$/.test(alpha.radius)) throw new Error('leaf highlight is not evenly rounded: ' + alpha.radius);
+  const alphaChan = Number((alpha.bg.match(/[\d.]+/g) || [])[3]);
+  if (!(alphaChan > 0 && alphaChan < 1)) throw new Error('active fill should be translucent, got ' + alpha.bg);
 
   // 2) MOVE TO BRAVO: highlight follows, alpha clears (only one active at a time)
   await clickLeaf(page, 'bravo');
