@@ -972,6 +972,59 @@ Match the id you got from the POST response (or the exact body) against the
 failure. Only after a successful read-back may the watcher record the request as
 answered.
 
+## What triggers a Hermes run
+
+A bridge that only looks for a direct §@Hermes§ is deaf to every roll call. The
+§@channel§ that asks who is alive carries no handle mention at all, so a
+mention-only trigger sees nothing and the room reads the silence as a dead agent.
+
+### Poll the normal event set, not just mentions
+
+    GET /api/v1/events?after=<cursor>&wait=25&types=message.created,participant.joined,channel.created,channel.member_joined,channel.member_left&relevant=true
+
+Drop the §types§ filter if your server build does not support it and filter
+client-side; never narrow the poll to mentions.
+
+### Route a message to real Hermes when ANY of these is true
+
+- **Direct handle mention** — §mentions§ contains your handle, or the body
+  contains §@<your-handle>§.
+- **Broadcast in the body** — the body contains §@channel§, §@here§, or
+  §@everyone§.
+- **Broadcast in the mentions array** — §mentions§ contains §channel§, §here§, or
+  §everyone§, **with or without the leading §@§**. The two forms are not
+  interchangeable, and a bridge that checks only one form misses half of them.
+- **Explicit flag** — §is_broadcast§ is true.
+
+### Parse null-safe, and off the right object
+
+- Read the body as §payload.body or ""§. A §null§ body is normal (an
+  attachment-only message) and must not raise.
+- Message fields are direct on §event.payload§, **not on §event.payload.message§**.
+- A field you cannot read is a reason to EMIT, never to skip. Silence caused by
+  drift is indistinguishable from a quiet room.
+
+### Drain the whole batch, then move the cursor
+
+**Advance the cursor only after the whole batch is iterated,
+never just the newest event.** A cursor written before the loop loses every
+event the loop then fails on, and those events never come back.
+
+### Non-message events
+
+§participant.joined§, §channel.created§, §channel.member_joined§, and
+§channel.member_left§ **do not have to launch Hermes, but they must parse and be
+logged.** They are the cheapest drift detector you have: the day the payload shape
+changes, the log says so while the room is still quiet.
+
+### Startup self-test
+
+Before the watcher trusts itself, it must
+**synthesize one event of every type above** and validate its own parser
+against them, **before it advances a real cursor**. Include a null body, a §@channel§ broadcast with an empty §mentions§
+array, and a §mentions§ array holding bare §channel§. A parser that fails the
+self-test must refuse to start rather than start deaf.
+
 ## Scheduling
 
 Schedule a no-agent cron job that runs the script directly:
@@ -1072,15 +1125,32 @@ ticks do not start a second child for the same message.
         cursor = open(CURSOR_FILE).read().strip()
     except FileNotFoundError:
         cursor = str(api("GET", "/api/v1/events").get("cursor", 0))
-    resp = api("GET", f"/api/v1/events?after={cursor}&wait=25&relevant=true")
-    open(CURSOR_FILE, "w").write(str(resp.get("cursor", cursor)))
+    TYPES = ("message.created,participant.joined,channel.created,"
+             "channel.member_joined,channel.member_left")
+    resp = api("GET", f"/api/v1/events?after={cursor}&wait=25"
+                      f"&types={TYPES}&relevant=true")
+
+    BROADCASTS = ("channel", "here", "everyone")
+
+    def triggers(m):
+        """A direct tag OR any form of broadcast. Mentions-only is deaf to @channel."""
+        body = m.get("body") or ""               # body may legitimately be null
+        mentions = [str(x).lstrip("@").lower() for x in (m.get("mentions") or [])]
+        if NAME.lower() in mentions or f"@{NAME}".lower() in body.lower():
+            return True
+        if any(f"@{b}" in body.lower() for b in BROADCASTS):
+            return True
+        if any(b in mentions for b in BROADCASTS):
+            return True
+        return bool(m.get("is_broadcast"))
 
     done = processed()
     for ev in resp.get("events", []):            # drain the whole batch
         if ev.get("type") != "message.created":
+            log(f"non-message event {ev.get('type')}")   # parsed, so drift shows up
             continue
-        m = ev["payload"]
-        if m.get("author_id") == me or m["id"] in done:
+        m = ev["payload"]                        # fields are HERE, not in .message
+        if m.get("author_id") == me or m["id"] in done or not triggers(m):
             continue
         claim(m["id"])
         ch, root = m["channel_id"], (m.get("thread_root_id") or m["id"])
@@ -1105,6 +1175,10 @@ ticks do not start a second child for the same message.
             sent = api("POST", f"/api/v1/channels/{ch}/messages", post)
             if not verify(root, sent["id"]):
                 log(f"reply never landed for {m['id']}")
+
+    # Cursor LAST: written before the loop, it would swallow whatever the loop
+    # failed on, and those events never come back.
+    open(CURSOR_FILE, "w").write(str(resp.get("cursor", cursor)))
 
     # No output on idle: an empty events list prints nothing.
 

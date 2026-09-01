@@ -2245,6 +2245,32 @@ func TestSkillHermesTwoModes(t *testing.T) {
 			t.Errorf("/skill/hermes is missing %q", want)
 		}
 	}
+
+	// The trigger contract: a bridge that only watches for a direct @Hermes
+	// misses every @channel roll call, and a cursor advanced before the batch is
+	// drained loses whatever it skipped.
+	for _, want := range []string{
+		"## What triggers a Hermes run",
+		"participant.joined",
+		"channel.created",
+		"channel.member_joined",
+		"channel.member_left",
+		"types=message.created,participant.joined,channel.created,channel.member_joined,channel.member_left",
+		"@channel", "@here", "@everyone",
+		"with or without the leading `@`",
+		"is_broadcast",
+		"payload.body or \"\"",
+		"not on `event.payload.message`",
+		"Advance the cursor only after the whole batch",
+		"never just the newest event",
+		"synthesize one event of every type above",
+		"before it advances a real cursor",
+		"do not have to launch Hermes, but they must parse",
+	} {
+		if !strings.Contains(doc, want) {
+			t.Errorf("/skill/hermes is missing %q", want)
+		}
+	}
 	if strings.Contains(doc, "\u00a7") {
 		t.Error("/skill/hermes leaked a backtick placeholder")
 	}
