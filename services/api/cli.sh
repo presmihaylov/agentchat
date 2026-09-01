@@ -45,6 +45,8 @@ FLAGS
   --wait <seconds>      mentions: long-poll for up to N seconds
   --oldest / --newest   read: ordering (default oldest last, like a chat window)
   --attach <file>       send/reply/broadcast: attach a file (repeatable)
+  --force-mentions      send/reply/broadcast: post even if a handle is unknown
+                        (for writing ABOUT a handle; `backticks` also exempt it)
   --out <dir>           download: where to save (default .)
   --channel <name|id>   members: also report who is in that channel
   --env <file>          config file (default: the single ~/.agentchat/*.env)
@@ -216,12 +218,14 @@ print(" ".join(bad))
 post_message() {
   local channel="$1" body="$2" root="$3" broadcast="$4" ids payload
   ids=$(upload_attachments)
-  warn_unknown_mentions "$body"
-  payload=$(BODY="$body" ROOT="$root" BCAST="$broadcast" IDS="$ids" python3 -c '
+  # --force-mentions already says "I know", so do not nag about it
+  [ "$FORCE_MENTIONS" = "1" ] || warn_unknown_mentions "$body"
+  payload=$(BODY="$body" ROOT="$root" BCAST="$broadcast" IDS="$ids" FORCE="$FORCE_MENTIONS" python3 -c '
 import json, os
 p = {"body": os.environ["BODY"], "broadcast": os.environ["BCAST"] == "1"}
 if os.environ["ROOT"]: p["thread_root_id"] = os.environ["ROOT"]
 if os.environ["IDS"]: p["attachment_ids"] = os.environ["IDS"].split()
+if os.environ["FORCE"] == "1": p["allow_unknown_mentions"] = True
 print(json.dumps(p))
 ')
   request POST "/api/v1/channels/$channel/messages" "$payload"
@@ -230,6 +234,8 @@ print(json.dumps(p))
     refresh_members
     printf 'agentchat: %s\n' "$(json_str "$RESP" 'd.get("error","unknown mentions")')" >&2
     printf 'agentchat: current handles: %s\n' "$(json_str "$RESP" '" ".join(m["handle"] for m in d.get("members",[]))')" >&2
+    # writing ABOUT a dead handle is legitimate, so always name the way through
+    printf 'agentchat: to write about a handle instead of tagging it, put it in `backticks`, or resend with --force-mentions\n' >&2
     exit 1
   fi
   [ "${CODE:0:1}" = "2" ] || die "post failed (HTTP $CODE): $(json_str "$RESP" 'd.get("error","")')"
@@ -406,7 +412,7 @@ cmd_join() {
 
 # ---------- flags ----------
 
-JSON=0; LIMIT=30; SINCE=""; WAIT=0; ORDER="oldest"; OUT="."; CHANNEL=""; CLEAR=0
+JSON=0; LIMIT=30; SINCE=""; WAIT=0; ORDER="oldest"; OUT="."; CHANNEL=""; CLEAR=0; FORCE_MENTIONS=0
 ENV_FILE=""; SERVER_FLAG=""; ATTACH=()
 ARGS=()
 
@@ -422,6 +428,7 @@ while [ $# -gt 0 ]; do
     --out) OUT="${2:?--out needs a directory}"; shift ;;
     --channel) CHANNEL="${2:?--channel needs a name or id}"; shift ;;
     --clear) CLEAR=1 ;;
+    --force-mentions) FORCE_MENTIONS=1 ;;
     --env) ENV_FILE="${2:?--env needs a file}"; shift ;;
     --server) SERVER_FLAG="${2:?--server needs a url}"; shift ;;
     --version) printf 'agentchat cli %s\n' "$VERSION"; exit 0 ;;

@@ -89,7 +89,15 @@ if "${A[@]}" send general 'ping @nobody-here' >"$WORK/out" 2>"$WORK/err"; then
 fi
 grep -q 'nobody-here' "$WORK/err" || fail "the 422 message did not reach stderr: $(cat "$WORK/err")"
 grep -q 'alice' "$WORK/err" || fail "the 422 did not list the current handles"
+grep -q 'force-mentions' "$WORK/err" || fail "the 422 did not name the way through"
 ok "unknown mention exits non-zero with the roster"
+
+# 7a. writing ABOUT a dead handle must stay possible: a post-mortem needs it
+"${A[@]}" send general 'post-mortem: @nobody-here is gone' --force-mentions >/dev/null \
+  || fail "--force-mentions did not get the message through"
+"${A[@]}" send general 'post-mortem: `@nobody-here` is gone' >/dev/null \
+  || fail "a backticked handle must not be treated as a mention"
+ok "a dead handle can still be written about"
 
 # 7b. a real handle who cannot read the channel is a loud warning, not silence
 curl -fsS -X POST "$SERVER/api/v1/channels" -H "Authorization: Bearer $alice" \
