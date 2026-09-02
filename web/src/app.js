@@ -239,6 +239,8 @@ import { createComposer } from './composer.js';
     if (!inThread && !m.thread_root_id) actions.push('<button data-act="thread" title="Reply in thread">💬</button>');
     if (canEdit) actions.push('<button data-act="edit" title="Edit">✏️</button>');
     if (canDelete) actions.push('<button data-act="delete" title="Delete">🗑</button>');
+    // last item: every message action in one menu, reachable by keyboard and touch
+    actions.push('<button data-act="more" title="More actions" aria-label="More actions" aria-haspopup="menu">⋮</button>');
 
     // fetch-with-header + blob keeps the token out of URLs (logs, history, referrers)
     const atts = (m.attachments || []).map((a) =>
@@ -312,8 +314,12 @@ import { createComposer } from './composer.js';
       if (act === 'thread') openThread(m.thread_root_id || m.id);
       if (act === 'edit') editMessage(m);
       if (act === 'delete') deleteMessage(m);
+      if (act === 'more') {
+        const r = btn.getBoundingClientRect();
+        openContextMenu(r.left, r.bottom + 4, msgMenuItems(m, { inThread, canEdit, canDelete }));
+      }
     });
-    attachMsgMenu(el, m);
+    attachMsgMenu(el, m, { inThread, canEdit, canDelete });
     return el;
   };
 
@@ -327,34 +333,44 @@ import { createComposer } from './composer.js';
     return location.origin + path + '/m/' + encodeURIComponent(m.id);
   };
 
-  const attachMsgMenu = (el, m) => {
+  // The one list of things you can do to a message. Both the right-click menu
+  // and the ⋮ toolbar button open it, so nothing hides behind only one gesture.
+  const msgMenuItems = (m, opts = {}) => {
+    const items = [{
+      label: 'Copy link to message',
+      run: async () => {
+        const ok = await copyText(permalinkFor(m));
+        notice(ok ? 'Link copied' : 'Copy failed', !ok);
+      },
+    }];
+    if (m.kind === 'system') return items;
+    if (!opts.inThread && !m.thread_root_id) {
+      items.push({ label: 'Reply in thread', run: () => openThread(m.id) });
+    }
+    const root = m.thread_root_id || m.id;
+    const th = threads.find((x) => x.root_id === root);
+    const subscribed = !!(th && th.subscribed);
+    items.push({
+      label: subscribed ? 'Unsubscribe' : 'Subscribe',
+      run: async () => {
+        try {
+          await api(`/api/v1/threads/${root}/subscribe`, { method: 'POST', body: { subscribed: !subscribed } });
+          loadThreads();
+        } catch (e) { alert(e.message); }
+      },
+    });
+    if (opts.canEdit) items.push({ label: 'Edit message', run: () => editMessage(m) });
+    if (opts.canDelete) items.push({ label: 'Delete message', danger: true, run: () => deleteMessage(m) });
+    return items;
+  };
+
+  const attachMsgMenu = (el, m, opts) => {
     el.oncontextmenu = (ev) => {
       // right-clicks inside rendered markdown still get the message menu, but
       // text selection keeps the native menu
       if (String(window.getSelection())) return;
       ev.preventDefault();
-      const items = [{
-        label: 'Copy link to message',
-        run: async () => {
-          const ok = await copyText(permalinkFor(m));
-          notice(ok ? 'Link copied' : 'Copy failed', !ok);
-        },
-      }];
-      if (m.kind !== 'system') {
-        const root = m.thread_root_id || m.id;
-        const th = threads.find((x) => x.root_id === root);
-        const subscribed = !!(th && th.subscribed);
-        items.push({
-          label: subscribed ? 'Unsubscribe' : 'Subscribe',
-          run: async () => {
-            try {
-              await api(`/api/v1/threads/${root}/subscribe`, { method: 'POST', body: { subscribed: !subscribed } });
-              loadThreads();
-            } catch (e) { alert(e.message); }
-          },
-        });
-      }
-      openContextMenu(ev.clientX, ev.clientY, items);
+      openContextMenu(ev.clientX, ev.clientY, msgMenuItems(m, opts));
     };
   };
 
@@ -391,6 +407,7 @@ import { createComposer } from './composer.js';
       menu.appendChild(b);
     });
     document.body.appendChild(menu);
+    menu.querySelector('button')?.focus(); // keyboard users land on the first item
     // clamp inside the viewport (menu is measured after it is in the DOM)
     const w = menu.offsetWidth, h = menu.offsetHeight;
     menu.style.left = Math.min(x, window.innerWidth - w - 8) + 'px';

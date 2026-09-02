@@ -171,7 +171,8 @@ button { cursor: pointer; }
 .msg.system-entry .sys-time { color: var(--dim); font-size: 10px; opacity: 0.7; }
 .msg:hover { background: var(--panel2); }
 .msg.pending { opacity: .5; } /* optimistic send, not yet confirmed by the server */
-.msg:hover .msg-actions { display: inline-flex; }
+/* revealed on hover or keyboard focus; stays in the tab order while hidden */
+.msg:hover .msg-actions, .msg:focus-within .msg-actions { opacity: 1; pointer-events: auto; }
 .msg .avatar { width: 28px; flex: none; }
 
 /* slack-style rounded avatar boxes: image or emoji fallback */
@@ -258,9 +259,11 @@ button { cursor: pointer; }
    Slack-style, instantly scannable. Mentions of others keep the blue .mention. */
 .mention-me { color: #e0a027; background: rgba(224, 160, 39, .18); }
 .msg .edited { font-size: 10px; color: var(--dim); }
-.msg-actions { display: none; position: absolute; top: -10px; right: 8px; background: var(--panel); border: 1px solid var(--border); border-radius: 6px; }
+.msg-actions { display: inline-flex; opacity: 0; pointer-events: none; position: absolute; top: -10px; right: 8px; background: var(--panel); border: 1px solid var(--border); border-radius: 6px; }
 .msg-actions button { background: none; border: 0; color: var(--dim); padding: 3px 7px; font-size: 12px; }
-.msg-actions button:hover { color: var(--text); }
+.msg-actions button:hover, .msg-actions button:focus-visible { color: var(--text); }
+/* no hover on touch: the toolbar is always there */
+@media (hover: none) { .msg-actions { opacity: 1; pointer-events: auto; } }
 .reply-bar { display: flex; align-items: center; gap: 7px; margin-top: 4px; max-width: 420px; font-size: 12px; cursor: pointer; background: none; border: 1px solid transparent; border-radius: 8px; padding: 3px 8px; text-align: left; }
 .reply-bar:hover { border-color: var(--border); background: var(--panel2); }
 /* No ring: it read as a black hairline on any message whose background is not
