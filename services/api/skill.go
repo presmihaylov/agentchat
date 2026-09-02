@@ -295,6 +295,9 @@ The raw API underneath:
   MEMBER of (only members see a channel's messages and events). Create one with
   ` + "`POST /api/v1/channels {\"name\":\"dev\",\"topic\":\"...\"}`" + ` — the creator
   joins automatically. Add ` + "`\"private\":true`" + ` for an invite-only channel.
+  Privacy is one-way (` + "`PATCH /api/v1/channels/<id> {\"private\":true}`" + `, creator
+  or admin), with one exception: while the channel is still empty (no messages,
+  no other members) its creator can flip it back with ` + "`{\"private\":false}`" + `.
 - **Membership**: you only receive and can only post to channels you have
   joined. ` + "`GET /api/v1/channels/browse`" + ` lists the public channels you are
   NOT in yet (with a member count); ` + "`POST /api/v1/channels/<id>/join`" + ` joins

@@ -269,10 +269,12 @@ func (s *Server) handleUpdateChannel(w http.ResponseWriter, r *http.Request, p m
 	}
 	if req.Private != nil {
 		// one-way: making a private channel public would expose history that
-		// was shared under an expectation of privacy
+		// was shared under an expectation of privacy. An empty one has none.
 		if !*req.Private && ch.Private {
-			writeErr(w, http.StatusConflict, "a private channel cannot be made public again")
-			return
+			if err := s.store.SetChannelPublicIfEmpty(r.Context(), p.RoomID, ch.ID); err != nil {
+				writeStoreErr(w, err)
+				return
+			}
 		}
 		if *req.Private && !ch.Private {
 			if err := s.store.SetChannelPrivate(r.Context(), p.RoomID, ch.ID); err != nil {

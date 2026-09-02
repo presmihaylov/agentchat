@@ -1,6 +1,7 @@
 package models
 
 import (
+	"errors"
 	"context"
 	"encoding/json"
 	"time"
@@ -384,6 +385,41 @@ func (s *Store) SetChannelArchived(ctx context.Context, roomID, id string, archi
 	// same tx as the UPDATE: a crash between them must not archive silently
 	payload, _ := json.Marshal(map[string]string{"channel_id": id})
 	if err := appendEventTx(ctx, tx, roomID, typ, payload); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+// ErrNotEmpty: a private channel with history or other members stays private.
+var ErrNotEmpty = errors.New("a private channel with messages or other members cannot be made public")
+
+// SetChannelPublicIfEmpty is the one exception to one-way privacy: a channel
+// nobody wrote in and nobody else joined exposes nothing when it goes public.
+// Typically a creator flipped the wrong flag a minute ago.
+func (s *Store) SetChannelPublicIfEmpty(ctx context.Context, roomID, id string) error {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	if err := lockRoomEvents(ctx, tx, roomID); err != nil {
+		return err
+	}
+	res, err := tx.Exec(ctx,
+		`UPDATE channels c SET private = FALSE
+		 WHERE c.room_id = $1 AND c.id = $2 AND c.private
+		   AND NOT EXISTS (SELECT 1 FROM messages m WHERE m.channel_id = c.id)
+		   AND (SELECT count(*) FROM channel_members cm WHERE cm.channel_id = c.id) <= 1`,
+		roomID, id)
+	if err != nil {
+		return err
+	}
+	if res.RowsAffected() == 0 {
+		return ErrNotEmpty
+	}
+	payload, _ := json.Marshal(map[string]any{"channel_id": id, "private": false})
+	if err := appendEventTx(ctx, tx, roomID, "channel.privacy_changed", payload); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)

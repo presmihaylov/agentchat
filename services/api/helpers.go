@@ -35,6 +35,8 @@ func writeStoreErr(w http.ResponseWriter, err error) {
 		writeErr(w, http.StatusConflict, err.Error())
 	case errors.Is(err, models.ErrForbidden):
 		writeErr(w, http.StatusForbidden, "forbidden")
+	case errors.Is(err, models.ErrNotEmpty):
+		writeErr(w, http.StatusConflict, err.Error())
 	case errors.Is(err, models.ErrLastAdmin):
 		writeErr(w, http.StatusConflict, err.Error())
 	case errors.Is(err, models.ErrArchived):

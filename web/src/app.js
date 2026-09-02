@@ -624,6 +624,10 @@ import { emojify } from './emoji.js';
       if (!ch.private && ch.name !== 'general' && (me.role === 'admin' || ch.created_by === me.id)) {
         items.push({ label: 'Make private', run: () => makePrivate(ch) });
       }
+      // the server allows this only while the channel is still empty
+      if (ch.private && (me.role === 'admin' || ch.created_by === me.id)) {
+        items.push({ label: 'Make public', run: () => makePublic(ch) });
+      }
       items.push({ label: ch.muted ? 'Unmute channel' : 'Mute channel', run: () => muteChannel(ch, !ch.muted) });
       items.push({ label: 'Move to section…', run: () => openMoveMenu(ev.clientX, ev.clientY, ch) });
       // #general is pinned: it can be organized into a section but never left.
@@ -2176,6 +2180,16 @@ import { emojify } from './emoji.js';
   };
 
   // One-way by design: server rejects private -> public, so no undo path here.
+  const makePublic = async (ch) => {
+    try {
+      await api('/api/v1/channels/' + ch.id, { method: 'PATCH', body: { private: false } });
+      await refreshRoom();
+      if (current && current.id === ch.id) {
+        current = channels.find((c) => c.id === ch.id) || current;
+        $('channel-title').textContent = '# ' + current.name;
+      }
+    } catch (e) { alert('Make public failed: ' + e.message); }
+  };
   const makePrivate = async (ch) => {
     if (!confirm('Make #' + ch.name + ' private? Current members stay, it leaves browse, and joining becomes invite-only. This cannot be undone.')) return;
     try {

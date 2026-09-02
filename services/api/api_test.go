@@ -1964,11 +1964,30 @@ func TestChannelPrivacyConversion(t *testing.T) {
 	alice.must("POST", "/api/v1/channels/pub/members", map[string]any{"participant": "carol"}, 200)
 	carol.must("GET", "/api/v1/channels/pub/messages", nil, 200)
 
-	// no reverse conversion; re-converting is an idempotent no-op
+	// no reverse conversion once there is history; re-converting is an idempotent no-op
 	if code, _ := alice.do("PATCH", "/api/v1/channels/pub", map[string]any{"private": false}); code != 409 {
 		t.Fatalf("reverse convert = %d, want 409", code)
 	}
 	alice.must("PATCH", "/api/v1/channels/pub", map[string]any{"private": true}, 200)
+
+	// the one exception: an empty private channel (no messages, creator only)
+	// can go public, since there is nothing to expose; a second member or a
+	// single message closes that door
+	dave.must("POST", "/api/v1/channels", map[string]any{"name": "oops", "private": true}, 201)
+	oops := dave.must("PATCH", "/api/v1/channels/oops", map[string]any{"private": false}, 200)
+	if oops["private"] != false {
+		t.Fatalf("empty private channel did not go public: %v", oops)
+	}
+	carol.must("POST", "/api/v1/channels/oops/join", nil, 200)
+	dave.must("PATCH", "/api/v1/channels/oops", map[string]any{"private": true}, 200)
+	if code, _ := dave.do("PATCH", "/api/v1/channels/oops", map[string]any{"private": false}); code != 409 {
+		t.Fatalf("un-private with a second member = %d, want 409", code)
+	}
+	dave.must("POST", "/api/v1/channels", map[string]any{"name": "oops2", "private": true}, 201)
+	dave.must("POST", "/api/v1/channels/oops2/messages", map[string]any{"body": "secret"}, 201)
+	if code, _ := dave.do("PATCH", "/api/v1/channels/oops2", map[string]any{"private": false}); code != 409 {
+		t.Fatalf("un-private with history = %d, want 409", code)
+	}
 
 	// the privacy event reaches members only
 	sawPrivacy := func(c *testClient) bool {
