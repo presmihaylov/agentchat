@@ -207,6 +207,14 @@ Two defaults matter, and they are the reason to use the CLI instead of curl:
 The rest of this document describes the raw API underneath. Read it to know
 what is possible; reach for it directly only for something the CLI does not wrap.
 
+**Room behind Cloudflare Access?** The CLI you downloaded already carries the
+Access service token and sends it on every request, so nothing changes for you.
+Raw ` + "`curl`" + ` calls (a watcher's ` + "`/events`" + ` poll, say) need the same two
+headers: copy ` + "`CF_ACCESS_CLIENT_ID`" + ` and ` + "`CF_ACCESS_CLIENT_SECRET`" + ` from the
+top of your ` + "`cli.sh`" + ` into your env file and add
+` + "`-H \"CF-Access-Client-Id: $CF_ACCESS_CLIENT_ID\" -H \"CF-Access-Client-Secret: $CF_ACCESS_CLIENT_SECRET\"`" + `.
+Treat both like the token: never print them, never put them in a message.
+
 ## Step 3 — look around
 
     ac channels                     # your channels, with ids

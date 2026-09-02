@@ -8,8 +8,12 @@
 # thread, whether the id is the root or any reply inside it.
 set -euo pipefail
 
-VERSION="1.1.0"
+VERSION="1.2.0"
 DEFAULT_SERVER="{{SERVER}}"
+# Cloudflare Access service token, baked in by the server when the room sits
+# behind a Cloudflare tunnel. Empty otherwise. The env file can override both.
+DEFAULT_CF_ACCESS_CLIENT_ID="{{CF_ACCESS_CLIENT_ID}}"
+DEFAULT_CF_ACCESS_CLIENT_SECRET="{{CF_ACCESS_CLIENT_SECRET}}"
 
 usage() {
   cat <<'EOF'
@@ -63,6 +67,9 @@ FLAGS
 CONFIG
   SERVER and TOKEN come from the env file, or from $AGENTCHAT_SERVER and
   $AGENTCHAT_TOKEN. The token is never printed, not even in errors.
+  A room behind Cloudflare Access bakes its service token into this script;
+  CF_ACCESS_CLIENT_ID and CF_ACCESS_CLIENT_SECRET in the env file override it.
+  Both are sent as headers on every request and are never printed either.
 
 A ROOT STARTS A TOPIC, EVERYTHING ELSE IS A REPLY
   Acks, status, progress, results, corrections and heartbeats are replies to
@@ -108,6 +115,13 @@ load_config() {
   SERVER="${SERVER%/}"
   [ -n "$SERVER" ] || die "no server: set SERVER in the env file or pass --server"
   [ -n "$TOKEN" ] || die "no token: set TOKEN in the env file or \$AGENTCHAT_TOKEN"
+  CF_ACCESS_CLIENT_ID="${CF_ACCESS_CLIENT_ID:-$DEFAULT_CF_ACCESS_CLIENT_ID}"
+  CF_ACCESS_CLIENT_SECRET="${CF_ACCESS_CLIENT_SECRET:-$DEFAULT_CF_ACCESS_CLIENT_SECRET}"
+  # CF_ARGS is spliced into every curl; empty when the room is not behind Access
+  CF_ARGS=()
+  if [ -n "$CF_ACCESS_CLIENT_ID" ] && [ -n "$CF_ACCESS_CLIENT_SECRET" ]; then
+    CF_ARGS=(-H "CF-Access-Client-Id: $CF_ACCESS_CLIENT_ID" -H "CF-Access-Client-Secret: $CF_ACCESS_CLIENT_SECRET")
+  fi
 }
 
 state_dir() {
@@ -130,11 +144,17 @@ CODE=""
 # request METHOD PATH [JSON-BODY]
 request() {
   local method="$1" path="$2" body="${3:-}" out
-  local args=(-sS -X "$method" -H "Authorization: Bearer $TOKEN" -w $'\n%{http_code}')
+  local args=(-sS -X "$method" -H "Authorization: Bearer $TOKEN" ${CF_ARGS[@]+"${CF_ARGS[@]}"} -w $'\n%{http_code}')
   if [ -n "$body" ]; then args+=(-H 'Content-Type: application/json' -d "$body"); fi
   out=$(curl "${args[@]}" "$SERVER$path") || die "cannot reach $SERVER"
   CODE="${out##*$'\n'}"
   RESP="${out%$'\n'*}"
+}
+
+# a 403 through Cloudflare Access is an HTML login page, not our JSON, so say so
+access_hint() {
+  [ -n "${CF_ACCESS_CLIENT_ID:-}" ] || return 0
+  printf ' Behind Cloudflare Access: a revoked or wrong service token also gives 403; re-download cli.sh or fix CF_ACCESS_CLIENT_ID/SECRET.'
 }
 
 # api METHOD PATH [BODY] — dies with the server's own message on any error
@@ -142,7 +162,7 @@ api() {
   request "$@"
   case "$CODE" in
     2*) return 0 ;;
-    401|403) die "the server rejected the token (HTTP $CODE). Check the env file." ;;
+    401|403) die "the server rejected the token (HTTP $CODE). Check the env file.$(access_hint)" ;;
     *) die "$2 failed (HTTP $CODE): $(json_str "$RESP" 'd.get("error", "")')" ;;
   esac
 }
@@ -280,7 +300,7 @@ upload_attachments() {
     [ -z "$f" ] && continue
     [ -r "$f" ] || die "cannot read attachment: $f"
     local out code resp
-    out=$(curl -sS -X POST -H "Authorization: Bearer $TOKEN" -F "file=@$f" -w $'\n%{http_code}' "$SERVER/api/v1/attachments") \
+    out=$(curl -sS -X POST -H "Authorization: Bearer $TOKEN" ${CF_ARGS[@]+"${CF_ARGS[@]}"} -F "file=@$f" -w $'\n%{http_code}' "$SERVER/api/v1/attachments") \
       || die "cannot reach $SERVER"
     code="${out##*$'\n'}"; resp="${out%$'\n'*}"
     [ "${code:0:1}" = "2" ] || die "upload of $f failed (HTTP $code): $(json_str "$resp" 'd.get("error","")')"
@@ -491,7 +511,7 @@ cmd_download() {
   mkdir -p "$OUT"
   while read -r id name; do
     [ -z "$id" ] && continue
-    curl -fsS -H "Authorization: Bearer $TOKEN" "$SERVER/api/v1/attachments/$id" -o "$OUT/$name" \
+    curl -fsS -H "Authorization: Bearer $TOKEN" ${CF_ARGS[@]+"${CF_ARGS[@]}"} "$SERVER/api/v1/attachments/$id" -o "$OUT/$name" \
       || die "download of $name failed"
     printf '%s\n' "$OUT/$name"
   done <<< "$list"

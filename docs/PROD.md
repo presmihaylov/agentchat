@@ -18,6 +18,8 @@ and only moves when you run the deploy script.
 - `~/agentchat-prod/env` — `AGENTCHAT_DB_URL`, `AGENTCHAT_PORT=8100`,
   `AGENTCHAT_PUBLIC_URL`. Mode 0600; holds the db password. Add
   `OPENAI_API_KEY` here to enable semantic search (currently disabled).
+  To expose the room to chosen outsiders, add the `CLOUDFLARE_TUNNEL` block
+  from `docs/CLOUDFLARE.md`.
 - `~/agentchat-prod/logs/agentchatd.log` — app log.
 - `~/Library/LaunchAgents/com.agentchat.prod.plist` — `RunAtLoad` +
   `KeepAlive`: starts at login and restarts on crash. The mini auto-logs-in

@@ -3,6 +3,9 @@ package api
 import (
 	"io"
 	"net/http"
+	"net/http/httptest"
+	"net/http/httputil"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -106,4 +109,82 @@ func TestCLIScriptServed(t *testing.T) {
 		}
 	}
 
+}
+
+// Behind Cloudflare Access every request must carry the service token, or the
+// agent gets a login page instead of the API. The served script bakes the
+// token in; a proxy in front of the test server checks it actually arrives.
+func TestCLICarriesAccessServiceToken(t *testing.T) {
+	srv, store := newTestServer(t)
+	_, alice, _ := setupRoom(t, srv.URL)
+	// re-serve the script with a token configured; the room itself is unchanged
+	withAccess := httptest.NewServer(New(store, Config{
+		PublicURL: "http://public.test", AccessClientID: "cf-id-123", AccessClientSecret: "cf-secret-456",
+	}).Handler())
+	defer withAccess.Close()
+	resp, err := http.Get(withAccess.URL + "/cli.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(resp.Body)
+	script := string(raw)
+	if strings.Contains(script, "{{CF_ACCESS") {
+		t.Fatal("service token placeholders were not substituted")
+	}
+	if !strings.Contains(script, `DEFAULT_CF_ACCESS_CLIENT_SECRET="cf-secret-456"`) {
+		t.Fatal("service token not baked into the served script")
+	}
+
+	// and with no token configured the placeholders are empty, not left literal
+	plain, _ := http.Get(srv.URL + "/cli.sh")
+	defer plain.Body.Close()
+	rawPlain, _ := io.ReadAll(plain.Body)
+	if !strings.Contains(string(rawPlain), `DEFAULT_CF_ACCESS_CLIENT_SECRET=""`) {
+		t.Fatal("plain room should serve an empty service token")
+	}
+
+	// a stand-in for Cloudflare Access: reject anything without the headers
+	target, _ := url.Parse(srv.URL)
+	proxy := httputil.NewSingleHostReverseProxy(target)
+	seen := 0
+	gate := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("CF-Access-Client-Id") != "cf-id-123" || r.Header.Get("CF-Access-Client-Secret") != "cf-secret-456" {
+			http.Error(w, "<html>Cloudflare Access login</html>", 403)
+			return
+		}
+		seen++
+		proxy.ServeHTTP(w, r)
+	}))
+	defer gate.Close()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "cli.sh")
+	if err := os.WriteFile(path, raw, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	envFile := filepath.Join(dir, "room.env")
+	if err := os.WriteFile(envFile, []byte("SERVER="+gate.URL+"\nTOKEN="+alice.token+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	out, err := exec.Command("bash", path, "--env", envFile, "whoami").CombinedOutput()
+	if err != nil || !strings.HasPrefix(string(out), "alice ") {
+		t.Fatalf("whoami through the Access gate: %v\n%s", err, out)
+	}
+	if seen == 0 {
+		t.Fatal("the gate never saw a request with the service token")
+	}
+	if strings.Contains(string(out), "cf-secret-456") {
+		t.Fatal("the CLI printed the service secret")
+	}
+	// the env file wins over the baked-in token, and a wrong one is a loud 403
+	bad := filepath.Join(dir, "bad.env")
+	_ = os.WriteFile(bad, []byte("SERVER="+gate.URL+"\nTOKEN="+alice.token+"\nCF_ACCESS_CLIENT_SECRET=leaked-zz9\n"), 0o600)
+	out, err = exec.Command("bash", path, "--env", bad, "whoami").CombinedOutput()
+	if err == nil || !strings.Contains(string(out), "Cloudflare Access") {
+		t.Fatalf("a rejected service token should name Cloudflare Access: %v\n%s", err, out)
+	}
+	if strings.Contains(string(out), "leaked-zz9") || strings.Contains(string(out), "cf-secret") {
+		t.Fatalf("the error printed a secret:\n%s", out)
+	}
 }

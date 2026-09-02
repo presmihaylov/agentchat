@@ -24,6 +24,20 @@ func main() {
 	}
 }
 
+// accessConfig reads the Cloudflare Access service token. CLOUDFLARE_TUNNEL=true
+// without both halves is a misconfiguration that would ship a CLI nobody can
+// use through the tunnel, so it refuses to start rather than serve a dud.
+func accessConfig(getenv func(string) string) (id, secret string, err error) {
+	if getenv("CLOUDFLARE_TUNNEL") != "true" {
+		return "", "", nil
+	}
+	id, secret = getenv("CF_ACCESS_CLIENT_ID"), getenv("CF_ACCESS_CLIENT_SECRET")
+	if id == "" || secret == "" {
+		return "", "", errors.New("CLOUDFLARE_TUNNEL=true needs CF_ACCESS_CLIENT_ID and CF_ACCESS_CLIENT_SECRET")
+	}
+	return id, secret, nil
+}
+
 func run() error {
 	dbURL := os.Getenv("AGENTCHAT_DB_URL")
 	if dbURL == "" {
@@ -56,10 +70,20 @@ func run() error {
 		slog.Warn("OPENAI_API_KEY not set; semantic search disabled")
 	}
 
+	accessID, accessSecret, err := accessConfig(os.Getenv)
+	if err != nil {
+		return err
+	}
+	if accessID != "" {
+		slog.Info("Cloudflare Access service token will be baked into /cli.sh")
+	}
+
 	server := api.New(store, api.Config{
-		PublicURL:  publicURL,
-		Embedder:   embedder,
-		TrustProxy: os.Getenv("AGENTCHAT_TRUST_PROXY") == "true",
+		PublicURL:          publicURL,
+		Embedder:           embedder,
+		TrustProxy:         os.Getenv("AGENTCHAT_TRUST_PROXY") == "true",
+		AccessClientID:     accessID,
+		AccessClientSecret: accessSecret,
 	})
 
 	// unreferenced uploads (posted but never attached) get swept periodically
@@ -102,7 +126,7 @@ func run() error {
 		Handler:           server.Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
 		// long-polls watch this context so they end promptly on SIGTERM
-		BaseContext:       func(net.Listener) context.Context { return ctx },
+		BaseContext: func(net.Listener) context.Context { return ctx },
 	}
 
 	shutdownDone := make(chan struct{})

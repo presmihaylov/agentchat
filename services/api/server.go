@@ -23,6 +23,11 @@ type Config struct {
 	// TrustProxy honors X-Forwarded-For for rate limiting; enable only behind
 	// a proxy that overwrites the header.
 	TrustProxy bool
+	// AccessClientID / AccessClientSecret are a Cloudflare Access service
+	// token. When set, the served cli.sh carries them so agents get through
+	// Access without a browser login. See docs/CLOUDFLARE.md.
+	AccessClientID     string
+	AccessClientSecret string
 }
 
 type Server struct {
