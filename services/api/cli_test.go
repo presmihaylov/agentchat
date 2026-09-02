@@ -1,6 +1,8 @@
 package api
 
 import (
+	"bytes"
+	"context"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -10,7 +12,9 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
+	"time"
 )
 
 func TestCLIScriptServed(t *testing.T) {
@@ -213,5 +217,152 @@ func TestInviteCarriesAccessServiceToken(t *testing.T) {
 	// unauthenticated callers never see it
 	if code, _ := (&testClient{t: t, base: withAccess.URL}).do("POST", "/api/v1/invites", nil); code != 401 {
 		t.Fatalf("anonymous invite = %d, want 401", code)
+	}
+}
+
+// accessGate stands in for Cloudflare Access: anything without the service
+// token gets an HTML login page instead of the room.
+func accessGate(t *testing.T, upstream, id, secret string) *httptest.Server {
+	t.Helper()
+	target, _ := url.Parse(upstream)
+	proxy := httputil.NewSingleHostReverseProxy(target)
+	gate := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("CF-Access-Client-Id") != id || r.Header.Get("CF-Access-Client-Secret") != secret {
+			http.Error(w, "<html>Cloudflare Access login</html>", 403)
+			return
+		}
+		proxy.ServeHTTP(w, r)
+	}))
+	t.Cleanup(gate.Close)
+	return gate
+}
+
+// watcherTemplate pulls the persistent watcher script out of the served
+// claude-code reference, so the test runs exactly what an agent would copy.
+func watcherTemplate(t *testing.T, base string) string {
+	t.Helper()
+	resp, err := http.Get(base + "/skill/claude-code")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(resp.Body)
+	page := string(raw)
+	start := strings.Index(page, "    #!/bin/sh\n")
+	if start < 0 {
+		t.Fatal("no watcher template in /skill/claude-code")
+	}
+	end := strings.Index(page[start:], "    done\n")
+	if end < 0 {
+		t.Fatal("watcher template has no end")
+	}
+	var lines []string
+	for _, l := range strings.Split(page[start:start+end+len("    done\n")], "\n") {
+		lines = append(lines, strings.TrimPrefix(l, "    "))
+	}
+	return strings.ReplaceAll(strings.Join(lines, "\n"), "<room-slug>.<your-name-with-dashes>", "room.alice")
+}
+
+// runWatcher runs the template for a few seconds with bob posting once, and
+// returns everything it printed.
+func runWatcher(t *testing.T, script, home string, bob *testClient) string {
+	t.Helper()
+	path := filepath.Join(home, "watch.sh")
+	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	os.Remove(filepath.Join(home, ".agentchat", "room.alice.cursor"))
+	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "sh", path)
+	cmd.Env = append(os.Environ(), "HOME="+home)
+	// kill the whole group, or a long-polling curl child keeps stdout open
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
+	cmd.WaitDelay = time.Second
+	var out bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &out, &out
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(1500 * time.Millisecond)
+	bob.must("POST", "/api/v1/channels/general/messages", map[string]any{"body": "@alice are you there"}, 201)
+	time.Sleep(1500 * time.Millisecond)
+	cancel()
+	_ = cmd.Wait()
+	return out.String()
+}
+
+func TestWatcherTemplatePassesAccessGate(t *testing.T) {
+	srv, _ := newTestServer(t)
+	_, alice, bob := setupRoom(t, srv.URL)
+	gate := accessGate(t, srv.URL, "cf-id-123", "cf-secret-456")
+	script := watcherTemplate(t, srv.URL)
+
+	home := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(home, ".agentchat"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	envFile := filepath.Join(home, ".agentchat", "room.alice.env")
+	write := func(body string) {
+		if err := os.WriteFile(envFile, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// through the gate with the headers in the env file: hears bob, no errors
+	write("SERVER=" + gate.URL + "\nTOKEN=" + alice.token + "\nCF_ACCESS_CLIENT_ID=cf-id-123\nCF_ACCESS_CLIENT_SECRET=cf-secret-456\n")
+	out := runWatcher(t, script, home, bob)
+	if !strings.Contains(out, "are you there") || strings.Contains(out, "WATCHER-ERROR") {
+		t.Fatalf("gated watcher with headers should hear bob cleanly:\n%s", out)
+	}
+	if strings.Contains(out, "cf-secret-456") {
+		t.Fatalf("watcher printed the service secret:\n%s", out)
+	}
+
+	// a LAN room (no gate, no headers) keeps working unchanged
+	write("SERVER=" + srv.URL + "\nTOKEN=" + alice.token + "\n")
+	out = runWatcher(t, script, home, bob)
+	if !strings.Contains(out, "are you there") || strings.Contains(out, "WATCHER-ERROR") {
+		t.Fatalf("plain watcher should hear bob cleanly:\n%s", out)
+	}
+
+	// and without the headers the gate is real: the watcher is loud, not silent
+	write("SERVER=" + gate.URL + "\nTOKEN=" + alice.token + "\n")
+	out = runWatcher(t, script, home, bob)
+	if !strings.Contains(out, "WATCHER-ERROR") || strings.Contains(out, "are you there") {
+		t.Fatalf("gate should reject a watcher without headers:\n%s", out)
+	}
+}
+
+func TestSkillRawCurlsCarryAccessHeaders(t *testing.T) {
+	srv, _ := newTestServer(t)
+	for _, page := range []string{"/skill", "/skill/claude-code"} {
+		resp, err := http.Get(srv.URL + page)
+		if err != nil {
+			t.Fatal(err)
+		}
+		raw, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		// fold continued lines so a header on the next line counts
+		joined := strings.ReplaceAll(string(raw), " \\\n", " ")
+		for _, line := range strings.Split(joined, "\n") {
+			if !strings.Contains(line, "curl") || !strings.Contains(line, "$SERVER/api/") {
+				continue
+			}
+			if strings.Contains(line, "$CFH") {
+				continue
+			}
+			t.Errorf("%s: raw curl without $CFH: %s", page, strings.TrimSpace(line))
+		}
+	}
+	resp, err := http.Get(srv.URL + "/skill/hermes")
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if !strings.Contains(string(raw), `req.add_header("CF-Access-Client-Id"`) {
+		t.Error("hermes helper does not send the Access headers")
 	}
 }
