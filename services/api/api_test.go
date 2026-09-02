@@ -2609,14 +2609,14 @@ func TestOwnMembershipUpdatesSnapshot(t *testing.T) {
 	msg := ev("message.created", `{"id":"m","channel_id":"c1","mentions":[]}`)
 	otherJoin := ev("channel.member_joined", `{"channel_id":"c1","participant_id":"someone"}`)
 
-	kept, err := srv.filterEvents(context.Background(), []models.Event{otherJoin, join, msg}, p, map[string]bool{}, nil, false)
+	kept, err := srv.filterEvents(context.Background(), []models.Event{otherJoin, join, msg}, p, map[string]bool{}, nil, nil, false)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(kept) != 2 || kept[0].Type != "channel.member_joined" || kept[1].Type != "message.created" {
 		t.Fatalf("after own join want [joined, message], got %v", kept)
 	}
-	kept, err = srv.filterEvents(context.Background(), []models.Event{left, msg}, p, map[string]bool{"c1": true}, nil, false)
+	kept, err = srv.filterEvents(context.Background(), []models.Event{left, msg}, p, map[string]bool{"c1": true}, nil, nil, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2834,5 +2834,44 @@ func TestReactionEvents(t *testing.T) {
 	alice.must("POST", "/api/v1/messages/"+privMsg["id"].(string)+"/reactions", map[string]any{"emoji": "🤫"}, 200)
 	if evs := events(bob, c3, false); len(evs) != 0 {
 		t.Fatalf("private-channel reaction leaked to a non-member: %v", evs)
+	}
+}
+
+// TestEventsExclude: exclude=message.reaction drops reaction events server-side,
+// even ones relevant=true would otherwise deliver, while the cursor still
+// advances past them; without exclude the same poll returns them.
+func TestEventsExclude(t *testing.T) {
+	srv, _ := newTestServer(t)
+	_, alice, bob := setupRoom(t, srv.URL)
+	start := alice.must("GET", "/api/v1/events", nil, 200)["cursor"]
+	mine := alice.must("POST", "/api/v1/channels/general/messages", map[string]any{"body": "my post"}, 201)
+	bob.must("POST", "/api/v1/messages/"+mine["id"].(string)+"/reactions", map[string]any{"emoji": "👀"}, 200)
+	bob.must("POST", "/api/v1/channels/general/messages", map[string]any{"body": "@alice hi"}, 201)
+
+	after := fmt.Sprintf("%v", start)
+	types := func(res map[string]any) []string {
+		out := []string{}
+		for _, e := range res["events"].([]any) {
+			out = append(out, e.(map[string]any)["type"].(string))
+		}
+		return out
+	}
+	plain := alice.must("GET", "/api/v1/events?after="+after+"&relevant=true", nil, 200)
+	if got := types(plain); len(got) != 2 || got[0] != "message.reaction" || got[1] != "message.created" {
+		t.Fatalf("without exclude: %v", got)
+	}
+	excl := alice.must("GET", "/api/v1/events?after="+after+"&relevant=true&exclude=message.reaction", nil, 200)
+	if got := types(excl); len(got) != 1 || got[0] != "message.created" {
+		t.Fatalf("with exclude: %v", got)
+	}
+	if excl["cursor"] != plain["cursor"] {
+		t.Fatalf("exclude must not hold the cursor back: %v vs %v", excl["cursor"], plain["cursor"])
+	}
+	// a list excludes each named type; unknown names are ignored
+	both := alice.must("GET", "/api/v1/events?after="+after+"&exclude=message.reaction,message.created,nonsense", nil, 200)
+	for _, ty := range types(both) {
+		if ty == "message.reaction" || ty == "message.created" {
+			t.Fatalf("excluded type leaked: %v", types(both))
+		}
 	}
 }

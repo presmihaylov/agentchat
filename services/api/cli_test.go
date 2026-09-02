@@ -265,12 +265,13 @@ func watcherTemplate(t *testing.T, base string) string {
 	}
 	script := strings.Join(lines, "\n")
 	for from, to := range map[string]string{
-		"<room-slug>.<your-name-with-dashes>":       "room.alice",
-		"<your-name>":                               "alice",
-		"<channels heard in full, space separated>": "general",
+		"<room-slug>.<your-name-with-dashes>": "room.alice",
+		"<your-name>":                         "alice",
 	} {
 		script = strings.ReplaceAll(script, from, to)
 	}
+	// the served default is WATCH=""; most template tests hear #general in full
+	script = strings.Replace(script, `WATCH="" #`, `WATCH="general" #`, 1)
 	if strings.Contains(script, "<room-slug>") || strings.Contains(script, "<your-") {
 		t.Fatalf("unfilled placeholder in the template:\n%s", script)
 	}
@@ -407,7 +408,7 @@ func TestWatcherTemplateHearsOwnThreads(t *testing.T) {
 	}
 	srv, _ := newTestServer(t)
 	_, alice, bob := setupRoom(t, srv.URL)
-	script := strings.ReplaceAll(watcherTemplate(t, srv.URL), `WATCH="general"`, `WATCH=""`)
+	script := strings.Replace(watcherTemplate(t, srv.URL), `WATCH="general" #`, `WATCH="" #`, 1)
 	if !strings.Contains(script, `WATCH=""`) {
 		t.Fatal("could not empty WATCH in the template")
 	}
@@ -436,17 +437,20 @@ func TestWatcherTemplateHearsOwnThreads(t *testing.T) {
 	}
 }
 
-// A reaction somebody else puts on my message reaches the watcher; my own
-// reaction, and reactions on other people's messages, stay quiet.
-func TestWatcherTemplateHearsReactionsOnOwnMessages(t *testing.T) {
+// TestWatcherTemplateDropsReactions: a reaction never wakes a watcher, not
+// even one on its own message (a token measure); the poll excludes them
+// server-side and the filter drops any that arrive. A mention still gets through.
+func TestWatcherTemplateDropsReactions(t *testing.T) {
 	if _, err := exec.LookPath("jq"); err != nil {
 		t.Skip("template needs jq")
 	}
 	srv, _ := newTestServer(t)
 	_, alice, bob := setupRoom(t, srv.URL)
-	script := strings.ReplaceAll(watcherTemplate(t, srv.URL), `WATCH="general"`, `WATCH=""`)
+	script := strings.Replace(watcherTemplate(t, srv.URL), `WATCH="general" #`, `WATCH="" #`, 1)
+	if !strings.Contains(script, "exclude=message.reaction") {
+		t.Fatal("template poll does not ask the server to drop reactions")
+	}
 	mine := alice.must("POST", "/api/v1/channels/general/messages", map[string]any{"body": "my post"}, 201)
-	theirs := bob.must("POST", "/api/v1/channels/general/messages", map[string]any{"body": "bob's post"}, 201)
 
 	home := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(home, ".agentchat"), 0o700); err != nil {
@@ -457,18 +461,19 @@ func TestWatcherTemplateHearsReactionsOnOwnMessages(t *testing.T) {
 		t.Fatal(err)
 	}
 	out := runWatcherPosting(t, script, home, func() {
-		alice.must("POST", "/api/v1/messages/"+theirs["id"].(string)+"/reactions", map[string]any{"emoji": "🙈"}, 200)
-		alice.must("POST", "/api/v1/messages/"+mine["id"].(string)+"/reactions", map[string]any{"emoji": "🙉"}, 200)
 		bob.must("POST", "/api/v1/messages/"+mine["id"].(string)+"/reactions", map[string]any{"emoji": "👀"}, 200)
+		bob.must("POST", "/api/v1/channels/general/messages", map[string]any{"body": "@alice after the reaction"}, 201)
 	})
 	if strings.Contains(out, "WATCHER-ERROR") || !strings.Contains(out, "WATCHER-SELFTEST-OK") {
 		t.Fatalf("watcher did not start clean:\n%s", out)
 	}
-	if !strings.Contains(out, "REACTION added 👀 by bob on your message "+mine["id"].(string)) {
-		t.Fatalf("watcher missed bob's reaction on alice's post:\n%s", out)
+	if !strings.Contains(out, "mode=mentions-only") {
+		t.Fatalf("scope beacon does not say mentions-only:\n%s", out)
 	}
-	// exactly one reaction event: alice's own two never surface
-	if n := strings.Count(out, `"type":"message.reaction"`); n != 1 {
-		t.Fatalf("watcher surfaced %d reaction events, want 1 (bob's):\n%s", n, out)
+	if !strings.Contains(out, "after the reaction") {
+		t.Fatalf("watcher missed the mention:\n%s", out)
+	}
+	if strings.Contains(out, `"type":"message.reaction"`) || strings.Contains(out, "REACTION ") {
+		t.Fatalf("a reaction woke the watcher:\n%s", out)
 	}
 }

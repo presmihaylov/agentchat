@@ -48,6 +48,14 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request, p models.P
 			types[t] = true
 		}
 	}
+	// exclude drops whole event types server-side so a watcher that never
+	// wants reactions does not pay to receive and discard them
+	exclude := map[string]bool{}
+	for _, t := range strings.Split(q.Get("exclude"), ",") {
+		if t = strings.TrimSpace(t); t != "" {
+			exclude[t] = true
+		}
+	}
 	relevant := q.Get("relevant") == "true"
 
 	// snapshot the caller's channel membership once per poll; filterEvents
@@ -84,7 +92,7 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request, p models.P
 		if len(events) > 0 {
 			scanned = events[len(events)-1].Seq
 		}
-		kept, err := s.filterEvents(r.Context(), events, p, members, types, relevant)
+		kept, err := s.filterEvents(r.Context(), events, p, members, types, exclude, relevant)
 		if err != nil {
 			writeStoreErr(w, err)
 			return
@@ -152,7 +160,7 @@ func ownMembership(e models.Event, participantID string) (chID string, joined, o
 	return pl.ChannelID, e.Type == "channel.member_joined", true
 }
 
-func (s *Server) filterEvents(ctx context.Context, events []models.Event, p models.Participant, members, types map[string]bool, relevant bool) ([]models.Event, error) {
+func (s *Server) filterEvents(ctx context.Context, events []models.Event, p models.Participant, members, types, exclude map[string]bool, relevant bool) ([]models.Event, error) {
 	kept := []models.Event{}
 	// message events whose fate depends on thread participation, keyed by root
 	pending := map[string][]models.Event{}
@@ -172,6 +180,9 @@ func (s *Server) filterEvents(ctx context.Context, events []models.Event, p mode
 			continue
 		}
 		if len(types) > 0 && !types[e.Type] {
+			continue
+		}
+		if exclude[e.Type] {
 			continue
 		}
 		if !relevant {
