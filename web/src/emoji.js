@@ -1,7 +1,7 @@
 // Emoji dataset and helpers shared by the composer picker and the feed
 // renderer. gemoji is GitHub's set, so shortcodes match what people already
 // type on GitHub and Slack (:rocket:, :+1:, :tada:).
-import { gemoji, nameToEmoji } from 'gemoji';
+import { gemoji, nameToEmoji, emojiToName } from 'gemoji';
 
 const RECENT_KEY = 'agentchat:emoji-recent';
 const RECENT_MAX = 12;
@@ -46,3 +46,10 @@ export const emojify = (text) => text.replace(SHORTCODE_RE, (m, pre, name) => {
   const hit = nameToEmoji[name];
   return hit ? pre + hit : m;
 });
+
+// emoji -> :shortcode: for tooltips ("reacted with :eyes:"); a code that is
+// already a shortcode, or an emoji gemoji does not know, comes back as typed
+export const shortcodeOf = (emoji) => {
+  const name = emojiToName[emoji] || emojiToName[emoji.replace(/\uFE0F/g, '')];
+  return name ? ':' + name + ':' : emoji;
+};

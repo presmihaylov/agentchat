@@ -1,6 +1,6 @@
 /* AgentChat human web client — vanilla JS, talks to the same REST API as agents. */
 import { createComposer } from './composer.js';
-import { emojify, searchEmoji, rememberEmoji } from './emoji.js';
+import { emojify, searchEmoji, rememberEmoji, shortcodeOf } from './emoji.js';
 
 (() => {
   'use strict';
@@ -224,14 +224,56 @@ import { emojify, searchEmoji, rememberEmoji } from './emoji.js';
   const reactionMap = {};
   const QUICK_REACTIONS = ['👀', '✅', '👍', '🎉', '❤️', '🚀', '🙏', '😂'];
 
+  // Slack's add-reaction glyph: an outlined smiley with a plus at its shoulder
+  const ADD_REACTION_ICON = '<svg class="rx-add-icon" viewBox="0 0 20 20" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">'
+    + '<path d="M15.9 10.6a7 7 0 1 1-6.5-6.5"/>'
+    + '<path d="M6.3 11.6a3.4 3.4 0 0 0 5.4 0"/>'
+    + '<circle cx="7" cy="8.4" r=".7" fill="currentColor" stroke="none"/><circle cx="11" cy="8.4" r=".7" fill="currentColor" stroke="none"/>'
+    + '<path d="M15.5 2.5v5M13 5h5"/></svg>';
+
+  // "You, Maya and Dim reacted with :eyes:" — Slack's wording, you first
+  const reactionTipText = (rx) => {
+    const names = rx.participant_ids.map((id, i) => (id === me.id ? 'You' : rx.names[i]));
+    if (names.includes('You')) names.splice(0, 0, ...names.splice(names.indexOf('You'), 1));
+    const who = names.length <= 1 ? names[0] || '' : names.slice(0, -1).join(', ') + ' and ' + names[names.length - 1];
+    return `${who} reacted with ${shortcodeOf(emojify(rx.emoji))}`;
+  };
+
+  // one floating tooltip, shown above the hovered or focused pill; instant,
+  // themed, and readable, unlike the browser's title delay
+  let rxTip = null;
+  const hideReactionTip = () => { if (rxTip) rxTip.remove(); rxTip = null; };
+  const showReactionTip = (pill, rx) => {
+    hideReactionTip();
+    rxTip = document.createElement('div');
+    rxTip.className = 'rx-tip';
+    rxTip.setAttribute('role', 'tooltip');
+    rxTip.innerHTML = `<span class="rx-tip-emoji">${esc(emojify(rx.emoji))}</span><span class="rx-tip-text">${esc(reactionTipText(rx))}</span>`;
+    document.body.appendChild(rxTip);
+    const r = pill.getBoundingClientRect();
+    const w = rxTip.offsetWidth, h = rxTip.offsetHeight;
+    let left = r.left + r.width / 2 - w / 2;
+    left = Math.max(8, Math.min(left, window.innerWidth - w - 8));
+    const above = r.top - h - 8;
+    rxTip.style.left = left + 'px';
+    rxTip.style.top = (above >= 4 ? above : r.bottom + 8) + 'px';
+    rxTip.classList.toggle('below', above < 4);
+  };
+  document.addEventListener('scroll', hideReactionTip, true);
+
   const reactionPill = (m, rx) => {
     const b = document.createElement('button');
     b.type = 'button';
     b.className = 'reaction' + (rx.participant_ids.includes(me.id) ? ' mine' : '');
     b.dataset.emoji = rx.emoji;
-    b.title = rx.names.join(', ');
+    b.dataset.names = rx.names.join(', ');
+    b.setAttribute('aria-label', reactionTipText(rx));
     b.innerHTML = `<span class="rx-emoji">${esc(emojify(rx.emoji))}</span><span class="rx-count">${rx.count}</span>`;
-    b.onclick = (ev) => { ev.stopPropagation(); toggleReaction(m, rx.emoji, b.classList.contains('mine')); };
+    b.onclick = (ev) => { ev.stopPropagation(); hideReactionTip(); toggleReaction(m, rx.emoji, b.classList.contains('mine')); };
+    b.onmouseenter = () => showReactionTip(b, rx);
+    b.onmouseleave = hideReactionTip;
+    b.onfocus = () => showReactionTip(b, rx);
+    b.onblur = hideReactionTip;
     return b;
   };
 
@@ -244,12 +286,14 @@ import { emojify, searchEmoji, rememberEmoji } from './emoji.js';
     add.type = 'button';
     add.className = 'reaction add';
     add.title = 'Add reaction';
-    add.textContent = '😀';
+    add.setAttribute('aria-label', 'Add reaction');
+    add.innerHTML = ADD_REACTION_ICON;
     add.onclick = (ev) => { ev.stopPropagation(); const r = add.getBoundingClientRect(); openReactionPicker(r.left, r.bottom + 4, m); };
     box.appendChild(add);
   };
 
   const renderReactions = (msgId) => {
+    hideReactionTip();
     const list = reactionMap[msgId] || [];
     document.querySelectorAll(`.msg[data-id="${msgId}"] .msg-reactions`).forEach((box) => {
       fillReactionBox(box, box._msg, list);
@@ -354,7 +398,7 @@ import { emojify, searchEmoji, rememberEmoji } from './emoji.js';
     const canEdit = m.author_id === me.id;
     const canDelete = canEdit || me.role === 'admin';
     const actions = [];
-    actions.push('<button data-act="react" title="Add reaction" aria-label="Add reaction">😀</button>');
+    actions.push(`<button data-act="react" title="Add reaction" aria-label="Add reaction">${ADD_REACTION_ICON}</button>`);
     if (!inThread && !m.thread_root_id) actions.push('<button data-act="thread" title="Reply in thread">💬</button>');
     if (canEdit) actions.push('<button data-act="edit" title="Edit">✏️</button>');
     if (canDelete) actions.push('<button data-act="delete" title="Delete">🗑</button>');

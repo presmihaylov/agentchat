@@ -41,7 +41,7 @@ async function api(path, opts = {}) {
   await page.waitForSelector(msgSel, { timeout: 8000 });
 
   const pills = (scope = '#messages') => page.$$eval(`${scope} .msg[data-id="${root.id}"] .msg-reactions .reaction:not(.add)`,
-    (bs) => bs.map((b) => ({ emoji: b.dataset.emoji, count: b.querySelector('.rx-count').textContent, mine: b.classList.contains('mine'), title: b.title })));
+    (bs) => bs.map((b) => ({ emoji: b.dataset.emoji, count: b.querySelector('.rx-count').textContent, mine: b.classList.contains('mine'), title: b.dataset.names })));
 
   // 1. no reactions yet: the row is hidden
   assert((await pills()).length === 0, 'fresh message has pills');
@@ -61,11 +61,25 @@ async function api(path, opts = {}) {
   const onServer = (await api('/api/v1/messages/' + root.id, { token: alice.token })).reactions;
   assert(onServer.length === 1 && onServer[0].names[0] === 'alice', 'server: ' + JSON.stringify(onServer));
 
+  // 2b. the add button is the Slack-style outline icon, not an emoji glyph
+  const addIcon = await page.$eval(`${msgSel} .msg-actions button[data-act="react"]`, (b) => !!b.querySelector('svg.rx-add-icon') && b.textContent.trim() === '');
+  assert(addIcon, 'toolbar add-reaction button is not the svg icon');
+  assert(await page.$eval(`${msgSel} .msg-reactions .reaction.add svg.rx-add-icon`, (el) => !!el), 'row add button is not the svg icon');
+
   // 3. bob joins 👀 over the API: the pill count goes to 2 live, the tooltip names both
   await api('/api/v1/messages/' + root.id + '/reactions', { method: 'POST', token: bob.token, body: { emoji: '👀' } });
   await page.waitForFunction((sel) => (document.querySelector(`${sel} .msg-reactions .reaction .rx-count`) || {}).textContent === '2', { timeout: 4000 }, msgSel);
   got = await pills();
   assert(got[0].title === 'alice, bob' && got[0].mine, 'after bob joins: ' + JSON.stringify(got));
+  // hovering the pill shows an instant tooltip: "You and bob reacted with :eyes:"
+  await page.hover(`${msgSel} .msg-reactions .reaction.mine`);
+  await page.waitForSelector('.rx-tip', { timeout: 2000 });
+  const tip = await page.$eval('.rx-tip', (el) => el.querySelector('.rx-tip-emoji').textContent + '|' + el.querySelector('.rx-tip-text').textContent);
+  assert(tip === '👀|You and bob reacted with :eyes:', 'tooltip: ' + tip);
+  await page.screenshot({ path: (process.env.OUT || '.') + '/reactions-tip.png' });
+  await page.hover('#channel-title');
+  await sleep(150);
+  assert(await page.$('.rx-tip') === null, 'tooltip stayed after mouse left');
 
   // 4. clicking your own pill removes only yours; the pill stays for bob, no longer highlighted
   await page.click(`${msgSel} .msg-reactions .reaction.mine`);
