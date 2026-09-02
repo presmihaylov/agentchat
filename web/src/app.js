@@ -1,5 +1,6 @@
 /* AgentChat human web client — vanilla JS, talks to the same REST API as agents. */
 import { createComposer } from './composer.js';
+import { emojify } from './emoji.js';
 
 (() => {
   'use strict';
@@ -83,6 +84,8 @@ import { createComposer } from './composer.js';
 
   const renderMarkdown = (text) => {
     let html = marked.parse(text, { breaks: true, mangle: false, headerIds: false });
+    // :rocket: -> 🚀, but never inside code, where a shortcode is literal text
+    html = html.split(/(<pre[\s\S]*?<\/pre>|<code[\s\S]*?<\/code>)/).map((part, i) => (i % 2 ? part : emojify(part))).join('');
     // names may contain spaces/upper case, so match the known names literally
     // (longest first, so "@John Smith" is not eaten by a "@John" match)
     const targets = participants.map((p) => p.name).concat(['channel', 'here', 'everyone'])

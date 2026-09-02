@@ -16,6 +16,7 @@
     "@tiptap/markdown": "^3.30.6",
     "@tiptap/pm": "^3.30.6",
     "@tiptap/starter-kit": "^3.30.6",
-    "@tiptap/suggestion": "^3.30.6"
+    "@tiptap/suggestion": "^3.30.6",
+    "gemoji": "^8.1.0"
   }
 }

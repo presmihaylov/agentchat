@@ -2,6 +2,7 @@
    serializes to markdown on send and parses markdown on restore, so agents
    and the feed renderer see exactly what the old textarea produced. */
 import { Editor, Extension, InputRule } from '@tiptap/core';
+import { searchEmoji, rememberEmoji } from './emoji.js';
 import StarterKit from '@tiptap/starter-kit';
 import HardBreak from '@tiptap/extension-hard-break';
 import { Markdown } from '@tiptap/markdown';
@@ -88,15 +89,18 @@ export const createComposer = ({ mount, id, placeholder, onSubmit, getMentionOpt
   const mentionBox = mkBox('mention-ac');
   const chanBox = mkBox('mention-ac chan-ac');
   const slashBox = mkBox('mention-ac slash-ac');
+  const emojiBox = mkBox('mention-ac emoji-ac');
 
   const mention = { items: [], sel: 0, from: 0 };
   const chan = { items: [], sel: 0, from: 0 };
   const slash = { items: [], sel: 0, browseCache: null };
+  const emoji = { items: [], sel: 0, from: 0 };
 
   const closeMention = () => { mention.items = []; mentionBox.classList.add('hidden'); };
   const closeChan = () => { chan.items = []; chanBox.classList.add('hidden'); };
   const closeSlash = () => { slash.items = []; slash.browseCache = null; slashBox.classList.add('hidden'); };
-  mention.close = closeMention; chan.close = closeChan; slash.close = closeSlash;
+  const closeEmoji = () => { emoji.items = []; emojiBox.classList.add('hidden'); };
+  mention.close = closeMention; chan.close = closeChan; slash.close = closeSlash; emoji.close = closeEmoji;
 
   const renderList = (box, st, fill, pick) => {
     box.innerHTML = '';
@@ -128,6 +132,9 @@ export const createComposer = ({ mount, id, placeholder, onSubmit, getMentionOpt
     d.innerHTML = (it.private ? '🔒 ' : '#') + esc(it.name)
       + '<span class="slash-hint">' + esc(it.topic || '') + '</span>';
   }, applyChan);
+  const renderEmoji = () => renderList(emojiBox, emoji, (d, it) => {
+    d.innerHTML = '<span class="emoji-glyph">' + it.emoji + '</span>:' + esc(it.name) + ':';
+  }, applyEmoji);
   const renderSlash = () => renderList(slashBox, slash, (d, it) => {
     d.innerHTML = it.kind === 'cmd'
       ? '/' + esc(it.name) + (it.args ? ' <span class="slash-args">' + esc(it.args) + '</span>' : '') +
@@ -149,6 +156,17 @@ export const createComposer = ({ mount, id, placeholder, onSubmit, getMentionOpt
       .insertContentAt({ from: chan.from, to }, [{ type: 'text', text: '#' + it.name + ' ' }])
       .run();
     closeChan();
+  }
+
+  // the picker inserts the character itself, so the wire body is plain
+  // unicode and agents never have to decode a shortcode
+  function applyEmoji(it) {
+    const to = editor.state.selection.from;
+    editor.chain().focus()
+      .insertContentAt({ from: emoji.from, to }, [{ type: 'text', text: it.emoji + ' ' }])
+      .run();
+    rememberEmoji(it.name);
+    closeEmoji();
   }
 
   function applySlash(it) {
@@ -224,6 +242,21 @@ export const createComposer = ({ mount, id, placeholder, onSubmit, getMentionOpt
       .slice(0, 8);
     chan.sel = 0;
     renderChan();
+  };
+
+  // ":wo" opens the picker; the colon must start a word and be followed by at
+  // least one character, so "12:45", URLs and a lone ":" never trigger it
+  const updateEmoji = () => {
+    const { $from, empty } = editor.state.selection;
+    if (!empty || !$from.parent.isTextblock) return closeEmoji();
+    if ($from.parent.type.name === 'codeBlock') return closeEmoji();
+    const head = $from.parent.textBetween(0, $from.parentOffset, '\0', '\0');
+    const m = head.match(/(^|\s):([a-z0-9_+-]+)$/i);
+    if (!m) return closeEmoji();
+    emoji.from = $from.pos - m[2].length - 1;
+    emoji.items = searchEmoji(m[2]);
+    emoji.sel = 0;
+    renderEmoji();
   };
 
   const updateSlash = () => {
@@ -341,6 +374,7 @@ export const createComposer = ({ mount, id, placeholder, onSubmit, getMentionOpt
         if (popupKeydown(mentionBox, mention, applyMention, ev)) { renderMention(); return true; }
         if (popupKeydown(chanBox, chan, applyChan, ev)) { renderChan(); return true; }
         if (popupKeydown(slashBox, slash, applySlash, ev)) { renderSlash(); return true; }
+        if (popupKeydown(emojiBox, emoji, applyEmoji, ev)) { renderEmoji(); return true; }
         if (ev.key !== 'Enter') return false;
         if (ev.metaKey || ev.ctrlKey) { onSubmit(); return true; }
         if (ev.shiftKey) return false; // hard break
@@ -367,9 +401,9 @@ export const createComposer = ({ mount, id, placeholder, onSubmit, getMentionOpt
         return false;
       },
     },
-    onUpdate: () => { updateMention(); updateChan(); updateSlash(); },
-    onSelectionUpdate: () => { updateMention(); updateChan(); updateSlash(); },
-    onBlur: () => setTimeout(() => { closeMention(); closeChan(); closeSlash(); }, 100),
+    onUpdate: () => { updateMention(); updateChan(); updateSlash(); updateEmoji(); },
+    onSelectionUpdate: () => { updateMention(); updateChan(); updateSlash(); updateEmoji(); },
+    onBlur: () => setTimeout(() => { closeMention(); closeChan(); closeSlash(); closeEmoji(); }, 100),
   });
 
   // agents read the raw wire: keep typed text verbatim (the stock serializer
