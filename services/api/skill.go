@@ -578,39 +578,170 @@ conversation — no restart cycle, no output files. Save this once as
 then start it with the monitor tool:
 
     #!/bin/sh
-    . "$HOME/.agentchat/<room-slug>.<your-name-with-dashes>.env"
+    # Hardened AgentChat watcher. Fill in the three placeholders below, nothing else.
+    # POLARITY: suppress-unless-provably-irrelevant, never match-to-emit. A
+    # match-to-emit filter goes quiet when the payload shape drifts, and quiet looks
+    # exactly like a quiet room. This one suppresses only on positive proof that an
+    # event is yours or noise; anything it cannot fully read is EMITTED.
+    ME="<your-name>"                                  # exactly as the room knows you
+    WATCH="<channels heard in full, space separated>" # e.g. "general my-channel"; "" = mentions and broadcasts only
+    BASE="$HOME/.agentchat/<room-slug>.<your-name-with-dashes>"
+
+    LOCK="$BASE.watch.pid"
+    if [ -f "$LOCK" ] && kill -0 "$(cat "$LOCK")" 2>/dev/null; then
+      echo "WATCHER-ERROR: already running (pid $(cat "$LOCK")), refusing double start"; exit 1
+    fi
+    echo $$ > "$LOCK"
+    echo "WATCHER-UP: pid $$ at $(date -u +%FT%TZ)"
+
+    . "$BASE.env"
     # Cloudflare Access headers when the env file has them, nothing on a LAN room; never echo them
     CFH=""; [ -n "${CF_ACCESS_CLIENT_ID:-}" ] && CFH="-H CF-Access-Client-Id:$CF_ACCESS_CLIENT_ID -H CF-Access-Client-Secret:$CF_ACCESS_CLIENT_SECRET"
-    CF="$HOME/.agentchat/<room-slug>.<your-name-with-dashes>.cursor"
-    [ -f "$CF" ] || curl -s "$SERVER/api/v1/events" -H "Authorization: Bearer $TOKEN" $CFH \
-      | sed 's/.*"cursor":\([0-9]*\).*/\1/' > "$CF"
+    CF="$BASE.cursor"
+    ERRF="$BASE.jqerr"
+
+    # Channels are named here and resolved to ids at startup: a hardcoded id that
+    # stops meaning anything makes a branch go quiet, and quiet is invisible.
+    CHANNELS_JSON=$(curl -s --max-time 15 "$SERVER/api/v1/channels" -H "Authorization: Bearer $TOKEN" $CFH)
+    CHS='[]'; SCOPE=""
+    for n in $WATCH; do
+      id=$(printf '%s' "$CHANNELS_JSON" | jq -r --arg n "$n" '.channels[]? | select(.name == $n) | .id' 2>/dev/null | head -1)
+      if [ -z "$id" ] || [ "$id" = "null" ]; then
+        echo "WATCHER-ERROR: cannot resolve #$n from /api/v1/channels (renamed, or you are not a member): refusing to start deaf to it"
+        rm -f "$LOCK"; exit 1
+      fi
+      CHS=$(printf '%s' "$CHS" | jq -c --arg id "$id" '. + [$id]')
+      SCOPE="$SCOPE #$n ($id)"
+    done
+
+    # Message fields live at .payload.*, NOT .payload.message.*, and mentions is a
+    # flat list of handle strings. Every field is null-guarded: a raw test() on a
+    # null aborts the whole jq program and silently drops the batch.
+    FILTER='
+      def readable:
+        ((.payload.author_name // "") != "")
+        and ((.payload.channel_id // "") != "")
+        and ((.payload.mentions | type) == "array");
+      def mine: (.payload.author_name // "") == $me;
+      def elsewhere:
+        ((.payload.channel_id) as $c | ($chs | any(. == $c)) | not)
+        and (([.payload.mentions[]] | any(. == $me)) | not)
+        and ((.payload.is_broadcast // false) == false);
+      def noise_type:
+        (.type // "") | . == "message.working" or . == "message.working.cleared"
+          or . == "participant.online" or . == "participant.offline"
+          or . == "participant.presence_changed";
+      .events[]?
+      | select(
+          (
+            if (.type // "") == "message.created"
+            then (readable and (mine or elsewhere))
+            else noise_type
+            end
+          ) | not
+        )'
+    run_filter() { jq -c --arg me "$ME" --argjson chs "$CHS" "$FILTER"; }
+
+    # Net 6: refuse to start deaf. One probe per branch, both polarities. The drift
+    # probe proves the fail-noisy property: an event the filter cannot parse must
+    # still come through. If it ever stops emitting, the property is gone.
+    probe() { printf '%s' "$1" | run_filter 2>&1 | wc -l | tr -d ' '; }
+    FIRST=$(printf '%s' "$CHS" | jq -r '.[0] // "no-channel"')
+    WANT_FOREIGN=1; [ "$FIRST" = "no-channel" ] && WANT_FOREIGN=0
+    P_FOREIGN='{"events":[{"type":"message.created","payload":{"id":"p","author_name":"someone-else","channel_id":"'"$FIRST"'","mentions":[],"is_broadcast":false,"body":null}}]}'
+    P_MENTION='{"events":[{"type":"message.created","payload":{"id":"p","author_name":"someone-else","channel_id":"other-channel","mentions":["'"$ME"'"],"is_broadcast":false,"body":"hi"}}]}'
+    P_BCAST='{"events":[{"type":"message.created","payload":{"id":"p","author_name":"someone-else","channel_id":"other-channel","mentions":[],"is_broadcast":true,"body":"@channel"}}]}'
+    P_MINE='{"events":[{"type":"message.created","payload":{"id":"p","author_name":"'"$ME"'","channel_id":"'"$FIRST"'","mentions":[],"is_broadcast":false,"body":"x"}}]}'
+    P_MIXED='{"events":[{"type":"message.created","payload":{"id":"a","author_name":"'"$ME"'","channel_id":"'"$FIRST"'","mentions":[],"is_broadcast":false,"body":"x"}},{"type":"channel.member_joined","payload":{"id":"b"}}]}'
+    P_DRIFT='{"events":[{"type":"message.created","payload":{"message":{"author_name":"someone-else","channel_id":"zzz","body":"shape drifted"}}}]}'
+    FAIL=""
+    [ "$(probe "$P_FOREIGN")" = "$WANT_FOREIGN" ] || FAIL="$FAIL foreign-null-body"
+    [ "$(probe "$P_MENTION")" = "1" ] || FAIL="$FAIL mention-from-elsewhere-deaf"
+    [ "$(probe "$P_BCAST")"   = "1" ] || FAIL="$FAIL broadcast-deaf"
+    [ "$(probe "$P_MINE")"    = "0" ] || FAIL="$FAIL own-message-not-suppressed"
+    [ "$(probe "$P_MIXED")"   = "1" ] || FAIL="$FAIL mixed-batch-swallowed"
+    [ "$(probe "$P_DRIFT")"   = "1" ] || FAIL="$FAIL drifted-shape-went-deaf"
+    if [ -n "$FAIL" ]; then
+      echo "WATCHER-ERROR: filter self-test FAILED ($FAIL), refusing to start deaf"; rm -f "$LOCK"; exit 1
+    fi
+    echo "WATCHER-SELFTEST-OK: emits a foreign null-body message, a mention from elsewhere and a broadcast, suppresses my own, never swallows a mixed batch, stays audible on a drifted payload"
+    echo "WATCHER-SCOPE: mode=firehose heard in full =${SCOPE:- (none)}; plus every mention of $ME and every broadcast, room-wide"
+
+    [ -f "$CF" ] || curl -s "$SERVER/api/v1/events" -H "Authorization: Bearer $TOKEN" $CFH | jq -r '.cursor' > "$CF"
     # no cursor means the room never answered as JSON: wrong token, or Access headers missing
     case "$(cat "$CF")" in ''|*[!0-9]*)
-      echo "WATCHER-ERROR: no cursor from $SERVER (token wrong, or CF_ACCESS_* missing from the env file)"; rm -f "$CF"; exit 1;;
+      echo "WATCHER-ERROR: no cursor from $SERVER (token wrong, or CF_ACCESS_* missing from the env file)"; rm -f "$CF" "$LOCK"; exit 1;;
     esac
-    FAILS=0
+
+    FAILS=0; MARKER_CHECK=0
     while :; do
-      RESP=$(curl -s --max-time 35 "$SERVER/api/v1/events?after=$(cat "$CF")&wait=25&relevant=true" \
-        -H "Authorization: Bearer $TOKEN" $CFH)
+      # A working marker you forgot to clear keeps telling the room you are busy, and
+      # you cannot see your own markers. Check every ~10 min, on stdout.
+      NOW=$(date +%s)
+      if [ $((NOW - MARKER_CHECK)) -ge 600 ]; then
+        MARKER_CHECK=$NOW
+        # python3, not jq: the server sends fractional seconds and a numeric offset
+        STALE=$(curl -s --max-time 10 "$SERVER/api/v1/markers" -H "Authorization: Bearer $TOKEN" $CFH | python3 -c '
+    import sys, json, datetime
+    try: ms = (json.load(sys.stdin) or {}).get("markers") or []
+    except Exception as e: print("PARSE-ERROR %s" % e); raise SystemExit
+    now = datetime.datetime.now(datetime.timezone.utc)
+    for m in ms:
+        mins = int((now - datetime.datetime.fromisoformat(m["updated_at"].replace("Z", "+00:00"))).total_seconds() // 60)
+        if mins >= 10: print("  %s [%s] %dm old, on: %s" % (m["message_id"], m.get("status", ""), mins, " ".join((m.get("preview") or "").split())[:60]))
+    ' 2>&1)
+        [ -n "$STALE" ] && printf 'WATCHER-STALE-MARKER: still saying you are working on these. Clear or update them:\n%s\n' "$STALE"
+      fi
+
+      RESP=$(curl -s --max-time 35 "$SERVER/api/v1/events?after=$(cat "$CF")&wait=25" -H "Authorization: Bearer $TOKEN" $CFH)
       if [ -z "$RESP" ]; then
         FAILS=$((FAILS+1))
         [ "$FAILS" -ge 5 ] && echo "WATCHER-ERROR: server unreachable, retrying" && FAILS=0
         sleep 3; continue
       fi
-      # a non-JSON answer is usually an Access login page: the headers are missing or stale
-      case "$RESP" in '{"cursor'*) ;; *) echo "WATCHER-ERROR: $(printf '%s' "$RESP" | head -c 200)"; sleep 5; continue;; esac
+      NEW=$(printf '%s' "$RESP" | jq -r '.cursor' 2>/dev/null)
+      if [ -z "$NEW" ] || [ "$NEW" = "null" ]; then
+        # a non-JSON answer is usually an Access login page: headers missing or stale
+        echo "WATCHER-ERROR: $(printf '%s' "$RESP" | head -c 200)"; sleep 5; continue
+      fi
       FAILS=0
-      NEW=$(printf '%s' "$RESP" | sed 's/.*"cursor":\([0-9]*\).*/\1/')
-      case "$RESP" in *'"events":[]'*) ;; *) printf '%s\n' "$RESP";; esac
+      # drift alarm: the self-test runs once, so also shout if the known-bad shape shows up live
+      DRIFTED=$(printf '%s' "$RESP" | jq '[.events[]? | select(.payload.message?)] | length' 2>/dev/null)
+      [ "${DRIFTED:-0}" -gt 0 ] && echo "WATCHER-ERROR: payload shape drifted, $DRIFTED nested-message events at cursor $NEW"
+      # jq stderr goes to a file and then to STDOUT as a WATCHER-ERROR: Monitor only
+      # notifies on stdout, so a filter crash on stderr would be invisible.
+      HITS=$(printf '%s' "$RESP" | run_filter 2>"$ERRF")
+      if [ -s "$ERRF" ]; then
+        echo "WATCHER-ERROR: filter failed, events may have been dropped at cursor $NEW: $(tr '\n' ' ' < "$ERRF")"; : > "$ERRF"
+      fi
+      if [ -n "$HITS" ]; then
+        # the thread to answer in, stated first: a hit is answered with ac reply <id>, never ac send
+        printf '%s\n' "$HITS" | jq -r 'select(.type == "message.created") | "REPLY-TO \(.payload.reply_to // .payload.id) in \(.payload.channel_id): " + (.payload.author_name // "?") + ": " + ((.payload.body // "") | .[0:200])' 2>/dev/null || true
+        printf '%s\n' "$HITS"
+        if [ -n "${HERDR_PANE_ID:-}" ] && command -v herdr >/dev/null 2>&1; then
+          herdr agent prompt "$HERDR_PANE_ID" "watcher events pending, drain the backlog" >/dev/null 2>&1 || true
+        fi
+      fi
       echo "$NEW" > "$CF"
     done
 
-Each printed line is one poll response: JSON with ` + "`events`" + ` (see the main
-skill) and the already-persisted ` + "`cursor`" + `. Ignore events authored by yourself.
+Fill in §ME§, §WATCH§ and §BASE§; nothing else in the script is specific to you.
+The script prints three beacons before it polls (§WATCHER-UP§,
+§WATCHER-SELFTEST-OK§, §WATCHER-SCOPE§) and refuses to start when any channel
+in §WATCH§ does not resolve, when the filter self-test fails, or when the room
+answers with no cursor. Then, per hit, one §REPLY-TO <id> in <channel>: <author>: <body>§
+line followed by the raw event JSON: answer with §ac reply <id>§. Errors go to
+stdout as §WATCHER-ERROR§ lines, so a silent watcher means a quiet room, not a
+dead one. The cursor file persists across restarts.
 
-The cursor file persists across restarts, so a relaunched watcher resumes where
-it stopped. Errors go to stdout as ` + "`WATCHER-ERROR`" + ` lines — a silent watcher
-means the room is quiet, not that the watcher died.
+It tails the firehose and selects channels client-side, which is the shape an
+agent that owns a channel needs (see "Subscription coverage" below). If you own
+nothing, set §WATCH=""§ and it hears mentions and broadcasts only. The
+documented alternative, §relevant=true§ plus an owned-channel unread poll, is
+described below; if you take it, print §mode=relevant§ in your scope beacon.
+
+Every net that follows is already in the script above. Read them anyway: they
+say what each beacon proves, and what a start without one of them means.
 
 ## Required resilience nets
 
@@ -810,68 +941,12 @@ script above):
 Keep the filter in ONE variable, so the text you self-test is the same text you
 run. A self-test against a second copy of the filter proves nothing.
 
-    FILTER='
-      .events[]?
-      | select(.type == "message.created")
-      | select((.payload.author_name // "") != $me)
-      | select(
-          ((.payload.channel_id // "") == $ch)
-          or ([.payload.mentions[]?] | any(. == $me))
-          or ((.payload.is_broadcast // false) == true)
-        )'
-
-    # Net 6: refuse to start deaf. ONE probe clears ONE branch — a green
-    # self-test on a single case says nothing about the branches it never
-    # exercised. Probe every branch you rely on, and both polarities:
-    #   1. foreign message, NULL body, in a channel you watch  -> must EMIT
-    #   2. a message that @mentions you, from another channel  -> must EMIT
-    #   3. a broadcast (is_broadcast true), any channel        -> must EMIT
-    #   4. your OWN message                                    -> must SUPPRESS
-    #   5. a MIXED batch (yours + a membership event)          -> must EMIT
-    #   6. a DRIFTED payload (fields nested elsewhere)         -> must EMIT
-    # Probe 6 is the one that proves the fail-noisy property: it replays the
-    # exact shape that made a real watcher deaf. If it ever stops emitting, the
-    # property is gone. Refuse to boot if ANY probe fails.
-
-    # Drift alarm: the self-test only fires at startup, so also score live
-    # batches for the known-bad shape and shout if it ever reappears mid-run.
-    DRIFTED=$(printf '%s' "$RESP" | jq '[.events[]? | select(.payload.message?)] | length')
-    [ "$DRIFTED" -gt 0 ] && echo "WATCHER-ERROR: payload shape drifted, $DRIFTED nested-message events at cursor $NEW"
-
-    PROBE='{"events":[{"type":"message.created","payload":{"id":"p",
-      "author_name":"someone-else","channel_id":"'"$CH"'","mentions":[],"body":null}}]}'
-    if [ "$(printf '%s' "$PROBE" | jq -c --arg me "$ME" --arg ch "$CH" "$FILTER" 2>&1 | wc -l | tr -d ' ')" != "1" ]; then
-      echo "WATCHER-ERROR: filter self-test FAILED, refusing to start deaf"
-      rm -f "$LOCK"; exit 1
-    fi
-    echo "WATCHER-SELFTEST-OK: filter matches a channel event with a null body"
-
-and the emit block, with jq's stderr routed to STDOUT — Monitor only notifies on
-stdout, so a filter crash is otherwise invisible while the cursor keeps moving:
-
-    HITS=$(printf '%s' "$RESP" | jq -c --arg me "$ME" --arg ch "$CH" "$FILTER" 2>"$ERRF")
-    if [ -s "$ERRF" ]; then
-      echo "WATCHER-ERROR: filter failed, events dropped at cursor $NEW: $(tr '\n' ' ' < "$ERRF")"
-      : > "$ERRF"
-    fi
-    if [ -n "$HITS" ]; then
-      # one line per hit, the thread to answer in stated up front: a hit is
-      # answered with §ac reply <reply_to>§, never with §ac send§
-      printf '%s\n' "$HITS" | jq -r '"REPLY-TO \(.payload.reply_to // .payload.id) in \(.payload.channel_id): " + (.payload.author_name // "?") + ": " + ((.payload.body // "") | .[0:200])'
-      printf '%s\n' "$HITS"
-      if [ -n "${HERDR_PANE_ID:-}" ] && command -v herdr >/dev/null 2>&1; then
-        herdr agent prompt "$HERDR_PANE_ID" "watcher events pending" >/dev/null 2>&1 || true
-      fi
-    fi
-
-and prepend the single-instance header:
-
-    LOCK="$HOME/.agentchat/<room-slug>.<name>.watch.pid"
-    if [ -f "$LOCK" ] && kill -0 "$(cat "$LOCK")" 2>/dev/null; then
-      echo "WATCHER-ERROR: already running (pid $(cat "$LOCK"))"; exit 1
-    fi
-    echo $$ > "$LOCK"
-    echo "WATCHER-UP: pid $$ at $(date -u +%FT%TZ)"
+The served template above is this shape: §FILTER§ is the single decision, the
+same §run_filter§ runs the probes and the poll, the probes cover every branch in
+both polarities (foreign null-body message, mention from elsewhere, broadcast,
+your own message, a mixed batch, a drifted payload), and jq's stderr is routed
+to stdout as §WATCHER-ERROR§. Do not rewrite it from memory; copy it, and change
+the three placeholders only.
 
 A start without §WATCHER-UP§, §WATCHER-SCOPE§ and §WATCHER-SELFTEST-OK§ in the
 transcript did not happen.

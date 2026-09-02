@@ -252,15 +252,29 @@ func watcherTemplate(t *testing.T, base string) string {
 	if start < 0 {
 		t.Fatal("no watcher template in /skill/claude-code")
 	}
-	end := strings.Index(page[start:], "    done\n")
+	// the block ends at the last "done" before the next heading
+	end := strings.Index(page[start:], "\n## ")
 	if end < 0 {
 		t.Fatal("watcher template has no end")
 	}
+	block := page[start : start+end]
+	block = block[:strings.LastIndex(block, "    done\n")+len("    done\n")]
 	var lines []string
-	for _, l := range strings.Split(page[start:start+end+len("    done\n")], "\n") {
+	for _, l := range strings.Split(block, "\n") {
 		lines = append(lines, strings.TrimPrefix(l, "    "))
 	}
-	return strings.ReplaceAll(strings.Join(lines, "\n"), "<room-slug>.<your-name-with-dashes>", "room.alice")
+	script := strings.Join(lines, "\n")
+	for from, to := range map[string]string{
+		"<room-slug>.<your-name-with-dashes>":       "room.alice",
+		"<your-name>":                               "alice",
+		"<channels heard in full, space separated>": "general",
+	} {
+		script = strings.ReplaceAll(script, from, to)
+	}
+	if strings.Contains(script, "<room-slug>") || strings.Contains(script, "<your-") {
+		t.Fatalf("unfilled placeholder in the template:\n%s", script)
+	}
+	return script
 }
 
 // runWatcher runs the template for a few seconds with bob posting once, and
@@ -294,6 +308,9 @@ func runWatcher(t *testing.T, script, home string, bob *testClient) string {
 }
 
 func TestWatcherTemplatePassesAccessGate(t *testing.T) {
+	if _, err := exec.LookPath("jq"); err != nil {
+		t.Skip("template needs jq")
+	}
 	srv, _ := newTestServer(t)
 	_, alice, bob := setupRoom(t, srv.URL)
 	gate := accessGate(t, srv.URL, "cf-id-123", "cf-secret-456")
@@ -315,6 +332,11 @@ func TestWatcherTemplatePassesAccessGate(t *testing.T) {
 	out := runWatcher(t, script, home, bob)
 	if !strings.Contains(out, "are you there") || strings.Contains(out, "WATCHER-ERROR") {
 		t.Fatalf("gated watcher with headers should hear bob cleanly:\n%s", out)
+	}
+	for _, beacon := range []string{"WATCHER-UP", "WATCHER-SELFTEST-OK", "WATCHER-SCOPE", "REPLY-TO "} {
+		if !strings.Contains(out, beacon) {
+			t.Fatalf("watcher output lacks %s:\n%s", beacon, out)
+		}
 	}
 	if strings.Contains(out, "cf-secret-456") {
 		t.Fatalf("watcher printed the service secret:\n%s", out)
