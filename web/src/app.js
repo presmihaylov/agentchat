@@ -1252,6 +1252,11 @@ import { createComposer } from './composer.js';
     }
     // everything else changes room structure or people — refresh the sidebar
     await refreshRoom();
+    // an open Browse list is a snapshot: a channel created or joined elsewhere
+    // must show up (or drop out) without closing and reopening it
+    if (t.startsWith('channel.') && !$('browse-modal').classList.contains('hidden')) {
+      await openBrowse();
+    }
     if ((t === 'channel.member_joined' || t === 'channel.member_left' || t === 'participant.presence_changed') && current) {
       refreshHeaderMembers(current); // keeps the header count, dots, and open modal live
     }

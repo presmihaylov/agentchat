@@ -50,8 +50,9 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request, p models.P
 	}
 	relevant := q.Get("relevant") == "true"
 
-	// snapshot the caller's channel membership once per poll; a mid-poll join or
-	// leave is picked up on the next poll (<=30s), which is fine for the sidebar.
+	// snapshot the caller's channel membership once per poll; filterEvents
+	// keeps it current from the caller's own member_joined/left events, so a
+	// mid-poll add is neither dropped nor lost (the cursor moves past it).
 	memberIDs, err := s.store.ParticipantChannelIDs(r.Context(), p.ID)
 	if err != nil {
 		writeStoreErr(w, err)
@@ -133,16 +134,22 @@ func gatedChannel(e models.Event) (string, bool) {
 	return "", false
 }
 
-// isOwnRemoval reports whether the event is this participant's own
-// channel.member_left, which must bypass the membership gate.
-func isOwnRemoval(e models.Event, participantID string) bool {
-	if e.Type != "channel.member_left" {
-		return false
+// ownMembership reports whether the event is this participant's own
+// channel.member_joined/left. Both must bypass the membership gate: the
+// snapshot predates a mid-poll add, and the removal arrives after the
+// participant is already gone. The bool is joined (true) or left (false).
+func ownMembership(e models.Event, participantID string) (chID string, joined, ok bool) {
+	if e.Type != "channel.member_joined" && e.Type != "channel.member_left" {
+		return "", false, false
 	}
 	var pl struct {
+		ChannelID     string `json:"channel_id"`
 		ParticipantID string `json:"participant_id"`
 	}
-	return json.Unmarshal(e.Payload, &pl) == nil && pl.ParticipantID == participantID
+	if json.Unmarshal(e.Payload, &pl) != nil || pl.ParticipantID != participantID {
+		return "", false, false
+	}
+	return pl.ChannelID, e.Type == "channel.member_joined", true
 }
 
 func (s *Server) filterEvents(ctx context.Context, events []models.Event, p models.Participant, members, types map[string]bool, relevant bool) ([]models.Event, error) {
@@ -154,10 +161,14 @@ func (s *Server) filterEvents(ctx context.Context, events []models.Event, p mode
 	for _, e := range events {
 		// membership gate first, so it runs on every path including the web UI
 		// firehose (types empty, relevant=false): a non-member of a channel
-		// never receives its messages or its membership events. One exception:
-		// your own removal — by then you are no longer a member, but you must
-		// still learn the channel is gone from under you.
-		if chID, gated := gatedChannel(e); gated && !members[chID] && !isOwnRemoval(e, p.ID) {
+		// never receives its messages or its membership events. Exception:
+		// your own join or removal, which also updates the snapshot so the
+		// rest of this batch is gated by your new membership.
+		ownCh, joined, own := ownMembership(e, p.ID)
+		if own {
+			members[ownCh] = joined
+		}
+		if chID, gated := gatedChannel(e); gated && !members[chID] && !own {
 			continue
 		}
 		if len(types) > 0 && !types[e.Type] {

@@ -2421,3 +2421,93 @@ func TestReplyToOnEveryReadSurface(t *testing.T) {
 		}
 	}
 }
+
+// TestMidPollAddDelivered: the bug Maya hit during the migration. Bob's web
+// client is parked in a long poll when alice adds him to a channel. The
+// membership snapshot taken at poll start says "not a member", so bob's own
+// channel.member_joined used to be gated out — and because the poll advances
+// its cursor past filtered events, it was lost for good, not merely late.
+func TestMidPollAddDelivered(t *testing.T) {
+	srv, _ := newTestServer(t)
+	defer srv.Close()
+	_, alice, bob := setupRoom(t, srv.URL)
+	bobID := bob.must("GET", "/api/v1/me", nil, 200)["id"].(string)
+
+	alice.must("POST", "/api/v1/channels", map[string]any{"name": "vault", "private": true}, 201)
+	cursor := int64(bob.must("GET", "/api/v1/events", nil, 200)["cursor"].(float64))
+
+	type poll struct {
+		evs    []map[string]any
+		cursor int64
+	}
+	done := make(chan poll, 1)
+	go func() {
+		out := bob.must("GET", fmt.Sprintf("/api/v1/events?after=%d&wait=10", cursor), nil, 200)
+		evs := []map[string]any{}
+		for _, raw := range out["events"].([]any) {
+			evs = append(evs, raw.(map[string]any))
+		}
+		done <- poll{evs, int64(out["cursor"].(float64))}
+	}()
+	time.Sleep(400 * time.Millisecond) // let the poll take its membership snapshot
+	alice.must("POST", "/api/v1/channels/vault/members", map[string]any{"participant": "bob"}, 200)
+
+	var got poll
+	select {
+	case got = <-done:
+	case <-time.After(12 * time.Second):
+		t.Fatal("long poll never returned")
+	}
+	joined := false
+	for _, e := range got.evs {
+		pl := e["payload"].(map[string]any)
+		if e["type"] == "channel.member_joined" && pl["participant_id"] == bobID {
+			joined = true
+		}
+	}
+	if !joined {
+		t.Fatalf("bob's own channel.member_joined was not delivered mid-poll: %v", got.evs)
+	}
+	// and now a member: the channel's messages flow on the next poll
+	alice.must("POST", "/api/v1/channels/vault/messages", map[string]any{"body": "welcome bob"}, 201)
+	evs, _ := eventsAfter(t, bob, got.cursor)
+	saw := false
+	for _, e := range evs {
+		if e["type"] == "message.created" && e["payload"].(map[string]any)["body"] == "welcome bob" {
+			saw = true
+		}
+	}
+	if !saw {
+		t.Fatalf("message in the newly joined channel not delivered: %v", evs)
+	}
+}
+
+// TestOwnMembershipUpdatesSnapshot: within one batch, a message that follows
+// my own join in the same channel is kept, and one that follows my own
+// removal is dropped, even though the snapshot said otherwise for both.
+func TestOwnMembershipUpdatesSnapshot(t *testing.T) {
+	srv := &Server{} // filterEvents only touches the store for relevant=true
+	p := models.Participant{ID: "me"}
+	ev := func(typ, body string) models.Event {
+		return models.Event{Type: typ, Payload: json.RawMessage(body)}
+	}
+	join := ev("channel.member_joined", `{"channel_id":"c1","participant_id":"me"}`)
+	left := ev("channel.member_left", `{"channel_id":"c1","participant_id":"me"}`)
+	msg := ev("message.created", `{"id":"m","channel_id":"c1","mentions":[]}`)
+	otherJoin := ev("channel.member_joined", `{"channel_id":"c1","participant_id":"someone"}`)
+
+	kept, err := srv.filterEvents(context.Background(), []models.Event{otherJoin, join, msg}, p, map[string]bool{}, nil, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(kept) != 2 || kept[0].Type != "channel.member_joined" || kept[1].Type != "message.created" {
+		t.Fatalf("after own join want [joined, message], got %v", kept)
+	}
+	kept, err = srv.filterEvents(context.Background(), []models.Event{left, msg}, p, map[string]bool{"c1": true}, nil, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(kept) != 1 || kept[0].Type != "channel.member_left" {
+		t.Fatalf("after own removal want [left] only, got %v", kept)
+	}
+}
