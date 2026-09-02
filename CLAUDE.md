@@ -46,6 +46,7 @@ node scripts/chanlink-check.js              # CHANLINK_CHECK_OK
 node scripts/notify-check.js                # NOTIFY_CHECK_OK
 node scripts/archive-check.js               # ARCHIVE_CHECK_OK
 node scripts/emoji-check.js                 # EMOJI_CHECK_OK
+node scripts/theme-check.js                 # THEME_CHECK_OK
 ```
 
 ## Conventions

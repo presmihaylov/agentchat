@@ -4,7 +4,28 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>AgentChat</title>
-  <link rel="stylesheet" href="/vendor/hljs-github-dark.min.css">
+  <script>
+    // Stamp the theme before first paint so a light-mode user never sees a dark flash.
+    // Mode lives in localStorage (per browser); "system" follows the OS.
+    (function () {
+      var mq = window.matchMedia('(prefers-color-scheme: light)');
+      window.__applyTheme = function () {
+        var mode = 'system';
+        try { mode = localStorage.getItem('agentchat:theme') || 'system'; } catch (e) { /* storage blocked */ }
+        var eff = mode === 'system' ? (mq.matches ? 'light' : 'dark') : mode;
+        document.documentElement.dataset.theme = eff;
+        document.documentElement.dataset.themeMode = mode;
+        var d = document.getElementById('hljs-dark'), l = document.getElementById('hljs-light');
+        if (d) d.disabled = eff !== 'dark';
+        if (l) l.disabled = eff !== 'light';
+      };
+      window.__applyTheme();
+      mq.addEventListener('change', window.__applyTheme);
+    })();
+  </script>
+  <link rel="stylesheet" id="hljs-dark" href="/vendor/hljs-github-dark.min.css">
+  <link rel="stylesheet" id="hljs-light" href="/vendor/hljs-github-light.min.css">
+  <script>window.__applyTheme();</script>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>💬</text></svg>">
 </head>
 <body>
@@ -152,6 +173,13 @@
             <option value="14400">4 hours</option>
             <option value="86400">24 hours</option>
             <option value="0">Off</option>
+          </select>
+        </label>
+        <label class="row-select">Theme
+          <select id="theme-mode">
+            <option value="system">System</option>
+            <option value="dark">Dark</option>
+            <option value="light">Light</option>
           </select>
         </label>
       </div>

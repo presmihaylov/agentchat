@@ -1408,6 +1408,12 @@ import { emojify } from './emoji.js';
     await saveNotifyPrefs({ archive_after_secs: Number(ev.target.value) });
     renderChannels();
   };
+  // theme is a per-browser choice, not a participant pref: the head script owns it
+  $('theme-mode').value = document.documentElement.dataset.themeMode || 'system';
+  $('theme-mode').onchange = (ev) => {
+    try { localStorage.setItem('agentchat:theme', ev.target.value); } catch { /* storage blocked */ }
+    window.__applyTheme();
+  };
 
   const applyEvent = async (ev) => {
     const t = ev.type;
