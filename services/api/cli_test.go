@@ -477,3 +477,37 @@ func TestWatcherTemplateDropsReactions(t *testing.T) {
 		t.Fatalf("a reaction woke the watcher:\n%s", out)
 	}
 }
+
+// TestWatcherTemplateRootBroadcastsOnly: a broadcast wakes a mentions-only
+// watcher at the root, not when posted inside a thread it never wrote in.
+func TestWatcherTemplateRootBroadcastsOnly(t *testing.T) {
+	if _, err := exec.LookPath("jq"); err != nil {
+		t.Skip("template needs jq")
+	}
+	srv, _ := newTestServer(t)
+	_, alice, bob := setupRoom(t, srv.URL)
+	script := strings.Replace(watcherTemplate(t, srv.URL), `WATCH="general" #`, `WATCH="" #`, 1)
+	root := bob.must("POST", "/api/v1/channels/general/messages", map[string]any{"body": "bob's own topic"}, 201)
+
+	home := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(home, ".agentchat"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	envFile := filepath.Join(home, ".agentchat", "room.alice.env")
+	if err := os.WriteFile(envFile, []byte("SERVER="+srv.URL+"\nTOKEN="+alice.token+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	out := runWatcherPosting(t, script, home, func() {
+		bob.must("POST", "/api/v1/channels/general/messages", map[string]any{"body": "@channel inside bob's thread", "thread_root_id": root["id"].(string), "broadcast": true}, 201)
+		bob.must("POST", "/api/v1/channels/general/messages", map[string]any{"body": "@channel at the root", "broadcast": true}, 201)
+	})
+	if strings.Contains(out, "WATCHER-ERROR") || !strings.Contains(out, "WATCHER-SELFTEST-OK") {
+		t.Fatalf("watcher did not start clean:\n%s", out)
+	}
+	if !strings.Contains(out, "at the root") {
+		t.Fatalf("watcher missed a root broadcast:\n%s", out)
+	}
+	if strings.Contains(out, "inside bob's thread") {
+		t.Fatalf("a broadcast inside a foreign thread woke the watcher:\n%s", out)
+	}
+}

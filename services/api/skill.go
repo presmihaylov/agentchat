@@ -683,11 +683,15 @@ then start it with the monitor tool:
         and ((.payload.channel_id // "") != "")
         and ((.payload.mentions | type) == "array");
       def mine: (.payload.author_name // "") == $me;
+      # a broadcast wakes everyone only at the root; inside a thread it is thread traffic
+      def root_broadcast:
+        ((.payload.is_broadcast // false) == true)
+        and ((.payload.thread_root_id // null) == null);
       def elsewhere:
         ((.payload.channel_id) as $c | ($chs | any(. == $c)) | not)
         and (([.payload.mentions[]] | any(. == $me)) | not)
         and (([.payload.thread_participants[]?] | any(. == $me)) | not)
-        and ((.payload.is_broadcast // false) == false);
+        and (root_broadcast | not);
       def noise_type:
         (.type // "") | . == "message.working" or . == "message.working.cleared"
           or . == "participant.online" or . == "participant.offline"
@@ -714,6 +718,7 @@ then start it with the monitor tool:
     P_FOREIGN='{"events":[{"type":"message.created","payload":{"id":"p","author_name":"someone-else","channel_id":"'"$FIRST"'","mentions":[],"is_broadcast":false,"body":null}}]}'
     P_MENTION='{"events":[{"type":"message.created","payload":{"id":"p","author_name":"someone-else","channel_id":"other-channel","mentions":["'"$ME"'"],"is_broadcast":false,"body":"hi"}}]}'
     P_BCAST='{"events":[{"type":"message.created","payload":{"id":"p","author_name":"someone-else","channel_id":"other-channel","mentions":[],"is_broadcast":true,"body":"@channel"}}]}'
+    P_BCAST_THREAD='{"events":[{"type":"message.created","payload":{"id":"p","author_name":"someone-else","channel_id":"other-channel","mentions":[],"is_broadcast":true,"thread_root_id":"some-root","body":"@channel inside a thread"}}]}'
     P_THREAD='{"events":[{"type":"message.created","payload":{"id":"p","author_name":"someone-else","channel_id":"other-channel","mentions":[],"is_broadcast":false,"thread_participants":["'"$ME"'","someone-else"],"body":"untagged follow-up"}}]}'
     P_MINE='{"events":[{"type":"message.created","payload":{"id":"p","author_name":"'"$ME"'","channel_id":"'"$FIRST"'","mentions":[],"is_broadcast":false,"body":"x"}}]}'
     P_MIXED='{"events":[{"type":"message.created","payload":{"id":"a","author_name":"'"$ME"'","channel_id":"'"$FIRST"'","mentions":[],"is_broadcast":false,"body":"x"}},{"type":"channel.member_joined","payload":{"id":"b"}}]}'
@@ -724,6 +729,7 @@ then start it with the monitor tool:
     [ "$(probe "$P_FOREIGN")" = "$WANT_FOREIGN" ] || FAIL="$FAIL foreign-null-body"
     [ "$(probe "$P_MENTION")" = "1" ] || FAIL="$FAIL mention-from-elsewhere-deaf"
     [ "$(probe "$P_BCAST")"   = "1" ] || FAIL="$FAIL broadcast-deaf"
+    [ "$(probe "$P_BCAST_THREAD")" = "0" ] || FAIL="$FAIL thread-broadcast-not-suppressed"
     [ "$(probe "$P_THREAD")"  = "1" ] || FAIL="$FAIL thread-follow-up-deaf"
     [ "$(probe "$P_MINE")"    = "0" ] || FAIL="$FAIL own-message-not-suppressed"
     [ "$(probe "$P_MIXED")"   = "1" ] || FAIL="$FAIL mixed-batch-swallowed"
@@ -733,7 +739,7 @@ then start it with the monitor tool:
     if [ -n "$FAIL" ]; then
       echo "WATCHER-ERROR: filter self-test FAILED ($FAIL), refusing to start deaf"; rm -f "$LOCK"; exit 1
     fi
-    echo "WATCHER-SELFTEST-OK: emits a foreign null-body message, a mention from elsewhere, an untagged reply in a thread I wrote in, and a broadcast, suppresses my own, never swallows a mixed batch, stays audible on a drifted payload, drops every reaction"
+    echo "WATCHER-SELFTEST-OK: emits a foreign null-body message, a mention from elsewhere, an untagged reply in a thread I wrote in, and a root broadcast, suppresses my own and a broadcast inside a thread I am not in, never swallows a mixed batch, stays audible on a drifted payload, drops every reaction"
     if [ -z "$WATCH" ]; then
       echo "WATCHER-SCOPE: mode=mentions-only; every mention of $ME, every reply in a thread $ME wrote in, and every root broadcast, room-wide; no channel heard in full, reactions never"
     else
