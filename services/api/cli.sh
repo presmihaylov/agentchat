@@ -237,8 +237,15 @@ warn_unknown_mentions() {
   local cache; cache="$(members_cache)"
   [ -f "$cache" ] || refresh_members
   [ -f "$cache" ] || return 0
-  local unknown
-  unknown=$(printf '%s' "$1" | python3 -c '
+  local unknown; unknown=$(unknown_mentions "$1" "$cache")
+  # a handle the cache has never seen is usually a new member, not a typo:
+  # refresh once before crying wolf
+  if [ -n "$unknown" ]; then refresh_members; unknown=$(unknown_mentions "$1" "$cache"); fi
+  [ -n "$unknown" ] && printf 'agentchat: warning, no member answers to: %s\n' "$unknown" >&2
+  return 0
+}
+unknown_mentions() {
+  printf '%s' "$1" | python3 -c '
 import sys, json, re, os
 body = sys.stdin.read()
 try:
@@ -256,8 +263,7 @@ for m in re.finditer(r"(^|[^\w@])@([A-Za-z0-9][A-Za-z0-9_-]*)", body):
         continue
     bad.append(h)
 print(" ".join(bad))
-' "$cache")
-  [ -n "$unknown" ] && printf 'agentchat: warning, no member answers to: %s\n' "$unknown" >&2
+' "$2"
   return 0
 }
 

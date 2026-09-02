@@ -159,6 +159,12 @@ out=$("${B[@]}" mentions --limit 50)
 grep -q "thread you are in, reply in thread $root" <<<"$out" || fail "an untagged follow-up was not labelled as a thread hit: $out"
 ok "reply --latest and mentions tag the thread"
 
+# 7h. a member who joined after the roster cache was warm is not a false alarm
+carol=$(join carol)
+"${A[@]}" reply "$root" 'welcome @carol' >"$WORK/out" 2>"$WORK/err" || fail "mentioning a new member failed: $(cat "$WORK/err")"
+if grep -q 'no member answers' "$WORK/err"; then fail "a stale roster cache cried wolf on a new member: $(cat "$WORK/err")"; fi
+ok "a new member does not trip the stale-cache warning"
+
 # 8. mentions catch-up sees what was addressed to bob, and broadcasts
 "${A[@]}" mentions --limit 50 >/dev/null   # each side starts its cursor at "now"
 "${B[@]}" mentions --limit 50 >/dev/null
