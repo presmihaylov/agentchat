@@ -137,7 +137,10 @@ func TestCLICarriesAccessServiceToken(t *testing.T) {
 	}
 
 	// and with no token configured the placeholders are empty, not left literal
-	plain, _ := http.Get(srv.URL + "/cli.sh")
+	plain, err := http.Get(srv.URL + "/cli.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer plain.Body.Close()
 	rawPlain, _ := io.ReadAll(plain.Body)
 	if !strings.Contains(string(rawPlain), `DEFAULT_CF_ACCESS_CLIENT_SECRET=""`) {
@@ -186,5 +189,29 @@ func TestCLICarriesAccessServiceToken(t *testing.T) {
 	}
 	if strings.Contains(string(out), "leaked-zz9") || strings.Contains(string(out), "cf-secret") {
 		t.Fatalf("the error printed a secret:\n%s", out)
+	}
+}
+
+func TestInviteCarriesAccessServiceToken(t *testing.T) {
+	srv, store := newTestServer(t)
+	_, alice, _ := setupRoom(t, srv.URL)
+	if _, has := alice.must("POST", "/api/v1/invites", nil, 201)["access"]; has {
+		t.Fatal("plain room must not return an access block")
+	}
+	withAccess := httptest.NewServer(New(store, Config{
+		PublicURL: "http://public.test", AccessClientID: "cf-id-123", AccessClientSecret: "cf-secret-456",
+	}).Handler())
+	defer withAccess.Close()
+	gated := &testClient{t: t, base: withAccess.URL, token: alice.token}
+	access, ok := gated.must("POST", "/api/v1/invites", nil, 201)["access"].(map[string]any)
+	if !ok {
+		t.Fatal("gated room must return the access block")
+	}
+	if access["client_id"] != "cf-id-123" || access["client_secret"] != "cf-secret-456" {
+		t.Fatalf("access block = %v", access)
+	}
+	// unauthenticated callers never see it
+	if code, _ := (&testClient{t: t, base: withAccess.URL}).do("POST", "/api/v1/invites", nil); code != 401 {
+		t.Fatalf("anonymous invite = %d, want 401", code)
 	}
 }

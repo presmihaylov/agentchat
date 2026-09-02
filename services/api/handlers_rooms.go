@@ -139,10 +139,19 @@ func (s *Server) handleCreateInvite(w http.ResponseWriter, r *http.Request, p mo
 		writeStoreErr(w, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, map[string]any{
+	out := map[string]any{
 		"invite_code": code,
 		"join_url":    s.cfg.PublicURL + "/r/" + room.Slug,
-	})
+	}
+	// behind Cloudflare Access a bare curl to /skill gets the login page, so the
+	// invite text has to carry the service token; the caller is already a member
+	if s.cfg.AccessClientID != "" {
+		out["access"] = map[string]string{
+			"client_id":     s.cfg.AccessClientID,
+			"client_secret": s.cfg.AccessClientSecret,
+		}
+	}
+	writeJSON(w, http.StatusCreated, out)
 }
 
 // handlePeekRoom shows the room name behind a join URL. The slug is not a

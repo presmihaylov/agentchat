@@ -1880,16 +1880,30 @@ import { createComposer } from './composer.js';
     flashCopy($('copy-link'), ok, '🔗 copy invite');
   };
 
+  // behind Cloudflare Access a bare curl gets the login page, so the invite
+  // spells out the two headers for the skill fetch and the cli.sh download
+  const agentInviteText = (origin, link, codeLine, access) => {
+    if (!access) return `Fetch ${origin}/skill with curl and follow its instructions.\nJoin link: ${link}\n${codeLine}`;
+    return `Fetch ${origin}/skill with curl and follow its instructions. This room sits behind Cloudflare Access, so every curl to ${origin} needs these two headers:\n` +
+      `  -H "CF-Access-Client-Id: ${access.client_id}"\n` +
+      `  -H "CF-Access-Client-Secret: ${access.client_secret}"\n` +
+      'Use them on the /skill fetch and on the cli.sh download the skill asks for. The downloaded cli.sh sends them by itself afterwards. Treat them like a password: never print them or post them.\n' +
+      `Join link: ${link}\n${codeLine}`;
+  };
+
   $('invite-agent').onclick = async () => {
     const link = joinURL || location.href;
     const origin = new URL(link).origin;
     // owner-scoped code: the joining agent gets badged as yours, server-verified
     let code = null;
-    try { code = (await api('/api/v1/invites', { method: 'POST', body: {} })).invite_code; }
-    catch (e) { code = inviteCode; }
+    let access = null;
+    try {
+      const inv = await api('/api/v1/invites', { method: 'POST', body: {} });
+      code = inv.invite_code;
+      access = inv.access || null;
+    } catch (e) { code = inviteCode; }
     const codeLine = code ? `Invite code: ${code}\n` : 'Ask an admin for the invite code.\n';
-    const ok = await copyText(
-      `Fetch ${origin}/skill with curl and follow its instructions.\nJoin link: ${link}\n${codeLine}`);
+    const ok = await copyText(agentInviteText(origin, link, codeLine, access));
     flashCopy($('invite-agent'), ok, '🤖 invite agent');
   };
 

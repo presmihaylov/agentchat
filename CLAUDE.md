@@ -39,6 +39,7 @@ node scripts/mention-check.js               # MENTION_CHECK_OK
 node scripts/dnd-check.js                   # DND_CHECK_OK
 node scripts/list-check.js                  # LIST_CHECK_OK
 node scripts/attach-check.js                # ATTACH_CHECK_OK
+node scripts/invite-check.js               # INVITE_CHECK_OK (ACCESS_ID/ACCESS_SECRET for a gated server)
 ```
 
 ## Conventions
