@@ -11,7 +11,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -601,5 +603,98 @@ func TestWatcherTemplateWakeHookOptIn(t *testing.T) {
 	}
 	if strings.Contains(strings.ToLower(string(raw)), "herdr") {
 		t.Fatal("skill doc is harness-specific")
+	}
+}
+
+// TestWatcherTemplateBacksOffOnOutage: a dead server used to be a WATCHER-ERROR
+// wake every 5s for every agent. Now the first failure prints once, repeats of
+// the same code stay silent, recovery prints one WATCHER-BACK line, and the
+// cursor is untouched so a message posted during the outage still arrives.
+func TestWatcherTemplateBacksOffOnOutage(t *testing.T) {
+	if _, err := exec.LookPath("jq"); err != nil {
+		t.Skip("template needs jq")
+	}
+	srv, _ := newTestServer(t)
+	_, alice, bob := setupRoom(t, srv.URL)
+	target, _ := url.Parse(srv.URL)
+	proxy := httputil.NewSingleHostReverseProxy(target)
+	var mu sync.Mutex
+	down, fails := false, 0
+	gate := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		isDown := down
+		if isDown && r.URL.Path == "/api/v1/events" {
+			fails++
+		}
+		n := fails
+		mu.Unlock()
+		if isDown && r.URL.Path == "/api/v1/events" {
+			// a Cloudflare 502 page: HTML, and a ray id that differs on every hit
+			w.WriteHeader(http.StatusBadGateway)
+			w.Write([]byte("<html>Bad gateway, ray " + strconv.Itoa(n) + "</html>"))
+			return
+		}
+		proxy.ServeHTTP(w, r)
+	}))
+	defer gate.Close()
+	script := watcherTemplate(t, gate.URL)
+	for from, to := range map[string]string{
+		"wait=25":          "wait=1",
+		`sleep "$BACKOFF"`: "sleep 1",
+	} {
+		if !strings.Contains(script, from) {
+			t.Fatalf("template no longer contains %q:\n%s", from, script)
+		}
+		script = strings.ReplaceAll(script, from, to)
+	}
+	home := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(home, ".agentchat"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	envFile := filepath.Join(home, ".agentchat", "room.alice.env")
+	if err := os.WriteFile(envFile, []byte("SERVER="+gate.URL+"\nTOKEN="+alice.token+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(home, "watch.sh")
+	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "sh", path)
+	cmd.Env = append(os.Environ(), "HOME="+home)
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
+	cmd.WaitDelay = time.Second
+	var out bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &out, &out
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(2 * time.Second)
+	mu.Lock()
+	down = true
+	mu.Unlock()
+	time.Sleep(4 * time.Second)
+	bob.must("POST", "/api/v1/channels/general/messages", map[string]any{"body": "@alice posted while you were down"}, 201)
+	mu.Lock()
+	down = false
+	n := fails
+	mu.Unlock()
+	time.Sleep(3 * time.Second)
+	cancel()
+	_ = cmd.Wait()
+	got := out.String()
+	if n < 3 {
+		t.Fatalf("expected at least 3 failed polls, got %d:\n%s", n, got)
+	}
+	if c := strings.Count(got, "WATCHER-ERROR: HTTP 502"); c != 1 {
+		t.Fatalf("want exactly one WATCHER-ERROR for %d failed polls, got %d:\n%s", n, c, got)
+	}
+	if c := strings.Count(got, "WATCHER-BACK: server back after"); c != 1 {
+		t.Fatalf("want exactly one WATCHER-BACK line, got %d:\n%s", c, got)
+	}
+	if !strings.Contains(got, "posted while you were down") {
+		t.Fatalf("a mention posted during the outage was lost:\n%s", got)
 	}
 }
