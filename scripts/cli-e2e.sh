@@ -213,10 +213,18 @@ c0=$(curl -fsS "$SERVER/api/v1/events?after=0" -H "Authorization: Bearer $alice"
 "${B[@]}" reply "$root" "@alice one more thing" >/dev/null
 curl -fsS "$SERVER/api/v1/events?after=$c0" -H "Authorization: Bearer $alice" | python3 -c '
 import sys,json
-p={e["payload"]["body"]:e["payload"]["thread_participants"] for e in json.load(sys.stdin)["events"] if e["type"]=="message.created"}
+evs=[e["payload"] for e in json.load(sys.stdin)["events"] if e["type"]=="message.created"]
+assert any(m["kind"]=="system" and m["body"]=="left this thread" and m["author_name"]=="alice" and m["mentions"]==[] for m in evs), evs
+p={m["body"]:m["thread_participants"] for m in evs if m["kind"]!="system"}
 assert "alice" not in p["carrying on without alice"], p
 assert "alice" in p["@alice one more thing"], p' || fail "leave did not drop alice from thread_participants"
+# leaving a thread you were pulled back into by a mention: the timeline says so
+"${A[@]}" leave "$root" >/dev/null
+"${A[@]}" mentions | grep -q "carrying on without alice" && fail "ac mentions still lists a thread alice left"
 "${A[@]}" rejoin "$root" | grep -q "rejoined thread $root" || fail "rejoin output"
+"${A[@]}" thread "$root" > "$WORK/thread"
+grep -q "left this thread" "$WORK/thread" || fail "no 'left this thread' entry in the thread"
+grep -q "rejoined this thread" "$WORK/thread" || fail "no 'rejoined this thread' entry in the thread"
 ok "leave + rejoin"
 
 # 10. membership: join a channel, and members reports who is in it

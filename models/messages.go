@@ -458,6 +458,7 @@ func threadParticipantNamesTx(ctx context.Context, tx pgx.Tx, roomID, rootID str
 	rows, err := tx.Query(ctx,
 		`SELECT p.name FROM messages m JOIN participants p ON p.id = m.author_id
 		 WHERE m.room_id = $1 AND COALESCE(m.thread_root_id, m.id) = $2
+		   AND m.kind <> 'system'
 		   AND NOT EXISTS (SELECT 1 FROM thread_states ts
 		                   WHERE ts.root_id = $2 AND ts.participant_id = p.id
 		                     AND ts.left_at IS NOT NULL)

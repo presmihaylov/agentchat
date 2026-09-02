@@ -8,7 +8,7 @@
 # thread, whether the id is the root or any reply inside it.
 set -euo pipefail
 
-VERSION="1.3.0"
+VERSION="1.3.1"
 DEFAULT_SERVER="{{SERVER}}"
 # Cloudflare Access service token, baked in by the server when the room sits
 # behind a Cloudflare tunnel. Empty otherwise. The env file can override both.
@@ -592,7 +592,7 @@ cmd_leave() {
   [ $# -ge 1 ] || die "usage: cli.sh leave <message-id>"
   local root; root=$(thread_root_of "$1")
   api POST "/api/v1/threads/$root/leave" '{"left":true}'
-  printf 'left thread %s: untagged replies no longer wake you; a direct @mention or your own reply rejoins\n' "$root"
+  printf 'left thread %s: the thread shows you left; untagged replies no longer wake you; a direct @mention or your own reply rejoins\n' "$root"
 }
 
 cmd_rejoin() {

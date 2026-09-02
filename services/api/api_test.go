@@ -2936,3 +2936,86 @@ func TestThreadLeave(t *testing.T) {
 	// a stranger to the thread cannot leave it into a 404-free no-op: unknown root is 404
 	alice.must("POST", "/api/v1/threads/00000000-0000-0000-0000-000000000000/leave", map[string]any{"left": true}, 404)
 }
+
+// TestThreadLeaveTimelineEntry: leaving and rejoining show in the thread as
+// system entries, once per change; the entry is not a reply (it does not pull
+// the leaver back in) and it is news to nobody (relevant=true skips it).
+func TestThreadLeaveTimelineEntry(t *testing.T) {
+	srv, _ := newTestServer(t)
+	_, alice, bob := setupRoom(t, srv.URL)
+	root := bob.must("POST", "/api/v1/channels/general/messages", map[string]any{"body": "bob's topic"}, 201)
+	rootID := root["id"].(string)
+	alice.must("POST", "/api/v1/channels/general/messages", map[string]any{"body": "my part", "thread_root_id": rootID}, 201)
+	c0 := int64(bob.must("GET", "/api/v1/events?after=0", nil, 200)["cursor"].(float64))
+
+	entries := func() []string {
+		t.Helper()
+		out := alice.must("GET", "/api/v1/threads/"+rootID, nil, 200)
+		got := []string{}
+		for _, raw := range out["messages"].([]any) {
+			m := raw.(map[string]any)
+			if m["kind"] == "system" {
+				got = append(got, m["author_name"].(string)+": "+m["body"].(string))
+			}
+		}
+		return got
+	}
+	alice.must("POST", "/api/v1/threads/"+rootID+"/leave", map[string]any{"left": true}, 200)
+	// a second leave is a no-op, not a second entry
+	alice.must("POST", "/api/v1/threads/"+rootID+"/leave", map[string]any{"left": true}, 200)
+	if got := fmt.Sprint(entries()); got != "[alice: left this thread]" {
+		t.Fatalf("after leave: %s", got)
+	}
+	// the entry itself must not read as alice writing in the thread again
+	bob.must("POST", "/api/v1/channels/general/messages", map[string]any{"body": "still without alice", "thread_root_id": rootID}, 201)
+	evs, _ := eventsAfter(t, bob, c0)
+	sawEntry, sawReply := false, false
+	for _, e := range evs {
+		pl := e["payload"].(map[string]any)
+		if e["type"] != "message.created" {
+			continue
+		}
+		if pl["kind"] == "system" && pl["body"] == "left this thread" {
+			sawEntry = true
+		}
+		if pl["body"] == "still without alice" {
+			sawReply = true
+			if parts := fmt.Sprint(pl["thread_participants"]); parts != "[bob]" {
+				t.Fatalf("the leave entry rejoined alice: %s", parts)
+			}
+		}
+	}
+	if !sawEntry || !sawReply {
+		t.Fatalf("firehose missing the entry (%v) or the reply (%v)", sawEntry, sawReply)
+	}
+	// relevant=true: bob is in the thread, but a timeline entry is not news;
+	// alice left, so bob's untagged reply is not hers to hear either
+	for who, c := range map[string]*testClient{"bob": bob, "alice": alice} {
+		out := c.must("GET", "/api/v1/events?after="+fmt.Sprint(c0)+"&relevant=true", nil, 200)
+		for _, raw := range out["events"].([]any) {
+			pl := raw.(map[string]any)["payload"].(map[string]any)
+			if pl["kind"] == "system" {
+				t.Fatalf("%s got a system entry via relevant=true: %v", who, pl["body"])
+			}
+			if who == "alice" && pl["body"] == "still without alice" {
+				t.Fatal("relevant=true still delivers a thread alice left")
+			}
+		}
+	}
+	alice.must("POST", "/api/v1/threads/"+rootID+"/leave", map[string]any{"left": false}, 200)
+	if got := fmt.Sprint(entries()); got != "[alice: left this thread alice: rejoined this thread]" {
+		t.Fatalf("after rejoin: %s", got)
+	}
+	// rejoined: relevant=true hears the thread again
+	bob.must("POST", "/api/v1/channels/general/messages", map[string]any{"body": "welcome back", "thread_root_id": rootID}, 201)
+	out := alice.must("GET", "/api/v1/events?after="+fmt.Sprint(c0)+"&relevant=true", nil, 200)
+	heard := false
+	for _, raw := range out["events"].([]any) {
+		if raw.(map[string]any)["payload"].(map[string]any)["body"] == "welcome back" {
+			heard = true
+		}
+	}
+	if !heard {
+		t.Fatal("relevant=true deaf after rejoin")
+	}
+}

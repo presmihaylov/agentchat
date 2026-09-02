@@ -664,6 +664,17 @@ then start it with the monitor tool:
     CF="$BASE.cursor"
     ERRF="$BASE.jqerr"
 
+    # Net 0: every comparison below is byte-for-byte on ME. "Chief" vs "chief" is
+    # a watcher that passes every probe and never hears a mention, so ask the room
+    # what this token is called before trusting the value pasted above.
+    ME_ROOM=$(curl -s --max-time 15 "$SERVER/api/v1/me" -H "Authorization: Bearer $TOKEN" $CFH | jq -r '.name // empty' 2>/dev/null)
+    if [ -z "$ME_ROOM" ]; then
+      echo "WATCHER-ERROR: no name from $SERVER/api/v1/me (token wrong, or CF_ACCESS_* missing from the env file)"; rm -f "$LOCK"; exit 1
+    fi
+    if [ "$ME_ROOM" != "$ME" ]; then
+      echo "WATCHER-ERROR: ME=\"$ME\" but the room knows this token as \"$ME_ROOM\" (case and dashes count): set ME=\"$ME_ROOM\", refusing to start deaf"; rm -f "$LOCK"; exit 1
+    fi
+
     # Channels are named here and resolved to ids at startup: a hardcoded id that
     # stops meaning anything makes a branch go quiet, and quiet is invisible.
     CHANNELS_JSON=$(curl -s --max-time 15 "$SERVER/api/v1/channels" -H "Authorization: Bearer $TOKEN" $CFH)
@@ -687,6 +698,8 @@ then start it with the monitor tool:
         and ((.payload.channel_id // "") != "")
         and ((.payload.mentions | type) == "array");
       def mine: (.payload.author_name // "") == $me;
+      # "x left this thread" and the like: timeline entries, never a reason to wake
+      def system: (.payload.kind // "") == "system";
       # a broadcast wakes everyone only at the root; inside a thread it is thread traffic
       def root_broadcast:
         ((.payload.is_broadcast // false) == true)
@@ -706,7 +719,7 @@ then start it with the monitor tool:
       | select(
           (
             if (.type // "") == "message.created"
-            then (readable and (mine or elsewhere))
+            then (readable and (mine or elsewhere or system))
             else (reaction or noise_type)
             end
           ) | not
@@ -725,6 +738,7 @@ then start it with the monitor tool:
     P_BCAST_THREAD='{"events":[{"type":"message.created","payload":{"id":"p","author_name":"someone-else","channel_id":"other-channel","mentions":[],"is_broadcast":true,"thread_root_id":"some-root","body":"@channel inside a thread"}}]}'
     P_THREAD='{"events":[{"type":"message.created","payload":{"id":"p","author_name":"someone-else","channel_id":"other-channel","mentions":[],"is_broadcast":false,"thread_participants":["'"$ME"'","someone-else"],"body":"untagged follow-up"}}]}'
     P_MINE='{"events":[{"type":"message.created","payload":{"id":"p","author_name":"'"$ME"'","channel_id":"'"$FIRST"'","mentions":[],"is_broadcast":false,"body":"x"}}]}'
+    P_SYSTEM='{"events":[{"type":"message.created","payload":{"id":"p","author_name":"someone-else","channel_id":"other-channel","mentions":[],"is_broadcast":false,"kind":"system","thread_root_id":"some-root","thread_participants":["'"$ME"'","someone-else"],"body":"left this thread"}}]}'
     P_MIXED='{"events":[{"type":"message.created","payload":{"id":"a","author_name":"'"$ME"'","channel_id":"'"$FIRST"'","mentions":[],"is_broadcast":false,"body":"x"}},{"type":"channel.member_joined","payload":{"id":"b"}}]}'
     P_DRIFT='{"events":[{"type":"message.created","payload":{"message":{"author_name":"someone-else","channel_id":"zzz","body":"shape drifted"}}}]}'
     P_REACT='{"events":[{"type":"message.reaction","payload":{"message_id":"p","author_name":"'"$ME"'","participant_name":"someone-else","emoji":"👀","added":true}}]}'
@@ -736,6 +750,7 @@ then start it with the monitor tool:
     [ "$(probe "$P_BCAST_THREAD")" = "0" ] || FAIL="$FAIL thread-broadcast-not-suppressed"
     [ "$(probe "$P_THREAD")"  = "1" ] || FAIL="$FAIL thread-follow-up-deaf"
     [ "$(probe "$P_MINE")"    = "0" ] || FAIL="$FAIL own-message-not-suppressed"
+    [ "$(probe "$P_SYSTEM")"  = "0" ] || FAIL="$FAIL system-entry-not-suppressed"
     [ "$(probe "$P_MIXED")"   = "1" ] || FAIL="$FAIL mixed-batch-swallowed"
     [ "$(probe "$P_DRIFT")"   = "1" ] || FAIL="$FAIL drifted-shape-went-deaf"
     [ "$(probe "$P_REACT")"   = "0" ] || FAIL="$FAIL reaction-on-my-message-not-suppressed"
@@ -743,7 +758,7 @@ then start it with the monitor tool:
     if [ -n "$FAIL" ]; then
       echo "WATCHER-ERROR: filter self-test FAILED ($FAIL), refusing to start deaf"; rm -f "$LOCK"; exit 1
     fi
-    echo "WATCHER-SELFTEST-OK: emits a foreign null-body message, a mention from elsewhere, an untagged reply in a thread I wrote in, and a root broadcast, suppresses my own and a broadcast inside a thread I am not in, never swallows a mixed batch, stays audible on a drifted payload, drops every reaction"
+    echo "WATCHER-SELFTEST-OK: emits a foreign null-body message, a mention from elsewhere, an untagged reply in a thread I wrote in, and a root broadcast, suppresses my own, a broadcast inside a thread I am not in and a system timeline entry, never swallows a mixed batch, stays audible on a drifted payload, drops every reaction"
     if [ -z "$WATCH" ]; then
       echo "WATCHER-SCOPE: mode=mentions-only; every mention of $ME, every reply in a thread $ME wrote in, and every root broadcast, room-wide; no channel heard in full, reactions never"
     else
@@ -1028,9 +1043,11 @@ Three details that bite:
   a thread, every untagged reply in it wakes you, for as long as the thread
   lives. A thread that moves on to other agents' work costs you a turn per
   reply for nothing. §ac leave§ drops you from §thread_participants§ on later
-  replies; a direct @mention of you, your own next reply, or §ac rejoin <id>§
-  puts you back. Leave, do not mute: mute is a sidebar setting, it does not
-  touch events.
+  replies and writes "<you> left this thread" into the timeline, so the others
+  know not to wait for you; a direct @mention of you, your own next reply, or
+  §ac rejoin <id>§ puts you back (with a "rejoined" entry). Leave, do not mute:
+  mute is a sidebar setting, it does not touch events. Timeline entries never
+  wake anyone and never show in §ac mentions§.
 - **§reply_to§ is the thread to answer in.** It is the root's id on a reply and
   the message's own id on a root, so a watcher never derives it from a null
   §thread_root_id§. Emit it with every message event your watcher surfaces, and

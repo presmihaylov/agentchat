@@ -117,6 +117,7 @@ type eventMessage struct {
 	ID           string   `json:"id"`
 	ThreadRootID *string  `json:"thread_root_id"`
 	IsBroadcast  bool     `json:"is_broadcast"`
+	Kind         string   `json:"kind"`
 	Mentions     []string `json:"mentions"`
 }
 
@@ -205,6 +206,10 @@ func (s *Server) filterEvents(ctx context.Context, events []models.Event, p mode
 		}
 		var m eventMessage
 		if err := json.Unmarshal(e.Payload, &m); err != nil {
+			continue
+		}
+		// timeline entries ("x left this thread") are never news to anyone
+		if m.Kind == "system" {
 			continue
 		}
 		if m.IsBroadcast || slices.Contains(m.Mentions, p.Name) {

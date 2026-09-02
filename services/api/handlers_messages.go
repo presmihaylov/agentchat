@@ -429,7 +429,7 @@ func (s *Server) handleThreadLeave(w http.ResponseWriter, r *http.Request, p mod
 	if !readJSON(w, r, &req) {
 		return
 	}
-	if err := s.store.SetThreadLeft(r.Context(), p.ID, root, req.Left); err != nil {
+	if err := s.store.SetThreadLeft(r.Context(), p.RoomID, p.ID, root, req.Left); err != nil {
 		writeStoreErr(w, err)
 		return
 	}

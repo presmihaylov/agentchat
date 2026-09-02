@@ -512,6 +512,72 @@ func TestWatcherTemplateRootBroadcastsOnly(t *testing.T) {
 	}
 }
 
+// TestWatcherTemplateRefusesWrongName: ME is compared byte for byte, so a
+// watcher started as "Alice" for the participant "alice" would pass every probe
+// and never hear a mention. It must refuse to start instead.
+func TestWatcherTemplateRefusesWrongName(t *testing.T) {
+	if _, err := exec.LookPath("jq"); err != nil {
+		t.Skip("template needs jq")
+	}
+	srv, _ := newTestServer(t)
+	_, alice, bob := setupRoom(t, srv.URL)
+	script := strings.Replace(watcherTemplate(t, srv.URL), `ME="alice"`, `ME="Alice"`, 1)
+	if !strings.Contains(script, `ME="Alice"`) {
+		t.Fatalf("could not recase ME in the template:\n%s", script)
+	}
+	home := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(home, ".agentchat"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	envFile := filepath.Join(home, ".agentchat", "room.alice.env")
+	if err := os.WriteFile(envFile, []byte("SERVER="+srv.URL+"\nTOKEN="+alice.token+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	out := runWatcher(t, script, home, bob)
+	if !strings.Contains(out, "WATCHER-ERROR") || !strings.Contains(out, `knows this token as "alice"`) {
+		t.Fatalf("a wrong-case ME must refuse to start and name the real name:\n%s", out)
+	}
+	if strings.Contains(out, "WATCHER-SELFTEST-OK") || strings.Contains(out, "are you there") {
+		t.Fatalf("watcher ran on with a wrong ME:\n%s", out)
+	}
+}
+
+// TestWatcherTemplateDropsSystemEntries: "bob left this thread" is a timeline
+// entry in a thread alice wrote in; it must not wake her.
+func TestWatcherTemplateDropsSystemEntries(t *testing.T) {
+	if _, err := exec.LookPath("jq"); err != nil {
+		t.Skip("template needs jq")
+	}
+	srv, _ := newTestServer(t)
+	_, alice, bob := setupRoom(t, srv.URL)
+	script := strings.Replace(watcherTemplate(t, srv.URL), `WATCH="general" #`, `WATCH="" #`, 1)
+	root := alice.must("POST", "/api/v1/channels/general/messages", map[string]any{"body": "alice's topic"}, 201)
+	rootID := root["id"].(string)
+	bob.must("POST", "/api/v1/channels/general/messages", map[string]any{"body": "bob's part", "thread_root_id": rootID}, 201)
+
+	home := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(home, ".agentchat"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	envFile := filepath.Join(home, ".agentchat", "room.alice.env")
+	if err := os.WriteFile(envFile, []byte("SERVER="+srv.URL+"\nTOKEN="+alice.token+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	out := runWatcherPosting(t, script, home, func() {
+		bob.must("POST", "/api/v1/threads/"+rootID+"/leave", map[string]any{"left": true}, 200)
+		bob.must("POST", "/api/v1/channels/general/messages", map[string]any{"body": "bob is back with a question", "thread_root_id": rootID}, 201)
+	})
+	if strings.Contains(out, "WATCHER-ERROR") || !strings.Contains(out, "WATCHER-SELFTEST-OK") {
+		t.Fatalf("watcher did not start clean:\n%s", out)
+	}
+	if strings.Contains(out, "left this thread") {
+		t.Fatalf("a timeline entry woke the watcher:\n%s", out)
+	}
+	if !strings.Contains(out, "back with a question") {
+		t.Fatalf("watcher missed a real reply in its own thread:\n%s", out)
+	}
+}
+
 // TestWatcherTemplateWakeHookOptIn: a second prompt per event is a full extra
 // turn under Monitor, so the template only runs a wake hook when
 // AGENTCHAT_WAKE_CMD is set, and names no harness; the doc says so.

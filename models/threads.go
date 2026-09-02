@@ -2,7 +2,11 @@ package models
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 )
 
 // ThreadSummary is one row of a participant's thread tree.
@@ -157,14 +161,63 @@ func (s *Store) SetThreadSubscribed(ctx context.Context, participantID, rootID s
 // SetThreadLeft takes the participant out of (left=true) or back into
 // (left=false) the thread's participant list on future events. A direct
 // @mention or the participant's own reply also clears it (see CreateMessage).
-func (s *Store) SetThreadLeft(ctx context.Context, participantID, rootID string, left bool) error {
-	_, err := s.pool.Exec(ctx,
+// Each change writes a system timeline entry in the thread so the others can
+// see who stepped out; that entry is not a reply, so it does not rejoin.
+func (s *Store) SetThreadLeft(ctx context.Context, roomID, participantID, rootID string, left bool) error {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	if err := lockRoomEvents(ctx, tx, roomID); err != nil {
+		return err
+	}
+	var channelID string
+	if err := tx.QueryRow(ctx,
+		`SELECT channel_id FROM messages WHERE room_id = $1 AND id = $2 AND thread_root_id IS NULL`,
+		roomID, rootID).Scan(&channelID); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrNotFound
+		}
+		return err
+	}
+	tag, err := tx.Exec(ctx,
 		`INSERT INTO thread_states (participant_id, root_id, left_at)
 		 VALUES ($1, $2, CASE WHEN $3 THEN now() END)
 		 ON CONFLICT (participant_id, root_id)
-		 DO UPDATE SET left_at = CASE WHEN $3 THEN now() END`,
+		 DO UPDATE SET left_at = CASE WHEN $3 THEN now() END
+		 WHERE (thread_states.left_at IS NOT NULL) <> $3`,
 		participantID, rootID, left)
-	return err
+	if err != nil {
+		return err
+	}
+	// already in that state: no entry, or every repeated ac leave spams the thread
+	if tag.RowsAffected() == 0 {
+		return tx.Commit(ctx)
+	}
+	body := "left this thread"
+	if !left {
+		body = "rejoined this thread"
+	}
+	var msgID string
+	if err := tx.QueryRow(ctx,
+		`INSERT INTO messages (room_id, channel_id, thread_root_id, author_id, body, kind, embed_status)
+		 VALUES ($1, $2, $3, $4, $5, 'system', 'skipped') RETURNING id`,
+		roomID, channelID, rootID, participantID, body).Scan(&msgID); err != nil {
+		return err
+	}
+	msg, err := scanMessage(tx.QueryRow(ctx, messageSelect+` WHERE m.id = $1`, msgID))
+	if err != nil {
+		return err
+	}
+	payload, err := json.Marshal(msg)
+	if err != nil {
+		return err
+	}
+	if err := appendEventTx(ctx, tx, roomID, "message.created", payload); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
 
 // SetThreadResolved hides (resolve=true) or restores a thread in the

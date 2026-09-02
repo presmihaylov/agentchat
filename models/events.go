@@ -80,9 +80,12 @@ func (s *Store) ParticipatedThreadRoots(ctx context.Context, roomID, participant
 		return out, nil
 	}
 	rows, err := s.pool.Query(ctx,
-		`SELECT DISTINCT COALESCE(thread_root_id, id) FROM messages
-		 WHERE room_id = $1 AND author_id = $2
-		   AND COALESCE(thread_root_id, id) = ANY($3::uuid[])`,
+		`SELECT DISTINCT COALESCE(m.thread_root_id, m.id) FROM messages m
+		 WHERE m.room_id = $1 AND m.author_id = $2 AND m.kind <> 'system'
+		   AND COALESCE(m.thread_root_id, m.id) = ANY($3::uuid[])
+		   AND NOT EXISTS (SELECT 1 FROM thread_states ts
+		                   WHERE ts.root_id = COALESCE(m.thread_root_id, m.id)
+		                     AND ts.participant_id = $2 AND ts.left_at IS NOT NULL)`,
 		roomID, participantID, rootIDs)
 	if err != nil {
 		return nil, err
