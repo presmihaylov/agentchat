@@ -2511,3 +2511,61 @@ func TestOwnMembershipUpdatesSnapshot(t *testing.T) {
 		t.Fatalf("after own removal want [left] only, got %v", kept)
 	}
 }
+
+func TestNotifyPrefsPersistPerParticipant(t *testing.T) {
+	srv, _ := newTestServer(t)
+	_, alice, bob := setupRoom(t, srv.URL)
+
+	got := alice.must("GET", "/api/v1/me/notifications", nil, 200)
+	if got["enabled"] != true || got["sound"] != true {
+		t.Fatalf("defaults must be on/on: %v", got)
+	}
+	got = alice.must("PATCH", "/api/v1/me/notifications", map[string]any{"sound": false}, 200)
+	if got["enabled"] != true || got["sound"] != false {
+		t.Fatalf("sound off must leave enabled alone: %v", got)
+	}
+	got = alice.must("GET", "/api/v1/me/notifications", nil, 200)
+	if got["sound"] != false {
+		t.Fatalf("sound setting did not persist: %v", got)
+	}
+	alice.must("PATCH", "/api/v1/me/notifications", map[string]any{}, 400)
+	// bob's settings are his own
+	got = bob.must("GET", "/api/v1/me/notifications", nil, 200)
+	if got["sound"] != true {
+		t.Fatalf("alice's setting leaked onto bob: %v", got)
+	}
+}
+
+func TestChannelMuteIsPerMember(t *testing.T) {
+	srv, _ := newTestServer(t)
+	_, alice, bob := setupRoom(t, srv.URL)
+	vault := alice.must("POST", "/api/v1/channels", map[string]any{"name": "vault", "private": true}, 201)
+	vaultID := vault["id"].(string)
+
+	mutedOf := func(c *testClient, name string) any {
+		out := c.must("GET", "/api/v1/channels", nil, 200)
+		for _, raw := range out["channels"].([]any) {
+			ch := raw.(map[string]any)
+			if ch["name"] == name {
+				return ch["muted"]
+			}
+		}
+		return nil
+	}
+
+	alice.must("POST", "/api/v1/channels/"+vaultID+"/mute", map[string]any{"muted": true}, 200)
+	if mutedOf(alice, "vault") != true || mutedOf(alice, "general") != false {
+		t.Fatal("alice's vault mute did not land, or spilled onto general")
+	}
+	// a non-member cannot mute a private channel, and learns nothing from the try
+	bob.must("POST", "/api/v1/channels/"+vaultID+"/mute", map[string]any{"muted": true}, 404)
+	// bob muting general is bob's alone
+	bob.must("POST", "/api/v1/channels/general/mute", map[string]any{"muted": true}, 200)
+	if mutedOf(bob, "general") != true || mutedOf(alice, "general") != false {
+		t.Fatal("a channel mute must be per member")
+	}
+	alice.must("POST", "/api/v1/channels/"+vaultID+"/mute", map[string]any{"muted": false}, 200)
+	if mutedOf(alice, "vault") != false {
+		t.Fatal("unmute did not land")
+	}
+}

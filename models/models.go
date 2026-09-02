@@ -39,6 +39,12 @@ type Participant struct {
 	Tags       []Tag     `json:"tags"`
 }
 
+// NotifyPrefs are a participant's own notification settings (web client).
+type NotifyPrefs struct {
+	Enabled bool `json:"enabled"`
+	Sound   bool `json:"sound"`
+}
+
 type Channel struct {
 	ID        string  `json:"id"`
 	RoomID    string  `json:"room_id"`
@@ -57,6 +63,9 @@ type Channel struct {
 	// a plain unread with no mention just glows the channel name.
 	UnreadMentions int64      `json:"unread_mentions"`
 	LastReadAt     *time.Time `json:"last_read_at,omitempty"`
+	// Muted is the viewer's per-channel notification mute (ListChannelsUnread
+	// only). Unread state still accumulates; the web client just stays quiet.
+	Muted bool `json:"muted"`
 	// MemberCount is populated only by BrowsableChannels (the browse view).
 	MemberCount *int64 `json:"member_count,omitempty"`
 	// Member is populated only by BrowsableChannels: browse shows the whole

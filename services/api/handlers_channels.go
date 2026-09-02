@@ -186,6 +186,29 @@ func (s *Server) handleMarkRead(w http.ResponseWriter, r *http.Request, p models
 	writeJSON(w, http.StatusOK, map[string]any{"channel_id": ch.ID, "last_read_at": at})
 }
 
+type channelMuteReq struct {
+	Muted bool `json:"muted"`
+}
+
+// handleMuteChannel is the caller's own notification mute; membership is the
+// gate, so a private channel you are not in stays a 404 like everywhere else.
+func (s *Server) handleMuteChannel(w http.ResponseWriter, r *http.Request, p models.Participant) {
+	ch, err := s.resolveChannel(r, p, r.PathValue("id"))
+	if err != nil {
+		writeStoreErr(w, err)
+		return
+	}
+	var req channelMuteReq
+	if !readJSON(w, r, &req) {
+		return
+	}
+	if err := s.store.SetChannelMuted(r.Context(), p.ID, ch.ID, req.Muted); err != nil {
+		writeStoreErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"channel_id": ch.ID, "muted": req.Muted})
+}
+
 type createChannelReq struct {
 	Name    string `json:"name"`
 	Topic   string `json:"topic"`

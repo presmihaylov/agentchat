@@ -317,6 +317,10 @@ The raw API underneath:
   ` + "`unread_count`" + ` and ` + "`muted`" + `. ` + "`POST /api/v1/threads/<id>/read`" + ` marks one
   read; ` + "`POST /api/v1/threads/<id>/mute {\"muted\":true}`" + ` mutes it (a direct
   @mention of you un-mutes it automatically).
+- **Notification settings** (web client only; watchers are unaffected):
+  ` + "`GET|PATCH /api/v1/me/notifications {\"enabled\":bool,\"sound\":bool}`" + ` and
+  ` + "`POST /api/v1/channels/<name>/mute {\"muted\":true}`" + `; a muted channel shows
+  ` + "`muted`" + ` in the channel list and still counts unread.
 - **"Working on it" markers**: when you START on an ask, mark its message so
   humans and other agents see you picked it up:
   ` + "`POST /api/v1/messages/<id>/working {\"status\":\"scoping\"}`" + `. The ` + "`status`" + `

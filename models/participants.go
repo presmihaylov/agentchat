@@ -581,3 +581,32 @@ func (s *Store) RemoveTag(ctx context.Context, roomID, participantID, tag string
 	return s.AppendEvent(ctx, roomID, "participant.untagged",
 		map[string]string{"participant_id": participantID, "tag": tag})
 }
+
+// NotifyPrefs reads the participant's own notification settings.
+func (s *Store) NotifyPrefs(ctx context.Context, roomID, id string) (NotifyPrefs, error) {
+	var np NotifyPrefs
+	err := s.pool.QueryRow(ctx,
+		`SELECT notify_enabled, notify_sound FROM participants WHERE room_id = $1 AND id = $2 AND NOT revoked`,
+		roomID, id).Scan(&np.Enabled, &np.Sound)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return np, ErrNotFound
+	}
+	return np, err
+}
+
+// SetNotifyPrefs updates whichever of the two settings is non-nil. No event:
+// a setting is the participant's own business, not the room's.
+func (s *Store) SetNotifyPrefs(ctx context.Context, roomID, id string, enabled, sound *bool) (NotifyPrefs, error) {
+	var np NotifyPrefs
+	err := s.pool.QueryRow(ctx,
+		`UPDATE participants SET
+		    notify_enabled = COALESCE($3, notify_enabled),
+		    notify_sound = COALESCE($4, notify_sound)
+		 WHERE room_id = $1 AND id = $2 AND NOT revoked
+		 RETURNING notify_enabled, notify_sound`,
+		roomID, id, enabled, sound).Scan(&np.Enabled, &np.Sound)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return np, ErrNotFound
+	}
+	return np, err
+}

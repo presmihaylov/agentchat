@@ -202,3 +202,34 @@ func (s *Server) handleRemoveTag(w http.ResponseWriter, r *http.Request, p model
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "removed"})
 }
+
+func (s *Server) handleGetNotifyPrefs(w http.ResponseWriter, r *http.Request, p models.Participant) {
+	np, err := s.store.NotifyPrefs(r.Context(), p.RoomID, p.ID)
+	if err != nil {
+		writeStoreErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, np)
+}
+
+type notifyPrefsReq struct {
+	Enabled *bool `json:"enabled"`
+	Sound   *bool `json:"sound"`
+}
+
+func (s *Server) handleSetNotifyPrefs(w http.ResponseWriter, r *http.Request, p models.Participant) {
+	var req notifyPrefsReq
+	if !readJSON(w, r, &req) {
+		return
+	}
+	if req.Enabled == nil && req.Sound == nil {
+		writeErr(w, http.StatusBadRequest, "nothing to change: send enabled and/or sound")
+		return
+	}
+	np, err := s.store.SetNotifyPrefs(r.Context(), p.RoomID, p.ID, req.Enabled, req.Sound)
+	if err != nil {
+		writeStoreErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, np)
+}

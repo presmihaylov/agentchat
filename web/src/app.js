@@ -27,6 +27,7 @@ import { createComposer } from './composer.js';
   let current = null;        // current channel object
   let openThreadRoot = null; // message id of the open thread
   let unreadMentions = 0;
+  let notifyPrefs = { enabled: true, sound: true };
   let cursor = -1;
   // One pending attachment per composer. The thread reply shares the upload
   // endpoint but never the slot: a file staged in one composer must not ride
@@ -594,6 +595,7 @@ import { createComposer } from './composer.js';
     const sigil = ch.private ? '🔒 ' : '# ';
     li.textContent = sigil + ch.name + (ch.archived ? ' (archived)' : '');
     if (ch.archived) li.classList.add('archived');
+    if (ch.muted) li.classList.add('muted');
     if (current && ch.id === current.id) li.classList.add('active');
     // Any unread glows the channel name; only @mentions get a numeric badge.
     if (ch.unread_count > 0 && !(current && ch.id === current.id)) {
@@ -614,6 +616,7 @@ import { createComposer } from './composer.js';
       if (!ch.private && ch.name !== 'general' && (me.role === 'admin' || ch.created_by === me.id)) {
         items.push({ label: 'Make private', run: () => makePrivate(ch) });
       }
+      items.push({ label: ch.muted ? 'Unmute channel' : 'Mute channel', run: () => muteChannel(ch, !ch.muted) });
       items.push({ label: 'Move to section…', run: () => openMoveMenu(ev.clientX, ev.clientY, ch) });
       // #general is pinned: it can be organized into a section but never left.
       if (ch.name !== 'general') items.push({ label: 'Leave channel', danger: true, run: () => leaveChannel(ch) });
@@ -690,6 +693,15 @@ import { createComposer } from './composer.js';
     catch (e) { /* next refresh corrects the flag */ }
   };
 
+  const muteChannel = async (ch, muted) => {
+    try {
+      await api('/api/v1/channels/' + ch.id + '/mute', { method: 'POST', body: { muted } });
+      ch.muted = muted;
+      renderChannels();
+      notice((muted ? 'Muted #' : 'Unmuted #') + ch.name);
+    } catch (e) { alert(e.message); }
+  };
+
   const moveChannel = async (ch, groupID) => {
     try {
       await api('/api/v1/channels/' + ch.id + '/group', { method: 'PUT', body: { group_id: groupID } });
@@ -754,6 +766,8 @@ import { createComposer } from './composer.js';
     slot.appendChild(avatarEl(p, 'avatar-lg'));
     $('profile-name').textContent = p.name;
     $('profile-actions').classList.toggle('hidden', p.id !== me.id);
+    $('notify-settings').classList.toggle('hidden', p.id !== me.id);
+    if (p.id === me.id) renderNotifySettings();
     $('avatar-remove').classList.toggle('hidden', !p.avatar_attachment_id);
     $('profile-meta').textContent =
       `${p.role}${p.is_human ? ' · human' : ' · agent'} · ${p.online ? 'online' : 'offline'}`;
@@ -1230,10 +1244,127 @@ import { createComposer } from './composer.js';
     } catch (e) { /* root deleted in the meantime */ }
   };
 
+  // ---------- notifications ----------
+  // What notifies follows the agents' relevance rules: a top-level message in a
+  // channel you are in, a reply in a thread you are part of, and always a
+  // mention or broadcast, even in a muted channel. Nothing for your own
+  // messages, nothing while you are looking at the channel it landed in.
+  const notifyReason = (m) => {
+    if (!notifyPrefs.enabled || !me) return null;
+    if (m.author_id === me.id || m.kind === 'system') return null;
+    const ch = channels.find((c) => c.id === m.channel_id);
+    if (!ch) return null;
+    if (!document.hidden && document.hasFocus() && current && current.id === ch.id) return null;
+    if ((m.mentions || []).includes(me.name)) return 'mention';
+    if (m.is_broadcast) return 'broadcast';
+    if (ch.muted) return null;
+    if (!m.thread_root_id) return 'channel';
+    const th = threads.find((t) => t.root_id === m.thread_root_id);
+    if (!th || th.muted) return null;
+    return 'thread';
+  };
+
+  // Per thread (or per channel for top-level posts), the first message pings
+  // and opens a quiet window; every further message inside it extends the
+  // window and stays silent. A busy agent thread is one ping, not a drum roll.
+  const NOTIFY_WINDOW_MS = 3000;
+  const notifyTimers = new Map();
+  let audioCtx = null;
+  // browsers only let audio start after a gesture, so grab a context on the first one
+  const primeAudio = () => {
+    if (audioCtx || !window.AudioContext) return;
+    try { audioCtx = new AudioContext(); } catch { /* no audio here */ }
+  };
+  document.addEventListener('pointerdown', primeAudio);
+  document.addEventListener('keydown', primeAudio);
+  const playPing = () => {
+    if (!audioCtx) return;
+    if (audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
+    const t = audioCtx.currentTime;
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(880, t);
+    osc.frequency.setValueAtTime(1175, t + 0.09);
+    gain.gain.setValueAtTime(0.0001, t);
+    gain.gain.exponentialRampToValueAtTime(0.18, t + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.28);
+    osc.connect(gain).connect(audioCtx.destination);
+    osc.start(t);
+    osc.stop(t + 0.3);
+  };
+
+  // a reply in a thread the sidebar does not know yet may still be one you are
+  // in (joined from another device, mentioned a moment ago): look once
+  const threadChecked = new Map();
+  const ensureThreadKnown = async (rootID) => {
+    if (threads.some((t) => t.root_id === rootID)) return;
+    const last = threadChecked.get(rootID) || 0;
+    if (Date.now() - last < 10000) return;
+    threadChecked.set(rootID, Date.now());
+    await loadThreads();
+  };
+
+  const maybeNotify = async (m) => {
+    if (m.thread_root_id && notifyPrefs.enabled) await ensureThreadKnown(m.thread_root_id);
+    const why = notifyReason(m);
+    if (!why) return;
+    const key = m.thread_root_id || m.channel_id;
+    const inWindow = notifyTimers.has(key);
+    if (inWindow) clearTimeout(notifyTimers.get(key));
+    notifyTimers.set(key, setTimeout(() => notifyTimers.delete(key), NOTIFY_WINDOW_MS));
+    if (inWindow) return;
+    const ch = channels.find((c) => c.id === m.channel_id);
+    const sound = !!notifyPrefs.sound;
+    if (sound) playPing();
+    if (window.Notification && Notification.permission === 'granted' && (document.hidden || !document.hasFocus())) {
+      try {
+        const n = new Notification(`${m.author_name || 'Someone'} in #${ch ? ch.name : 'channel'}`, {
+          body: (m.body || '').slice(0, 140), tag: key,
+        });
+        n.onclick = () => {
+          window.focus();
+          if (ch) selectChannel(ch).then(() => { if (m.thread_root_id) openThread(m.thread_root_id); });
+          n.close();
+        };
+      } catch { /* the in-tab badge and sound already happened */ }
+    }
+    // e2e hook: the observable side of a notification
+    document.dispatchEvent(new CustomEvent('agentchat:notify', { detail: { key, why, sound, channel: ch ? ch.name : '' } }));
+  };
+
+  const renderNotifySettings = () => {
+    $('notify-enabled').checked = !!notifyPrefs.enabled;
+    $('notify-sound').checked = !!notifyPrefs.sound;
+    $('notify-sound').disabled = !notifyPrefs.enabled;
+    const perm = $('notify-perm');
+    const state = window.Notification ? Notification.permission : 'unsupported';
+    perm.classList.toggle('hidden', !notifyPrefs.enabled || state === 'granted');
+    perm.textContent = state === 'denied' ? 'System notifications are blocked in this browser; you still get the badge and sound.'
+      : state === 'unsupported' ? 'This browser has no system notifications; you still get the badge and sound.'
+      : 'System notifications are off until you allow them in the browser prompt.';
+  };
+  const saveNotifyPrefs = async (patch) => {
+    try {
+      notifyPrefs = await api('/api/v1/me/notifications', { method: 'PATCH', body: patch });
+    } catch (e) { alert(e.message); }
+    renderNotifySettings();
+  };
+  $('notify-enabled').onchange = async (ev) => {
+    const enabled = ev.target.checked;
+    // ask on the toggle, never on page load, and only when the answer is open
+    if (enabled && window.Notification && Notification.permission === 'default') {
+      try { await Notification.requestPermission(); } catch { /* treated as denied */ }
+    }
+    await saveNotifyPrefs({ enabled });
+  };
+  $('notify-sound').onchange = (ev) => saveNotifyPrefs({ sound: ev.target.checked });
+
   const applyEvent = async (ev) => {
     const t = ev.type;
     if (t === 'message.created') {
       const m = ev.payload;
+      maybeNotify(m);
       if ((m.mentions || []).includes(me.name) && (document.hidden || m.author_id !== me.id)) {
         unreadMentions++;
         setTitle();
@@ -1366,6 +1497,7 @@ import { createComposer } from './composer.js';
 
   const enterChat = async () => {
     me = await api('/api/v1/me');
+    try { notifyPrefs = await api('/api/v1/me/notifications'); } catch { /* defaults stand */ }
     $('join-view').classList.add('hidden');
     $('chat-view').classList.remove('hidden');
     await refreshRoom();

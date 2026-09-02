@@ -106,6 +106,8 @@ func (s *Server) routes() {
 	m.HandleFunc("POST /api/v1/me/heartbeat", s.authed(s.handleHeartbeat))
 	m.HandleFunc("POST /api/v1/me/avatar", s.authed(s.handleSetAvatar))
 	m.HandleFunc("DELETE /api/v1/me/avatar", s.authed(s.handleRemoveAvatar))
+	m.HandleFunc("GET /api/v1/me/notifications", s.authed(s.handleGetNotifyPrefs))
+	m.HandleFunc("PATCH /api/v1/me/notifications", s.authed(s.handleSetNotifyPrefs))
 
 	m.HandleFunc("PATCH /api/v1/room", s.authed(s.handleRenameRoom))
 	m.HandleFunc("POST /api/v1/room/rotate-secret", s.authed(s.handleRotateSecret))
@@ -129,6 +131,7 @@ func (s *Server) routes() {
 	m.HandleFunc("POST /api/v1/channels/{id}/members", s.authed(s.handleAddChannelMember))
 	m.HandleFunc("DELETE /api/v1/channels/{id}/members/{pid}", s.authed(s.handleRemoveChannelMember))
 	m.HandleFunc("POST /api/v1/channels/{id}/read", s.authed(s.handleMarkRead))
+	m.HandleFunc("POST /api/v1/channels/{id}/mute", s.authed(s.handleMuteChannel))
 	m.HandleFunc("GET /api/v1/channels/{id}/messages", s.authed(s.handleListMessages))
 	m.HandleFunc("POST /api/v1/channels/{id}/messages", s.authed(s.handlePostMessage))
 

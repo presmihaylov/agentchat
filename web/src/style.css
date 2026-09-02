@@ -77,6 +77,13 @@ button { cursor: pointer; }
 #profile-desc { margin: 0 0 8px; font-size: 14px; overflow-wrap: break-word; }
 #profile-tags { margin: 0; color: var(--dim); font-size: 12px; }
 #profile-actions { margin-top: 14px; display: flex; gap: 8px; justify-content: center; }
+#notify-settings { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--border); text-align: left; font-size: 13px; }
+#notify-settings h4 { margin: 0 0 8px; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--dim); }
+#notify-settings label { display: flex; align-items: center; gap: 8px; padding: 4px 0; cursor: pointer; }
+#notify-settings p { margin: 6px 0 0; color: var(--dim); font-size: 12px; }
+/* a muted channel still glows on unread; the bell says it will not ping */
+#channel-list li.muted { opacity: .7; }
+#channel-list li.muted::after { content: '🔕'; font-size: 10px; margin-left: auto; opacity: .7; }
 .upload-btn, #avatar-remove { background: none; border: 1px solid var(--border); color: var(--dim); border-radius: 6px; font-size: 12px; padding: 5px 10px; cursor: pointer; }
 .upload-btn:hover, #avatar-remove:hover { color: var(--text); }
 #sidebar li.archived { color: var(--dim); font-style: italic; }

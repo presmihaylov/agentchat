@@ -193,7 +193,7 @@ func (s *Store) ListChannels(ctx context.Context, roomID string) ([]Channel, err
 func (s *Store) ListChannelsUnread(ctx context.Context, roomID, participantID string) ([]Channel, error) {
 	rows, err := s.pool.Query(ctx,
 		`SELECT c.id, c.room_id, c.name, c.topic, c.created_by, c.archived, c.private, c.created_at,
-		        r.last_read_at,
+		        r.last_read_at, cm.muted,
 		        (SELECT count(*) FROM messages m
 		         WHERE m.channel_id = c.id AND m.thread_root_id IS NULL
 		           AND m.author_id <> $2 AND m.kind <> 'system'
@@ -219,7 +219,7 @@ func (s *Store) ListChannelsUnread(ctx context.Context, roomID, participantID st
 	for rows.Next() {
 		var c Channel
 		if err := rows.Scan(&c.ID, &c.RoomID, &c.Name, &c.Topic, &c.CreatedBy, &c.Archived, &c.Private,
-			&c.CreatedAt, &c.LastReadAt, &c.UnreadCount, &c.UnreadMentions); err != nil {
+			&c.CreatedAt, &c.LastReadAt, &c.Muted, &c.UnreadCount, &c.UnreadMentions); err != nil {
 			return nil, err
 		}
 		out = append(out, c)
@@ -270,6 +270,21 @@ func (s *Store) MarkChannelRead(ctx context.Context, participantID, channelID st
 		 ON CONFLICT (participant_id, channel_id) DO UPDATE SET last_read_at = now()
 		 RETURNING last_read_at`, participantID, channelID).Scan(&at)
 	return at, err
+}
+
+// SetChannelMuted flips the caller's notification mute on a channel they are
+// in; a non-member has no row to flip and gets ErrNotFound.
+func (s *Store) SetChannelMuted(ctx context.Context, participantID, channelID string, muted bool) error {
+	tag, err := s.pool.Exec(ctx,
+		`UPDATE channel_members SET muted = $3 WHERE participant_id = $1 AND channel_id = $2`,
+		participantID, channelID, muted)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
 
 func (s *Store) ChannelByID(ctx context.Context, roomID, id string) (Channel, error) {
