@@ -213,8 +213,9 @@ func (s *Server) handleGetNotifyPrefs(w http.ResponseWriter, r *http.Request, p 
 }
 
 type notifyPrefsReq struct {
-	Enabled *bool `json:"enabled"`
-	Sound   *bool `json:"sound"`
+	Enabled          *bool `json:"enabled"`
+	Sound            *bool `json:"sound"`
+	ArchiveAfterSecs *int  `json:"archive_after_secs"`
 }
 
 func (s *Server) handleSetNotifyPrefs(w http.ResponseWriter, r *http.Request, p models.Participant) {
@@ -222,11 +223,15 @@ func (s *Server) handleSetNotifyPrefs(w http.ResponseWriter, r *http.Request, p 
 	if !readJSON(w, r, &req) {
 		return
 	}
-	if req.Enabled == nil && req.Sound == nil {
-		writeErr(w, http.StatusBadRequest, "nothing to change: send enabled and/or sound")
+	if req.Enabled == nil && req.Sound == nil && req.ArchiveAfterSecs == nil {
+		writeErr(w, http.StatusBadRequest, "nothing to change: send enabled, sound and/or archive_after_secs")
 		return
 	}
-	np, err := s.store.SetNotifyPrefs(r.Context(), p.RoomID, p.ID, req.Enabled, req.Sound)
+	if req.ArchiveAfterSecs != nil && *req.ArchiveAfterSecs < 0 {
+		writeErr(w, http.StatusBadRequest, "archive_after_secs must be 0 (never) or a positive number of seconds")
+		return
+	}
+	np, err := s.store.SetNotifyPrefs(r.Context(), p.RoomID, p.ID, req.Enabled, req.Sound, req.ArchiveAfterSecs)
 	if err != nil {
 		writeStoreErr(w, err)
 		return

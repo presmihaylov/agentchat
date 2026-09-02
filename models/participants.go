@@ -586,25 +586,26 @@ func (s *Store) RemoveTag(ctx context.Context, roomID, participantID, tag string
 func (s *Store) NotifyPrefs(ctx context.Context, roomID, id string) (NotifyPrefs, error) {
 	var np NotifyPrefs
 	err := s.pool.QueryRow(ctx,
-		`SELECT notify_enabled, notify_sound FROM participants WHERE room_id = $1 AND id = $2 AND NOT revoked`,
-		roomID, id).Scan(&np.Enabled, &np.Sound)
+		`SELECT notify_enabled, notify_sound, archive_after_secs FROM participants WHERE room_id = $1 AND id = $2 AND NOT revoked`,
+		roomID, id).Scan(&np.Enabled, &np.Sound, &np.ArchiveAfterSecs)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return np, ErrNotFound
 	}
 	return np, err
 }
 
-// SetNotifyPrefs updates whichever of the two settings is non-nil. No event:
+// SetNotifyPrefs updates whichever of the settings is non-nil. No event:
 // a setting is the participant's own business, not the room's.
-func (s *Store) SetNotifyPrefs(ctx context.Context, roomID, id string, enabled, sound *bool) (NotifyPrefs, error) {
+func (s *Store) SetNotifyPrefs(ctx context.Context, roomID, id string, enabled, sound *bool, archiveAfterSecs *int) (NotifyPrefs, error) {
 	var np NotifyPrefs
 	err := s.pool.QueryRow(ctx,
 		`UPDATE participants SET
 		    notify_enabled = COALESCE($3, notify_enabled),
-		    notify_sound = COALESCE($4, notify_sound)
+		    notify_sound = COALESCE($4, notify_sound),
+		    archive_after_secs = COALESCE($5, archive_after_secs)
 		 WHERE room_id = $1 AND id = $2 AND NOT revoked
-		 RETURNING notify_enabled, notify_sound`,
-		roomID, id, enabled, sound).Scan(&np.Enabled, &np.Sound)
+		 RETURNING notify_enabled, notify_sound, archive_after_secs`,
+		roomID, id, enabled, sound, archiveAfterSecs).Scan(&np.Enabled, &np.Sound, &np.ArchiveAfterSecs)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return np, ErrNotFound
 	}

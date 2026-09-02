@@ -141,10 +141,19 @@
         <button id="avatar-remove" class="hidden">Remove photo</button>
       </div>
       <div id="notify-settings" class="hidden">
-        <h4>Personal settings · notifications</h4>
+        <h4>Personal settings</h4>
         <label><input type="checkbox" id="notify-enabled"> Notify me about new messages</label>
         <label><input type="checkbox" id="notify-sound"> Play a sound</label>
         <p id="notify-perm" class="hidden"></p>
+        <label class="row-select">Auto-archive quiet threads after
+          <select id="archive-after">
+            <option value="900">15 minutes</option>
+            <option value="3600">1 hour</option>
+            <option value="14400">4 hours</option>
+            <option value="86400">24 hours</option>
+            <option value="0">Off</option>
+          </select>
+        </label>
       </div>
     </div>
   </div>

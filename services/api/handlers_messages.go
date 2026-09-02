@@ -346,7 +346,11 @@ func (s *Server) handleListThreads(w http.ResponseWriter, r *http.Request, p mod
 // thread tagged with its channel_id so the sidebar can nest it under its
 // parent channel.
 func (s *Server) handleListRoomThreads(w http.ResponseWriter, r *http.Request, p models.Participant) {
+	// ?include_archived=1 is the web sidebar's view; agents keep the default
 	list, err := s.store.ListInvolvedThreadsRoom(r.Context(), p.RoomID, p.ID)
+	if r.URL.Query().Get("include_archived") == "1" {
+		list, err = s.store.ListInvolvedThreadsRoomAll(r.Context(), p.RoomID, p.ID)
+	}
 	if err != nil {
 		writeStoreErr(w, err)
 		return

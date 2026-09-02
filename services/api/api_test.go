@@ -662,8 +662,9 @@ func TestThreadTree(t *testing.T) {
 	}
 }
 
-// TestThreadResolve: resolving hides a thread from the caller's tree; a plain
-// reply does not bring it back, but a direct @mention resurrects it.
+// TestThreadResolve: resolving hides a thread from the caller's tree; any new
+// reply brings it back (archived means "until something happens"), and so
+// does a direct @mention or the endpoint.
 func TestThreadResolve(t *testing.T) {
 	srv, _ := newTestServer(t)
 	defer srv.Close()
@@ -696,14 +697,15 @@ func TestThreadResolve(t *testing.T) {
 		t.Fatalf("resolve leaked to bob: he sees %d threads, want 1", n)
 	}
 
-	// a plain reply does NOT resurrect a resolved thread
+	// a plain reply revives a resolved thread
 	bob.must("POST", "/api/v1/channels/general/messages",
 		map[string]any{"body": "another reply", "thread_root_id": rootID}, 201)
-	if n := len(threadsOf(alice)); n != 0 {
-		t.Fatalf("plain reply resurrected a resolved thread: alice sees %d, want 0", n)
+	if n := len(threadsOf(alice)); n != 1 {
+		t.Fatalf("plain reply did not revive a resolved thread: alice sees %d, want 1", n)
 	}
+	alice.must("POST", "/api/v1/threads/"+rootID+"/resolve", map[string]any{"resolved": true}, 200)
 
-	// a direct @mention brings it back
+	// a direct @mention brings it back too
 	bob.must("POST", "/api/v1/channels/general/messages",
 		map[string]any{"body": "hey @alice look", "thread_root_id": rootID}, 201)
 	if n := len(threadsOf(alice)); n != 1 {
@@ -718,6 +720,88 @@ func TestThreadResolve(t *testing.T) {
 	alice.must("POST", "/api/v1/threads/"+rootID+"/resolve", map[string]any{"resolved": false}, 200)
 	if n := len(threadsOf(alice)); n != 1 {
 		t.Fatalf("un-resolve failed: alice sees %d, want 1", n)
+	}
+}
+
+// TestThreadArchiveListing: the sidebar's ?include_archived=1 view returns
+// resolved threads flagged, with the activity clock and the unarchive stamp the
+// client needs; the default listing stays as agents know it.
+func TestThreadArchiveListing(t *testing.T) {
+	srv, _ := newTestServer(t)
+	defer srv.Close()
+	_, alice, bob := setupRoom(t, srv.URL)
+
+	list := func(c *testClient, q string) []map[string]any {
+		out := c.must("GET", "/api/v1/threads"+q, nil, 200)
+		res := []map[string]any{}
+		for _, raw := range out["threads"].([]any) {
+			res = append(res, raw.(map[string]any))
+		}
+		return res
+	}
+	root := alice.must("POST", "/api/v1/channels/general/messages", map[string]any{"body": "topic"}, 201)
+	rootID := root["id"].(string)
+	reply := bob.must("POST", "/api/v1/channels/general/messages",
+		map[string]any{"body": "reply", "thread_root_id": rootID}, 201)
+
+	got := list(alice, "?include_archived=1")
+	if len(got) != 1 || got[0]["resolved"] != false || got[0]["unarchived_at"] != nil {
+		t.Fatalf("fresh thread: %v", got)
+	}
+	// the activity clock follows the newest message, not the root
+	if got[0]["last_activity_at"] != reply["created_at"] {
+		t.Fatalf("last_activity_at %v, want reply time %v", got[0]["last_activity_at"], reply["created_at"])
+	}
+
+	alice.must("POST", "/api/v1/threads/"+rootID+"/resolve", map[string]any{"resolved": true}, 200)
+	if n := len(list(alice, "")); n != 0 {
+		t.Fatalf("default listing must hide a resolved thread, got %d", n)
+	}
+	got = list(alice, "?include_archived=1")
+	if len(got) != 1 || got[0]["resolved"] != true {
+		t.Fatalf("include_archived must return the resolved thread flagged: %v", got)
+	}
+	if n := len(list(bob, "?include_archived=1")); n != 1 {
+		t.Fatalf("bob's view changed: %d", n)
+	}
+
+	// a manual unarchive stamps unarchived_at, so the client can override the clock
+	alice.must("POST", "/api/v1/threads/"+rootID+"/resolve", map[string]any{"resolved": false}, 200)
+	got = list(alice, "?include_archived=1")
+	if len(got) != 1 || got[0]["resolved"] != false || got[0]["unarchived_at"] == nil {
+		t.Fatalf("unarchive must clear resolved and stamp unarchived_at: %v", got)
+	}
+	// a thread alice never touched carries no stamp
+	other := bob.must("POST", "/api/v1/channels/general/messages", map[string]any{"body": "hey @alice"}, 201)
+	for _, th := range list(alice, "?include_archived=1") {
+		if th["root_id"] == other["id"] && th["unarchived_at"] != nil {
+			t.Fatalf("untouched thread has a stamp: %v", th)
+		}
+	}
+}
+
+// TestArchiveAfterPref: archive_after_secs rides with the notify prefs, defaults
+// to an hour, accepts 0 for never, rejects negatives, and is per participant.
+func TestArchiveAfterPref(t *testing.T) {
+	srv, _ := newTestServer(t)
+	defer srv.Close()
+	_, alice, bob := setupRoom(t, srv.URL)
+
+	got := alice.must("GET", "/api/v1/me/notifications", nil, 200)
+	if got["archive_after_secs"] != float64(3600) {
+		t.Fatalf("default must be 3600: %v", got)
+	}
+	got = alice.must("PATCH", "/api/v1/me/notifications", map[string]any{"archive_after_secs": 900}, 200)
+	if got["archive_after_secs"] != float64(900) || got["enabled"] != true {
+		t.Fatalf("patch must set the period and leave the toggles: %v", got)
+	}
+	got = alice.must("PATCH", "/api/v1/me/notifications", map[string]any{"archive_after_secs": 0}, 200)
+	if got["archive_after_secs"] != float64(0) {
+		t.Fatalf("0 must mean never: %v", got)
+	}
+	alice.must("PATCH", "/api/v1/me/notifications", map[string]any{"archive_after_secs": -5}, 400)
+	if got = bob.must("GET", "/api/v1/me/notifications", nil, 200); got["archive_after_secs"] != float64(3600) {
+		t.Fatalf("alice's period leaked to bob: %v", got)
 	}
 }
 

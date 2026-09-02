@@ -24,18 +24,34 @@ type ThreadSummary struct {
 	// Subscribed marks an explicit right-click follow, as opposed to the
 	// implicit involvement from posting or being mentioned.
 	Subscribed bool `json:"subscribed"`
+	// LastActivityAt is the newest message in the thread, root included: the
+	// clock the sidebar auto-archive runs on.
+	LastActivityAt time.Time `json:"last_activity_at"`
+	// Resolved is a manual archive; only listed when the caller asks for
+	// archived threads. Any new reply clears it.
+	Resolved bool `json:"resolved"`
+	// UnarchivedAt is set by a manual unarchive so the client keeps the thread
+	// visible until it is active again, instead of re-hiding it at once.
+	UnarchivedAt *time.Time `json:"unarchived_at,omitempty"`
 }
 
 // ListInvolvedThreads returns the channel's threads the participant is part of.
 func (s *Store) ListInvolvedThreads(ctx context.Context, roomID, channelID, participantID string) ([]ThreadSummary, error) {
-	return s.involvedThreads(ctx, roomID, participantID, &channelID)
+	return s.involvedThreads(ctx, roomID, participantID, &channelID, false)
 }
 
 // ListInvolvedThreadsRoom is ListInvolvedThreads across every channel in the
 // room, each row tagged with its channel_id so the sidebar can nest threads
 // under their parent channel (Discord-style).
 func (s *Store) ListInvolvedThreadsRoom(ctx context.Context, roomID, participantID string) ([]ThreadSummary, error) {
-	return s.involvedThreads(ctx, roomID, participantID, nil)
+	return s.involvedThreads(ctx, roomID, participantID, nil, false)
+}
+
+// ListInvolvedThreadsRoomAll is ListInvolvedThreadsRoom plus the threads the
+// participant archived by hand, flagged Resolved, so the web sidebar can keep
+// an "Archived" section. The default listing stays as agents know it.
+func (s *Store) ListInvolvedThreadsRoomAll(ctx context.Context, roomID, participantID string) ([]ThreadSummary, error) {
+	return s.involvedThreads(ctx, roomID, participantID, nil, true)
 }
 
 // involvedThreads lists the threads the participant is part of (started,
@@ -43,7 +59,7 @@ func (s *Store) ListInvolvedThreadsRoom(ctx context.Context, roomID, participant
 // channelID spans the whole room; a non-nil one scopes to that channel.
 // Unread counts replies from others after the thread's read marker (join
 // time when the thread was never opened).
-func (s *Store) involvedThreads(ctx context.Context, roomID, participantID string, channelID *string) ([]ThreadSummary, error) {
+func (s *Store) involvedThreads(ctx context.Context, roomID, participantID string, channelID *string, includeResolved bool) ([]ThreadSummary, error) {
 	rows, err := s.pool.Query(ctx,
 		`WITH involved AS (
 		   SELECT DISTINCT COALESCE(m.thread_root_id, m.id) AS root_id
@@ -72,7 +88,10 @@ func (s *Store) involvedThreads(ctx context.Context, roomID, participantID strin
 		           AND (c.is_broadcast OR EXISTS (
 		                SELECT 1 FROM mentions mn2
 		                WHERE mn2.message_id = c.id AND mn2.participant_id = $2))) AS unread_mentions,
-		        COALESCE(ts.subscribed, false)
+		        COALESCE(ts.subscribed, false),
+		        COALESCE((SELECT max(c.created_at) FROM messages c WHERE c.thread_root_id = r.id), r.created_at) AS last_activity_at,
+		        ts.resolved_at IS NOT NULL,
+		        ts.unarchived_at
 		 FROM involved i
 		 JOIN messages r ON r.id = i.root_id
 		 JOIN participants ap ON ap.id = r.author_id
@@ -81,9 +100,9 @@ func (s *Store) involvedThreads(ctx context.Context, roomID, participantID strin
 		 LEFT JOIN thread_states ts ON ts.root_id = r.id AND ts.participant_id = $2
 		 WHERE (EXISTS (SELECT 1 FROM messages c WHERE c.thread_root_id = r.id)
 		        OR COALESCE(ts.subscribed, false))
-		   AND ts.resolved_at IS NULL
+		   AND ($4 OR ts.resolved_at IS NULL)
 		 ORDER BY COALESCE((SELECT max(c.created_at) FROM messages c WHERE c.thread_root_id = r.id), r.created_at) DESC`,
-		roomID, participantID, channelID)
+		roomID, participantID, channelID, includeResolved)
 	if err != nil {
 		return nil, err
 	}
@@ -93,7 +112,8 @@ func (s *Store) involvedThreads(ctx context.Context, roomID, participantID strin
 	for rows.Next() {
 		var t ThreadSummary
 		if err := rows.Scan(&t.RootID, &t.ChannelID, &t.Body, &t.AuthorID, &t.AuthorName, &t.CreatedAt,
-			&t.ReplyCount, &t.LastReplyAt, &t.Muted, &t.LastReadAt, &t.UnreadCount, &t.UnreadMentions, &t.Subscribed); err != nil {
+			&t.ReplyCount, &t.LastReplyAt, &t.Muted, &t.LastReadAt, &t.UnreadCount, &t.UnreadMentions, &t.Subscribed,
+			&t.LastActivityAt, &t.Resolved, &t.UnarchivedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, t)
@@ -139,10 +159,11 @@ func (s *Store) SetThreadSubscribed(ctx context.Context, participantID, rootID s
 // it clears mute (see CreateMessage), so a resolved thread can resurface.
 func (s *Store) SetThreadResolved(ctx context.Context, participantID, rootID string, resolved bool) error {
 	_, err := s.pool.Exec(ctx,
-		`INSERT INTO thread_states (participant_id, root_id, resolved_at)
-		 VALUES ($1, $2, CASE WHEN $3 THEN now() END)
+		`INSERT INTO thread_states (participant_id, root_id, resolved_at, unarchived_at)
+		 VALUES ($1, $2, CASE WHEN $3 THEN now() END, CASE WHEN NOT $3 THEN now() END)
 		 ON CONFLICT (participant_id, root_id)
-		 DO UPDATE SET resolved_at = CASE WHEN $3 THEN now() END`,
+		 DO UPDATE SET resolved_at = CASE WHEN $3 THEN now() END,
+		               unarchived_at = CASE WHEN $3 THEN thread_states.unarchived_at ELSE now() END`,
 		participantID, rootID, resolved)
 	return err
 }

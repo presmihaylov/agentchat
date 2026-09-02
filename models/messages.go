@@ -176,6 +176,17 @@ func (s *Store) CreateMessage(ctx context.Context, p CreateMessageParams) (Messa
 		}
 	}
 
+	// A reply revives the thread for everyone who archived it by hand: the
+	// sidebar pin comes back, and the inactivity clock restarts from this message.
+	if p.ThreadRootID != nil {
+		if _, err := tx.Exec(ctx,
+			`UPDATE thread_states SET resolved_at = NULL
+			 WHERE root_id = $1 AND resolved_at IS NOT NULL`,
+			*p.ThreadRootID); err != nil {
+			return Message{}, err
+		}
+	}
+
 	// Auto-clear: posting into a thread clears the author's own "working on it"
 	// markers on that thread (root + replies), since the reply IS the answer.
 	if p.ThreadRootID != nil {

@@ -438,3 +438,10 @@ a.chanlink:hover { text-decoration: underline; }
   #thread-panel { position: fixed; inset: 0; width: auto; z-index: 10; }
   #thread-resize { display: none; }
 }
+
+/* Archived threads: a collapsed rollup at the bottom of the sidebar */
+#channel-list li.section-header.archived-header { margin-top: 14px; }
+#channel-list li.section-header .sec-count { margin-left: auto; font-size: 10px; opacity: .7; }
+#channel-list li.thread-leaf.archived .t-snippet { opacity: .7; }
+#notify-settings label.row-select { display: flex; align-items: center; gap: 8px; }
+#notify-settings select { background: var(--panel2); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 2px 6px; font: inherit; font-size: 12px; }

@@ -43,6 +43,8 @@ type Participant struct {
 type NotifyPrefs struct {
 	Enabled bool `json:"enabled"`
 	Sound   bool `json:"sound"`
+	// ArchiveAfterSecs hides an inactive thread from the sidebar; 0 = never.
+	ArchiveAfterSecs int `json:"archive_after_secs"`
 }
 
 type Channel struct {

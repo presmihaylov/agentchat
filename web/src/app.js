@@ -28,7 +28,7 @@ import { emojify } from './emoji.js';
   let current = null;        // current channel object
   let openThreadRoot = null; // message id of the open thread
   let unreadMentions = 0;
-  let notifyPrefs = { enabled: true, sound: true };
+  let notifyPrefs = { enabled: true, sound: true, archive_after_secs: 3600 };
   let cursor = -1;
   // One pending attachment per composer. The thread reply shares the upload
   // endpoint but never the slot: a file staged in one composer must not ride
@@ -453,9 +453,9 @@ import { emojify } from './emoji.js';
   // One thread leaf, rendered nested under its parent channel (Discord-style).
   // Same mention-only rule as channels: glow on any unread, a number only for
   // unread @mentions.
-  const threadLeafLi = (t) => {
+  const threadLeafLi = (t, archived = false) => {
     const li = document.createElement('li');
-    li.className = 'thread-leaf';
+    li.className = 'thread-leaf' + (archived ? ' archived' : '');
     const active = t.root_id === openThreadRoot;
     if (active) li.classList.add('active');
     const snippet = t.body.replace(/\s+/g, ' ').slice(0, 30) || '(attachment)';
@@ -471,7 +471,7 @@ import { emojify } from './emoji.js';
         li.appendChild(b);
       }
     }
-    li.title = `${t.author_name}: ${t.body.slice(0, 200)}\n(hover to archive, right-click for actions)`;
+    li.title = `${t.author_name}: ${t.body.slice(0, 200)}\n(hover to ${archived ? 'unarchive' : 'archive'}, right-click for actions)`;
     const act = async (path, body) => {
       try {
         await api(`/api/v1/threads/${t.root_id}/${path}`, { method: 'POST', body });
@@ -483,11 +483,12 @@ import { emojify } from './emoji.js';
     const x = document.createElement('button');
     x.type = 'button';
     x.className = 't-archive';
-    x.textContent = '✕';
-    x.title = 'Archive thread';
-    x.setAttribute('aria-label', 'Archive thread');
+    x.textContent = archived ? '↩' : '✕';
+    x.title = archived ? 'Unarchive thread' : 'Archive thread';
+    x.setAttribute('aria-label', x.title);
     x.onclick = (ev) => {
       ev.stopPropagation(); // do not open the thread
+      if (archived) { act('resolve', { resolved: false }); return; }
       if (openThreadRoot === t.root_id) closeThread();
       act('resolve', { resolved: true });
     };
@@ -498,7 +499,9 @@ import { emojify } from './emoji.js';
       openContextMenu(ev.clientX, ev.clientY, [
         { label: t.subscribed ? 'Unsubscribe' : 'Subscribe', run: () => act('subscribe', { subscribed: !t.subscribed }) },
         { label: t.muted ? 'Unmute thread' : 'Mute thread', run: () => act('mute', { muted: !t.muted }) },
-        { label: 'Archive thread', danger: true, run: () => act('resolve', { resolved: true }) },
+        archived
+          ? { label: 'Unarchive thread', run: () => act('resolve', { resolved: false }) }
+          : { label: 'Archive thread', danger: true, run: () => act('resolve', { resolved: true }) },
       ]);
     };
     return li;
@@ -627,8 +630,39 @@ import { emojify } from './emoji.js';
     };
     makeDragRow(li, ch, groupID);
     ul.appendChild(li);
-    threads.filter((t) => t.channel_id === ch.id).forEach((t) => ul.appendChild(threadLeafLi(t)));
+    threads.filter((t) => t.channel_id === ch.id && !isArchived(t)).forEach((t) => ul.appendChild(threadLeafLi(t)));
   };
+
+  // Archived is sidebar state only. A thread is archived when you archived it
+  // by hand (resolved), or when nobody wrote in it for archive_after_secs and
+  // you did not unarchive it since the last message. Any new message revives.
+  const isArchived = (t) => {
+    if (t.resolved) return true;
+    const after = Number(notifyPrefs.archive_after_secs) || 0;
+    if (after <= 0) return false;
+    const last = Date.parse(t.last_activity_at);
+    if (t.unarchived_at && Date.parse(t.unarchived_at) > last) return false;
+    return Date.now() - last > after * 1000;
+  };
+  let archivedOpen = false;
+  const appendArchived = (ul) => {
+    const list = threads.filter(isArchived);
+    if (!list.length) return;
+    const header = document.createElement('li');
+    header.className = 'section-header archived-header' + (archivedOpen ? '' : ' collapsed');
+    header.innerHTML = `<span class="sec-chevron">${archivedOpen ? '▾' : '▸'}</span><span class="sec-name">Archived</span>`;
+    const n = document.createElement('span');
+    n.className = 'sec-count';
+    n.textContent = String(list.length);
+    header.appendChild(n);
+    header.onclick = () => { archivedOpen = !archivedOpen; renderChannels(); };
+    ul.appendChild(header);
+    if (archivedOpen) list.forEach((t) => ul.appendChild(threadLeafLi(t, true)));
+  };
+  // the inactivity clock is client-side; the server holds the truth it reads,
+  // and a periodic refetch keeps a second tab's manual archives in step
+  setInterval(() => { if (threads.some((t) => !t.resolved)) renderChannels(); }, 10000);
+  setInterval(() => { if (me) loadThreads(); }, 30000);
 
   const groupOf = () => {
     const map = {};
@@ -681,6 +715,7 @@ import { emojify } from './emoji.js';
       ul.appendChild(header);
       if (!g.collapsed) members.forEach((ch) => appendChannel(ul, ch, g.id));
     });
+    appendArchived(ul);
   };
 
   const fetchGroups = async () => {
@@ -1083,7 +1118,7 @@ import { emojify } from './emoji.js';
   // nest under their parent channel in the sidebar.
   const loadThreads = async () => {
     try {
-      const out = await api(`/api/v1/threads`);
+      const out = await api(`/api/v1/threads?include_archived=1`);
       threads = out.threads || [];
       renderChannels();
       syncReplyBars();
@@ -1340,6 +1375,7 @@ import { emojify } from './emoji.js';
     $('notify-enabled').checked = !!notifyPrefs.enabled;
     $('notify-sound').checked = !!notifyPrefs.sound;
     $('notify-sound').disabled = !notifyPrefs.enabled;
+    $('archive-after').value = String(notifyPrefs.archive_after_secs ?? 3600);
     const perm = $('notify-perm');
     const state = window.Notification ? Notification.permission : 'unsupported';
     perm.classList.toggle('hidden', !notifyPrefs.enabled || state === 'granted');
@@ -1362,6 +1398,10 @@ import { emojify } from './emoji.js';
     await saveNotifyPrefs({ enabled });
   };
   $('notify-sound').onchange = (ev) => saveNotifyPrefs({ sound: ev.target.checked });
+  $('archive-after').onchange = async (ev) => {
+    await saveNotifyPrefs({ archive_after_secs: Number(ev.target.value) });
+    renderChannels();
+  };
 
   const applyEvent = async (ev) => {
     const t = ev.type;
@@ -1398,8 +1438,9 @@ import { emojify } from './emoji.js';
       }
       if (m.thread_root_id && current && m.channel_id === current.id) {
         await refreshRootBar(m.thread_root_id); // just the root's reply bar, not the whole channel
-        loadThreads(); // tree + reply-bar unread glow
       }
+      // any reply, in any channel, can revive an archived thread in the sidebar
+      if (m.thread_root_id) loadThreads(); // tree + reply-bar unread glow
       return;
     }
     if (t === 'message.edited') {

@@ -44,6 +44,7 @@ node scripts/channeladd-check.js            # CHANNELADD_CHECK_OK
 node scripts/moreactions-check.js           # MOREACTIONS_CHECK_OK
 node scripts/chanlink-check.js              # CHANLINK_CHECK_OK
 node scripts/notify-check.js                # NOTIFY_CHECK_OK
+node scripts/archive-check.js               # ARCHIVE_CHECK_OK
 node scripts/emoji-check.js                 # EMOJI_CHECK_OK
 ```
 
