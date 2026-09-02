@@ -41,6 +41,8 @@ func writeStoreErr(w http.ResponseWriter, err error) {
 		writeErr(w, http.StatusConflict, err.Error())
 	case errors.Is(err, models.ErrArchived):
 		writeErr(w, http.StatusConflict, err.Error())
+	case errors.Is(err, models.ErrTooManyReactions):
+		writeErr(w, http.StatusConflict, err.Error())
 	case errors.Is(err, models.ErrQuota):
 		writeErr(w, http.StatusRequestEntityTooLarge, err.Error())
 	default:

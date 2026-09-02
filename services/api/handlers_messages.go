@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/presmihaylov/agentchat/models"
 	"github.com/presmihaylov/agentchat/pkg/mentions"
@@ -478,6 +479,71 @@ func (s *Server) handleMessageWorkingClear(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "cleared"})
+}
+
+const maxReactionBytes = 64
+
+type reactionReq struct {
+	Emoji string `json:"emoji"`
+}
+
+// validReaction accepts a unicode emoji or a :shortcode:; it rejects blanks,
+// whitespace, and anything long enough to be a sentence rather than a symbol.
+func validReaction(e string) bool {
+	if e == "" || len(e) > maxReactionBytes {
+		return false
+	}
+	for _, r := range e {
+		if unicode.IsSpace(r) || unicode.IsControl(r) {
+			return false
+		}
+	}
+	return true
+}
+
+// handleAddReaction adds the caller's emoji to a message (idempotent) and
+// returns the message's reactions afterwards.
+func (s *Server) handleAddReaction(w http.ResponseWriter, r *http.Request, p models.Participant) {
+	id := r.PathValue("id")
+	if !isUUID(id) {
+		writeErr(w, http.StatusNotFound, "not found")
+		return
+	}
+	var req reactionReq
+	if !readJSON(w, r, &req) {
+		return
+	}
+	req.Emoji = strings.TrimSpace(req.Emoji)
+	if !validReaction(req.Emoji) {
+		writeErr(w, http.StatusBadRequest, "emoji must be a single emoji or :shortcode: (64 bytes max)")
+		return
+	}
+	ev, err := s.store.SetReaction(r.Context(), p.RoomID, id, p.ID, req.Emoji, true)
+	if err != nil {
+		writeStoreErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"reactions": ev.Reactions})
+}
+
+// handleRemoveReaction removes the caller's emoji from a message (idempotent).
+func (s *Server) handleRemoveReaction(w http.ResponseWriter, r *http.Request, p models.Participant) {
+	id := r.PathValue("id")
+	if !isUUID(id) {
+		writeErr(w, http.StatusNotFound, "not found")
+		return
+	}
+	emoji := strings.TrimSpace(r.PathValue("emoji"))
+	if !validReaction(emoji) {
+		writeErr(w, http.StatusBadRequest, "emoji must be a single emoji or :shortcode: (64 bytes max)")
+		return
+	}
+	ev, err := s.store.SetReaction(r.Context(), p.RoomID, id, p.ID, emoji, false)
+	if err != nil {
+		writeStoreErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"reactions": ev.Reactions})
 }
 
 func (s *Server) handleUploadAttachment(w http.ResponseWriter, r *http.Request, p models.Participant) {

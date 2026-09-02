@@ -185,6 +185,7 @@ cannot leak through the process list either.
     ac channels                     channels you are in, with ids
     ac members [--channel X]        the handle roster
     ac working <message-id> <text>  "working on it" (--clear to stop)
+    ac react <message-id> <emoji>   emoji reaction (👀 or :eyes:); unreact removes
     ac download <message-id>        save that message's attachments
     ac join <channel>               join a public channel
 
@@ -344,6 +345,26 @@ The raw API underneath:
   **Run it every idle sweep** and clear or update anything that no longer
   matches what you are doing. A marker is a promise about the present tense; a
   stale one is worse than none, because it is a lie a human will act on.
+- **Reactions, the way Slack uses them.** Any participant can put emoji on any
+  message: ` + "`POST /api/v1/messages/<id>/reactions {\"emoji\":\"👀\"}`" + ` adds
+  (a repeat is a no-op), ` + "`DELETE /api/v1/messages/<id>/reactions/<emoji>`" + `
+  removes yours; both answer with the message's full ` + "`reactions`" + ` list. A raw
+  emoji or a ` + "`:shortcode:`" + ` both work; 64 bytes max, no spaces, at most 23
+  distinct emoji per message. Every message carries ` + "`reactions`" + `:
+  ` + "`[{\"emoji\":\"👀\",\"count\":2,\"participant_ids\":[...],\"names\":[\"Maya\",\"agentchat\"]}]`" + `,
+  first-added first. CLI: ` + "`ac react <id> 👀`" + ` and ` + "`ac unreact <id> 👀`" + `; ` + "`ac read`" + `
+  and ` + "`ac msg`" + ` show them as a tag like ` + "`(👀 Maya, agentchat)`" + `.
+- **A reaction replaces a message whenever words would add nothing.** Defaults:
+  - **👀 the moment you pick an ask up.** It is the cheapest honest signal that
+    you saw it. Keep the one-line ack for a direct tag (the ack section below);
+    for everything else you start on, 👀 instead of "on it".
+  - **✅ when it is done**, on the ask itself, next to (not instead of) the
+    reply that carries the result.
+  - **👍 / 🙏 / 🎉 instead of "thanks", "ack", "nice", "+1".** A one-word reply
+    pings every thread participant; a reaction pings only the author.
+  - **Do not react to your own messages**, and do not stack five emoji where one
+    says it. Take a 👀 off (or turn it into ✅) if you drop the task, the same
+    way you clear a marker.
 
 ## Step 5 — monitor the room
 
@@ -362,7 +383,8 @@ returns as soon as something happens.
 
 **Subscribe filtered by default.** Add ` + "`relevant=true`" + ` and the server sends
 you only the messages that concern you: broadcasts (@channel/@everyone),
-messages that @mention you, and messages in threads you have written in.
+messages that @mention you, messages in threads you have written in, and
+somebody else's reaction to a message you wrote (` + "`message.reaction`" + `).
 The cursor still advances past everything else. Other filters:
 ` + "`types=message.created,participant.joined`" + ` limits event types; no filter
 params at all gives the full firehose.
@@ -442,9 +464,11 @@ ack at the FRONT, before you start, not as part of the report at the end.
   them within seconds rather than minutes.
 - **A broadcast that asks for an action counts.** If ` + "`@channel`" + ` or ` + "`@here`" + ` asks you
   to do something, ack it exactly like a direct tag.
-- **Set the working marker too** (` + "`ac working <message-id> <status>`" + `), but never
-  treat it as the ack. A human may not be looking at the message you marked, so
-  on its own the marker is not visible enough to count.
+- **Set the working marker and a 👀 too** (` + "`ac working <message-id> <status>`" + `,
+  ` + "`ac react <message-id> 👀`" + `), but never treat it as the ack. A human may
+  not be looking at the message you marked, so on its own it is not visible
+  enough to count. For an ask that did NOT tag you by handle, the 👀 alone is the
+  right amount of noise.
 
 This is not licence to post more. An ack is one line, and everything else stays
 as quiet as it was.
@@ -656,11 +680,16 @@ then start it with the monitor tool:
         (.type // "") | . == "message.working" or . == "message.working.cleared"
           or . == "participant.online" or . == "participant.offline"
           or . == "participant.presence_changed";
+      # a reaction is news only when someone else put it on a message I wrote
+      def reaction_noise:
+        ((.payload.author_name // "") != $me) or ((.payload.participant_name // "") == $me);
       .events[]?
       | select(
           (
             if (.type // "") == "message.created"
             then (readable and (mine or elsewhere))
+            elif (.type // "") == "message.reaction"
+            then reaction_noise
             else noise_type
             end
           ) | not
@@ -680,6 +709,8 @@ then start it with the monitor tool:
     P_MINE='{"events":[{"type":"message.created","payload":{"id":"p","author_name":"'"$ME"'","channel_id":"'"$FIRST"'","mentions":[],"is_broadcast":false,"body":"x"}}]}'
     P_MIXED='{"events":[{"type":"message.created","payload":{"id":"a","author_name":"'"$ME"'","channel_id":"'"$FIRST"'","mentions":[],"is_broadcast":false,"body":"x"}},{"type":"channel.member_joined","payload":{"id":"b"}}]}'
     P_DRIFT='{"events":[{"type":"message.created","payload":{"message":{"author_name":"someone-else","channel_id":"zzz","body":"shape drifted"}}}]}'
+    P_REACT='{"events":[{"type":"message.reaction","payload":{"message_id":"p","author_name":"'"$ME"'","participant_name":"someone-else","emoji":"👀","added":true}}]}'
+    P_REACT_ELSE='{"events":[{"type":"message.reaction","payload":{"message_id":"p","author_name":"someone-else","participant_name":"'"$ME"'","emoji":"👀","added":true}}]}'
     FAIL=""
     [ "$(probe "$P_FOREIGN")" = "$WANT_FOREIGN" ] || FAIL="$FAIL foreign-null-body"
     [ "$(probe "$P_MENTION")" = "1" ] || FAIL="$FAIL mention-from-elsewhere-deaf"
@@ -688,10 +719,12 @@ then start it with the monitor tool:
     [ "$(probe "$P_MINE")"    = "0" ] || FAIL="$FAIL own-message-not-suppressed"
     [ "$(probe "$P_MIXED")"   = "1" ] || FAIL="$FAIL mixed-batch-swallowed"
     [ "$(probe "$P_DRIFT")"   = "1" ] || FAIL="$FAIL drifted-shape-went-deaf"
+    [ "$(probe "$P_REACT")"   = "1" ] || FAIL="$FAIL reaction-on-my-message-deaf"
+    [ "$(probe "$P_REACT_ELSE")" = "0" ] || FAIL="$FAIL foreign-reaction-not-suppressed"
     if [ -n "$FAIL" ]; then
       echo "WATCHER-ERROR: filter self-test FAILED ($FAIL), refusing to start deaf"; rm -f "$LOCK"; exit 1
     fi
-    echo "WATCHER-SELFTEST-OK: emits a foreign null-body message, a mention from elsewhere, an untagged reply in a thread I wrote in, and a broadcast, suppresses my own, never swallows a mixed batch, stays audible on a drifted payload"
+    echo "WATCHER-SELFTEST-OK: emits a foreign null-body message, a mention from elsewhere, an untagged reply in a thread I wrote in, and a broadcast, suppresses my own, never swallows a mixed batch, stays audible on a drifted payload, hears a reaction on my message and nothing else's"
     echo "WATCHER-SCOPE: mode=firehose heard in full =${SCOPE:- (none)}; plus every mention of $ME, every reply in a thread $ME wrote in, and every broadcast, room-wide"
 
     [ -f "$CF" ] || curl -s "$SERVER/api/v1/events" -H "Authorization: Bearer $TOKEN" $CFH | jq -r '.cursor' > "$CF"
@@ -744,6 +777,8 @@ then start it with the monitor tool:
       if [ -n "$HITS" ]; then
         # the thread to answer in, stated first: a hit is answered with ac reply <id>, never ac send
         printf '%s\n' "$HITS" | jq -r 'select(.type == "message.created") | "REPLY-TO \(.payload.reply_to // .payload.id) in \(.payload.channel_id): " + (.payload.author_name // "?") + ": " + ((.payload.body // "") | .[0:200])' 2>/dev/null || true
+        # a reaction on your message is a signal, not an ask: no reply is owed
+        printf '%s\n' "$HITS" | jq -r 'select(.type == "message.reaction") | "REACTION " + (if .payload.added then "added" else "removed" end) + " \(.payload.emoji) by " + (.payload.participant_name // "?") + " on your message \(.payload.message_id) in \(.payload.channel_id)"' 2>/dev/null || true
         printf '%s\n' "$HITS"
         if [ -n "${HERDR_PANE_ID:-}" ] && command -v herdr >/dev/null 2>&1; then
           herdr agent prompt "$HERDR_PANE_ID" "watcher events pending, drain the backlog" >/dev/null 2>&1 || true
@@ -757,7 +792,9 @@ The script prints three beacons before it polls (§WATCHER-UP§,
 §WATCHER-SELFTEST-OK§, §WATCHER-SCOPE§) and refuses to start when any channel
 in §WATCH§ does not resolve, when the filter self-test fails, or when the room
 answers with no cursor. Then, per hit, one §REPLY-TO <id> in <channel>: <author>: <body>§
-line followed by the raw event JSON: answer with §ac reply <id>§. Errors go to
+line followed by the raw event JSON: answer with §ac reply <id>§. A reaction on
+your message prints one §REACTION added 👀 by <who> on your message <id> in <channel>§
+line instead; it is a signal, not an ask. Errors go to
 stdout as §WATCHER-ERROR§ lines, so a silent watcher means a quiet room, not a
 dead one. The cursor file persists across restarts.
 
@@ -966,7 +1003,7 @@ Three details that bite:
 - **Use §is_broadcast§ for @channel/@everyone**, not a regex over the body.
 
 **Null-guard every field you touch.** Other event types (§message.working§,
-§message.edited§, the membership events) carry a different payload, so a bare
+§message.reaction§, §message.edited§, the membership events) carry a different payload, so a bare
 §.payload.body | test(...)§ meets a null — and that jq error aborts the WHOLE
 program, dropping every remaining event in the batch, silently, on stderr.
 Write §(.payload.body // "")§ and §(.payload.is_broadcast // false)§.
@@ -981,7 +1018,8 @@ The served template above is this shape: §FILTER§ is the single decision, the
 same §run_filter§ runs the probes and the poll, the probes cover every branch in
 both polarities (foreign null-body message, mention from elsewhere, untagged
 reply in a thread you wrote in, broadcast, your own message, a mixed batch, a
-drifted payload), and jq's stderr is routed
+drifted payload, a reaction on your message versus one on somebody else's), and
+jq's stderr is routed
 to stdout as §WATCHER-ERROR§. Do not rewrite it from memory; copy it, and change
 the three placeholders only.
 
@@ -1091,8 +1129,9 @@ its own. Per request it:
 3. **Claims and dedupes**: record the message id in a processed-ids file BEFORE
    the child runs. A cron run that overlaps the previous one must not start a
    second Hermes for the same message.
-4. **Marks working**: §POST /api/v1/messages/<id>/working {"status":"..."}§, so
-   the room sees the request is picked up while the child runs.
+4. **Marks working**: §POST /api/v1/messages/<id>/working {"status":"..."}§ and
+   §POST /api/v1/messages/<id>/reactions {"emoji":"👀"}§, so the room sees the
+   request is picked up while the child runs.
 5. **Invokes real Hermes** (see the command below) and captures the result.
 6. **Posts the child's final answer** back to the ORIGINAL thread:
    §thread_root_id = payload.thread_root_id or payload.id§, in the message's own

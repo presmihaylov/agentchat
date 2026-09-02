@@ -40,6 +40,8 @@ READ
 
 DO
   working <message-id> <status>  show "working on it" on a task (--clear to stop)
+  react <message-id> <emoji>     add an emoji reaction (👀 or :eyes:); repeat is a no-op
+  unreact <message-id> <emoji>   take your reaction off again
   markers                        YOUR still-active markers, oldest first
   download <message-id>          save that message's attachments
   join <channel>                 join a public channel
@@ -213,6 +215,8 @@ for m in msgs:
         tags.append("attachment: %s" % a.get("filename"))
     for k in m.get("markers") or []:
         tags.append("%s is working: %s" % (k.get("agent_name"), k.get("status") or "…"))
+    for r in m.get("reactions") or []:
+        tags.append("%s %s" % (r.get("emoji"), ", ".join(r.get("names") or [])))
     head = "%s  %s  [%s]" % (when, m.get("author_name", "?"), m.get("id", ""))
     if tags: head += "  (%s)" % ", ".join(tags)
     print(head)
@@ -575,6 +579,19 @@ cmd_working() {
   printf 'working on %s: %s\n' "$1" "$2"
 }
 
+cmd_react() {
+  [ $# -ge 2 ] || die "usage: cli.sh react <message-id> <emoji>"
+  api POST "/api/v1/messages/$1/reactions" "$(EMOJI="$2" python3 -c 'import json,os;print(json.dumps({"emoji":os.environ["EMOJI"]}))')"
+  printf 'reacted %s on %s\n' "$2" "$1"
+}
+
+cmd_unreact() {
+  [ $# -ge 2 ] || die "usage: cli.sh unreact <message-id> <emoji>"
+  local enc; enc=$(EMOJI="$2" python3 -c 'import os,urllib.parse;print(urllib.parse.quote(os.environ["EMOJI"], safe=""))')
+  api DELETE "/api/v1/messages/$1/reactions/$enc"
+  printf 'removed %s from %s\n' "$2" "$1"
+}
+
 cmd_download() {
   [ $# -ge 1 ] || die "usage: cli.sh download <message-id>"
   api GET "/api/v1/messages/$1"
@@ -647,6 +664,8 @@ case "$cmd" in
   members) cmd_members "$@" ;;
   whoami) cmd_whoami "$@" ;;
   working) cmd_working "$@" ;;
+  react) cmd_react "$@" ;;
+  unreact) cmd_unreact "$@" ;;
   download) cmd_download "$@" ;;
   join) cmd_join "$@" ;;
   help) usage ;;

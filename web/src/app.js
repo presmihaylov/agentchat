@@ -1,6 +1,6 @@
 /* AgentChat human web client — vanilla JS, talks to the same REST API as agents. */
 import { createComposer } from './composer.js';
-import { emojify } from './emoji.js';
+import { emojify, searchEmoji, rememberEmoji } from './emoji.js';
 
 (() => {
   'use strict';
@@ -218,6 +218,111 @@ import { emojify } from './emoji.js';
     renderMarkers(msgId);
   };
 
+  // Emoji reactions, keyed by message id. Seeded from each message's payload;
+  // every message.reaction event carries the full list, so a repaint is a
+  // straight replace and copies in the feed and thread panel never disagree.
+  const reactionMap = {};
+  const QUICK_REACTIONS = ['👀', '✅', '👍', '🎉', '❤️', '🚀', '🙏', '😂'];
+
+  const reactionPill = (m, rx) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'reaction' + (rx.participant_ids.includes(me.id) ? ' mine' : '');
+    b.dataset.emoji = rx.emoji;
+    b.title = rx.names.join(', ');
+    b.innerHTML = `<span class="rx-emoji">${esc(emojify(rx.emoji))}</span><span class="rx-count">${rx.count}</span>`;
+    b.onclick = (ev) => { ev.stopPropagation(); toggleReaction(m, rx.emoji, b.classList.contains('mine')); };
+    return b;
+  };
+
+  const fillReactionBox = (box, m, list) => {
+    box.innerHTML = '';
+    box.hidden = list.length === 0;
+    list.forEach((rx) => box.appendChild(reactionPill(m, rx)));
+    if (!list.length) return;
+    const add = document.createElement('button');
+    add.type = 'button';
+    add.className = 'reaction add';
+    add.title = 'Add reaction';
+    add.textContent = '😀';
+    add.onclick = (ev) => { ev.stopPropagation(); const r = add.getBoundingClientRect(); openReactionPicker(r.left, r.bottom + 4, m); };
+    box.appendChild(add);
+  };
+
+  const renderReactions = (msgId) => {
+    const list = reactionMap[msgId] || [];
+    document.querySelectorAll(`.msg[data-id="${msgId}"] .msg-reactions`).forEach((box) => {
+      fillReactionBox(box, box._msg, list);
+    });
+  };
+
+  // toggle is optimistic-free on purpose: the server answers with the full
+  // list in a few ms and the event repaints every copy anyway
+  const toggleReaction = async (m, emoji, mine) => {
+    try {
+      const out = mine
+        ? await api(`/api/v1/messages/${m.id}/reactions/${encodeURIComponent(emoji)}`, { method: 'DELETE' })
+        : await api(`/api/v1/messages/${m.id}/reactions`, { method: 'POST', body: { emoji } });
+      reactionMap[m.id] = out.reactions || [];
+      renderReactions(m.id);
+    } catch (e) { notice(e.message, true); }
+  };
+
+  // A small picker: the quick row, then a search box over the whole set.
+  // Enter picks the first hit; Esc or click-outside closes.
+  let closeReactionPicker = () => {};
+  function openReactionPicker(x, y, m) {
+    closeReactionPicker();
+    closeContextMenu();
+    const box = document.createElement('div');
+    box.className = 'reaction-picker';
+    const quick = document.createElement('div');
+    quick.className = 'rp-quick';
+    const pick = (emoji, name) => { closeReactionPicker(); if (name) rememberEmoji(name); toggleReaction(m, emoji, false); };
+    QUICK_REACTIONS.forEach((e) => {
+      const b = document.createElement('button');
+      b.type = 'button'; b.textContent = e; b.onclick = () => pick(e);
+      quick.appendChild(b);
+    });
+    const input = document.createElement('input');
+    input.type = 'text'; input.placeholder = 'Search emoji…'; input.className = 'rp-search';
+    input.setAttribute('aria-label', 'Search emoji');
+    const results = document.createElement('div');
+    results.className = 'rp-results';
+    let hits = [];
+    input.oninput = () => {
+      hits = searchEmoji(input.value.trim().replace(/^:|:$/g, ''), 16);
+      results.innerHTML = '';
+      hits.forEach((h) => {
+        const b = document.createElement('button');
+        b.type = 'button'; b.textContent = h.emoji; b.title = ':' + h.name + ':';
+        b.onclick = () => pick(h.emoji, h.name);
+        results.appendChild(b);
+      });
+    };
+    input.onkeydown = (e) => {
+      if (e.key === 'Enter' && hits.length) { e.preventDefault(); pick(hits[0].emoji, hits[0].name); }
+    };
+    box.append(quick, input, results);
+    document.body.appendChild(box);
+    const w = box.offsetWidth, h = box.offsetHeight;
+    box.style.left = Math.min(x, window.innerWidth - w - 8) + 'px';
+    box.style.top = Math.min(y, window.innerHeight - h - 8) + 'px';
+    input.focus();
+    const onKey = (e) => { if (e.key === 'Escape') closeReactionPicker(); };
+    const onDown = (e) => { if (!box.contains(e.target)) closeReactionPicker(); };
+    closeReactionPicker = () => {
+      box.remove();
+      document.removeEventListener('keydown', onKey);
+      document.removeEventListener('mousedown', onDown, true);
+      window.removeEventListener('resize', closeReactionPicker);
+      closeReactionPicker = () => {};
+    };
+    document.addEventListener('keydown', onKey);
+    document.addEventListener('mousedown', onDown, true);
+    window.addEventListener('resize', closeReactionPicker);
+  }
+
   // Per-channel interaction recency. Slack ranks the people you are actually
   // talking to above the rest of the room, so remember who spoke here and who
   // got mentioned, and reset it when the channel changes.
@@ -249,6 +354,7 @@ import { emojify } from './emoji.js';
     const canEdit = m.author_id === me.id;
     const canDelete = canEdit || me.role === 'admin';
     const actions = [];
+    actions.push('<button data-act="react" title="Add reaction" aria-label="Add reaction">😀</button>');
     if (!inThread && !m.thread_root_id) actions.push('<button data-act="thread" title="Reply in thread">💬</button>');
     if (canEdit) actions.push('<button data-act="edit" title="Edit">✏️</button>');
     if (canDelete) actions.push('<button data-act="delete" title="Delete">🗑</button>');
@@ -274,7 +380,7 @@ import { emojify } from './emoji.js';
           ${m.edited_at ? '<span class="edited"> (edited)</span>' : ''}
           ${m.is_broadcast ? ' 📣' : ''}</div>
         <div class="content">${renderMarkdown(m.body)}</div>
-        ${atts}<div class="msg-markers"></div>${replyBar}
+        ${atts}<div class="msg-markers"></div><div class="msg-reactions"></div>${replyBar}
       </div>
       <div class="msg-actions">${actions.join('')}</div>`;
     el.querySelector('.avatar').appendChild(
@@ -284,6 +390,10 @@ import { emojify } from './emoji.js';
     // live-updated via events
     markerMap[m.id] = m.markers || [];
     fillMarkerBox(el.querySelector('.msg-markers'), markerMap[m.id]);
+    reactionMap[m.id] = m.reactions || [];
+    const rxBox = el.querySelector('.msg-reactions');
+    rxBox._msg = m; // the pills need the message to toggle against
+    fillReactionBox(rxBox, m, reactionMap[m.id]);
     const bar = el.querySelector('.reply-bar');
     if (bar) {
       const avs = document.createElement('span');
@@ -332,6 +442,10 @@ import { emojify } from './emoji.js';
       const btn = ev.target.closest('.msg-actions button, button.reply-bar');
       if (!btn || !el.contains(btn)) return;
       const act = btn.dataset.act;
+      if (act === 'react') {
+        const r = btn.getBoundingClientRect();
+        openReactionPicker(r.left, r.bottom + 4, m);
+      }
       if (act === 'thread') openThread(m.thread_root_id || m.id);
       if (act === 'edit') editMessage(m);
       if (act === 'delete') deleteMessage(m);
@@ -378,6 +492,15 @@ import { emojify } from './emoji.js';
           await api(`/api/v1/threads/${root}/subscribe`, { method: 'POST', body: { subscribed: !subscribed } });
           loadThreads();
         } catch (e) { alert(e.message); }
+      },
+    });
+    items.push({
+      label: 'Add reaction',
+      run: () => {
+        // anchor the picker to the message's toolbar; the menu itself is gone by now
+        const el = document.querySelector(`.msg[data-id="${m.id}"]`);
+        const r = el ? el.getBoundingClientRect() : { left: 80, bottom: 80 };
+        openReactionPicker(r.left + 60, r.bottom - 8, m);
       },
     });
     if (opts.canEdit) items.push({ label: 'Edit message', run: () => editMessage(m) });
@@ -1218,7 +1341,7 @@ import { emojify } from './emoji.js';
       author_id: me.id, author_name: me.name,
       body, created_at: new Date().toISOString(),
       thread_root_id: rootID || null,
-      reply_count: 0, markers: [],
+      reply_count: 0, markers: [], reactions: [],
       attachments: att ? [att] : [],
     };
     const el = msgEl(m, !!rootID);
@@ -1481,6 +1604,11 @@ import { emojify } from './emoji.js';
     }
     if (t === 'message.working.cleared') {
       removeMarker(ev.payload.message_id, ev.payload.agent_id);
+      return;
+    }
+    if (t === 'message.reaction') {
+      reactionMap[ev.payload.message_id] = ev.payload.reactions || [];
+      renderReactions(ev.payload.message_id);
       return;
     }
     // everything else changes room structure or people — refresh the sidebar

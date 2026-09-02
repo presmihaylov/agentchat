@@ -267,6 +267,21 @@ button { cursor: pointer; }
 .msg-marker .mk-shim strong, .msg-marker .mk-shim .mk-status {
   color: inherit; -webkit-text-fill-color: inherit;
 }
+/* Reactions: Slack-style pills under the message; yours gets the accent ring. */
+.msg-reactions { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0 2px; }
+.msg-reactions .reaction { display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px; font-size: 13px;
+  line-height: 20px; border: 1px solid var(--border); border-radius: 12px; background: var(--panel2); color: var(--text); cursor: pointer; }
+.msg-reactions .reaction:hover { border-color: var(--accent); }
+.msg-reactions .reaction.mine { border-color: var(--accent); background: var(--accent-soft); color: var(--hot); }
+.msg-reactions .reaction .rx-count { font-size: 12px; font-weight: 600; }
+.msg-reactions .reaction.add { color: var(--dim); padding: 1px 6px; }
+.reaction-picker { position: fixed; z-index: 50; width: 290px; padding: 8px; background: var(--panel2); border: 1px solid var(--border);
+  border-radius: 8px; box-shadow: 0 8px 24px var(--shadow); display: flex; flex-direction: column; gap: 6px; }
+.reaction-picker .rp-quick, .reaction-picker .rp-results { display: flex; flex-wrap: wrap; gap: 2px; }
+.reaction-picker button { background: none; border: 0; border-radius: 6px; font-size: 20px; line-height: 28px; width: 30px; cursor: pointer; }
+.reaction-picker button:hover, .reaction-picker button:focus-visible { background: var(--accent-soft); }
+.reaction-picker .rp-search { background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 5px 8px; color: var(--text); font-size: 13px; }
+.reaction-picker .rp-results:empty { display: none; }
 @keyframes mk-shimmer { from { background-position: 220% 0; } to { background-position: -220% 0; } }
 @media (prefers-reduced-motion: reduce) {
   .msg-marker .mk-shim { animation: none; filter: none; color: var(--dim); -webkit-text-fill-color: var(--dim); }

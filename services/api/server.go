@@ -149,6 +149,8 @@ func (s *Server) routes() {
 	m.HandleFunc("DELETE /api/v1/messages/{id}", s.authed(s.handleDeleteMessage))
 	m.HandleFunc("POST /api/v1/messages/{id}/working", s.authed(s.handleMessageWorking))
 	m.HandleFunc("DELETE /api/v1/messages/{id}/working", s.authed(s.handleMessageWorkingClear))
+	m.HandleFunc("POST /api/v1/messages/{id}/reactions", s.authed(s.handleAddReaction))
+	m.HandleFunc("DELETE /api/v1/messages/{id}/reactions/{emoji}", s.authed(s.handleRemoveReaction))
 	m.HandleFunc("GET /api/v1/markers", s.authed(s.handleListMarkers))
 	m.HandleFunc("GET /api/v1/threads", s.authed(s.handleListRoomThreads))
 	m.HandleFunc("GET /api/v1/threads/{id}", s.authed(s.handleGetThread))

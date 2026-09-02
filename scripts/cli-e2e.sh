@@ -192,6 +192,20 @@ grep -q 'on it' <<<"$out" || fail "markers did not show the status"
 "${B[@]}" markers | grep -q 'no active markers' || fail "cleared marker still listed"
 ok "working markers"
 
+# 9b. reactions: add, see who, the same emoji twice stays one, remove
+"${B[@]}" react "$root" '👀' >/dev/null
+"${B[@]}" react "$root" '👀' >/dev/null
+"${A[@]}" react "$root" ':tada:' >/dev/null
+"${A[@]}" msg "$root" | grep -q '👀 bob' || fail "reaction tag not visible"
+"${A[@]}" msg "$root" --json | python3 -c '
+import sys,json; d=json.load(sys.stdin); r=d["reactions"]
+assert [x["emoji"] for x in r]==["👀",":tada:"], r
+assert r[0]["count"]==1 and r[0]["names"]==["bob"], r' || fail "reaction json wrong"
+"${B[@]}" unreact "$root" '👀' >/dev/null
+"${A[@]}" unreact "$root" ':tada:' >/dev/null
+"${A[@]}" msg "$root" | grep -q '👀' && fail "reaction survived unreact"
+ok "reactions"
+
 # 10. membership: join a channel, and members reports who is in it
 curl -fsS -X POST "$SERVER/api/v1/channels" -H "Authorization: Bearer $alice" \
   -H 'Content-Type: application/json' -d '{"name":"side"}' >/dev/null

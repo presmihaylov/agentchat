@@ -2682,3 +2682,157 @@ func TestChannelMuteIsPerMember(t *testing.T) {
 		t.Fatal("unmute did not land")
 	}
 }
+
+func TestMessageReactions(t *testing.T) {
+	srv, _ := newTestServer(t)
+	defer srv.Close()
+	_, alice, bob := setupRoom(t, srv.URL)
+
+	reactionsOf := func(id string) []map[string]any {
+		out := alice.must("GET", "/api/v1/messages/"+id, nil, 200)
+		list := []map[string]any{}
+		for _, raw := range out["reactions"].([]any) {
+			list = append(list, raw.(map[string]any))
+		}
+		return list
+	}
+	names := func(r map[string]any) string { return fmt.Sprint(r["names"]) }
+
+	root := alice.must("POST", "/api/v1/channels/general/messages", map[string]any{"body": "react to me"}, 201)
+	rootID := root["id"].(string)
+	if rs := reactionsOf(rootID); len(rs) != 0 {
+		t.Fatalf("fresh message has reactions: %v", rs)
+	}
+
+	// bob reacts; the response and a fresh GET both carry the grouped reaction
+	out := bob.must("POST", "/api/v1/messages/"+rootID+"/reactions", map[string]any{"emoji": "👀"}, 200)
+	if rs := out["reactions"].([]any); len(rs) != 1 {
+		t.Fatalf("add returned %v", out)
+	}
+	rs := reactionsOf(rootID)
+	if len(rs) != 1 || rs[0]["emoji"] != "👀" || rs[0]["count"].(float64) != 1 || names(rs[0]) != "[bob]" {
+		t.Fatalf("after bob reacts: %v", rs)
+	}
+
+	// reacting twice with the same emoji is a no-op, not a second count
+	bob.must("POST", "/api/v1/messages/"+rootID+"/reactions", map[string]any{"emoji": "👀"}, 200)
+	if rs := reactionsOf(rootID); rs[0]["count"].(float64) != 1 {
+		t.Fatalf("duplicate reaction counted twice: %v", rs)
+	}
+
+	// alice joins the same emoji, then adds a shortcode one; order is first-seen
+	alice.must("POST", "/api/v1/messages/"+rootID+"/reactions", map[string]any{"emoji": "👀"}, 200)
+	alice.must("POST", "/api/v1/messages/"+rootID+"/reactions", map[string]any{"emoji": ":tada:"}, 200)
+	rs = reactionsOf(rootID)
+	if len(rs) != 2 || rs[0]["emoji"] != "👀" || rs[0]["count"].(float64) != 2 || names(rs[0]) != "[bob alice]" || rs[1]["emoji"] != ":tada:" {
+		t.Fatalf("after alice reacts: %v", rs)
+	}
+
+	// removing drops only the caller's entry; removing again is still fine
+	bob.must("DELETE", "/api/v1/messages/"+rootID+"/reactions/👀", nil, 200)
+	bob.must("DELETE", "/api/v1/messages/"+rootID+"/reactions/👀", nil, 200)
+	rs = reactionsOf(rootID)
+	if len(rs) != 2 || rs[0]["count"].(float64) != 1 || names(rs[0]) != "[alice]" {
+		t.Fatalf("after bob removes: %v", rs)
+	}
+	alice.must("DELETE", "/api/v1/messages/"+rootID+"/reactions/:tada:", nil, 200)
+	if rs := reactionsOf(rootID); len(rs) != 1 {
+		t.Fatalf("after alice removes tada: %v", rs)
+	}
+
+	// bad input: blank, whitespace inside, a sentence
+	for _, bad := range []string{"", "thumbs up", strings.Repeat("x", 65)} {
+		if code, _ := bob.do("POST", "/api/v1/messages/"+rootID+"/reactions", map[string]any{"emoji": bad}); code != 400 {
+			t.Fatalf("emoji %q accepted with %d", bad, code)
+		}
+	}
+	if code, _ := bob.do("POST", "/api/v1/messages/00000000-0000-0000-0000-000000000000/reactions", map[string]any{"emoji": "👍"}); code != 404 {
+		t.Fatalf("reaction on a missing message returned %d", code)
+	}
+
+	// the cap: 23 distinct emoji, the 24th is refused
+	capped := alice.must("POST", "/api/v1/channels/general/messages", map[string]any{"body": "cap me"}, 201)["id"].(string)
+	for i := 0; i < models.MaxReactionsPerMessage; i++ {
+		alice.must("POST", "/api/v1/messages/"+capped+"/reactions", map[string]any{"emoji": fmt.Sprintf(":e%d:", i)}, 200)
+	}
+	if code, _ := alice.do("POST", "/api/v1/messages/"+capped+"/reactions", map[string]any{"emoji": ":one-more:"}); code != 409 {
+		t.Fatalf("24th distinct emoji returned %d, want 409", code)
+	}
+	// joining an existing emoji is still allowed at the cap
+	bob.must("POST", "/api/v1/messages/"+capped+"/reactions", map[string]any{"emoji": ":e0:"}, 200)
+}
+
+func TestReactionEvents(t *testing.T) {
+	srv, _ := newTestServer(t)
+	defer srv.Close()
+	_, alice, bob := setupRoom(t, srv.URL)
+
+	cursor := func(c *testClient) string {
+		out := c.must("GET", "/api/v1/events", nil, 200)
+		return fmt.Sprintf("%.0f", out["cursor"].(float64))
+	}
+	events := func(c *testClient, after string, relevant bool) []map[string]any {
+		q := "/api/v1/events?after=" + after
+		if relevant {
+			q += "&relevant=true"
+		}
+		out := c.must("GET", q, nil, 200)
+		list := []map[string]any{}
+		for _, raw := range out["events"].([]any) {
+			list = append(list, raw.(map[string]any))
+		}
+		return list
+	}
+
+	root := alice.must("POST", "/api/v1/channels/general/messages", map[string]any{"body": "alice's post"}, 201)
+	rootID := root["id"].(string)
+	c0 := cursor(alice)
+
+	bob.must("POST", "/api/v1/messages/"+rootID+"/reactions", map[string]any{"emoji": "👀"}, 200)
+
+	// firehose: one message.reaction with the actor, the message author, and the full list
+	evs := events(alice, c0, false)
+	if len(evs) != 1 || evs[0]["type"] != "message.reaction" {
+		t.Fatalf("firehose after a reaction: %v", evs)
+	}
+	pl := evs[0]["payload"].(map[string]any)
+	if pl["message_id"] != rootID || pl["emoji"] != "👀" || pl["participant_name"] != "bob" || pl["added"] != true ||
+		pl["author_id"] != root["author_id"] || pl["author_name"] != "alice" || pl["channel_id"] != root["channel_id"] || len(pl["reactions"].([]any)) != 1 {
+		t.Fatalf("reaction payload: %v", pl)
+	}
+
+	// relevant=true: the message author hears it, the reactor does not
+	if evs := events(alice, c0, true); len(evs) != 1 || evs[0]["type"] != "message.reaction" {
+		t.Fatalf("author did not get the reaction as relevant: %v", evs)
+	}
+	if evs := events(bob, c0, true); len(evs) != 0 {
+		t.Fatalf("reactor got their own reaction as relevant: %v", evs)
+	}
+
+	// the author reacting to their own post is not news to them
+	c1 := cursor(alice)
+	alice.must("POST", "/api/v1/messages/"+rootID+"/reactions", map[string]any{"emoji": "👍"}, 200)
+	if evs := events(alice, c1, true); len(evs) != 0 {
+		t.Fatalf("own reaction leaked as relevant: %v", evs)
+	}
+
+	// removal is an event too, and it carries the list after the change
+	c2 := cursor(alice)
+	bob.must("DELETE", "/api/v1/messages/"+rootID+"/reactions/👀", nil, 200)
+	evs = events(alice, c2, true)
+	if len(evs) != 1 || evs[0]["payload"].(map[string]any)["added"] != false {
+		t.Fatalf("removal event: %v", evs)
+	}
+	if got := len(evs[0]["payload"].(map[string]any)["reactions"].([]any)); got != 1 {
+		t.Fatalf("reactions after removal = %d, want 1 (alice's 👍)", got)
+	}
+
+	// a non-member of a private channel never hears reactions from it
+	priv := alice.must("POST", "/api/v1/channels", map[string]any{"name": "secret", "private": true}, 201)
+	privMsg := alice.must("POST", "/api/v1/channels/"+priv["id"].(string)+"/messages", map[string]any{"body": "hush"}, 201)
+	c3 := cursor(alice)
+	alice.must("POST", "/api/v1/messages/"+privMsg["id"].(string)+"/reactions", map[string]any{"emoji": "🤫"}, 200)
+	if evs := events(bob, c3, false); len(evs) != 0 {
+		t.Fatalf("private-channel reaction leaked to a non-member: %v", evs)
+	}
+}

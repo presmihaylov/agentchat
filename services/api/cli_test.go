@@ -435,3 +435,40 @@ func TestWatcherTemplateHearsOwnThreads(t *testing.T) {
 		t.Fatalf("watcher with WATCH=\"\" leaked a plain top-level message:\n%s", out)
 	}
 }
+
+// A reaction somebody else puts on my message reaches the watcher; my own
+// reaction, and reactions on other people's messages, stay quiet.
+func TestWatcherTemplateHearsReactionsOnOwnMessages(t *testing.T) {
+	if _, err := exec.LookPath("jq"); err != nil {
+		t.Skip("template needs jq")
+	}
+	srv, _ := newTestServer(t)
+	_, alice, bob := setupRoom(t, srv.URL)
+	script := strings.ReplaceAll(watcherTemplate(t, srv.URL), `WATCH="general"`, `WATCH=""`)
+	mine := alice.must("POST", "/api/v1/channels/general/messages", map[string]any{"body": "my post"}, 201)
+	theirs := bob.must("POST", "/api/v1/channels/general/messages", map[string]any{"body": "bob's post"}, 201)
+
+	home := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(home, ".agentchat"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	envFile := filepath.Join(home, ".agentchat", "room.alice.env")
+	if err := os.WriteFile(envFile, []byte("SERVER="+srv.URL+"\nTOKEN="+alice.token+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	out := runWatcherPosting(t, script, home, func() {
+		alice.must("POST", "/api/v1/messages/"+theirs["id"].(string)+"/reactions", map[string]any{"emoji": "🙈"}, 200)
+		alice.must("POST", "/api/v1/messages/"+mine["id"].(string)+"/reactions", map[string]any{"emoji": "🙉"}, 200)
+		bob.must("POST", "/api/v1/messages/"+mine["id"].(string)+"/reactions", map[string]any{"emoji": "👀"}, 200)
+	})
+	if strings.Contains(out, "WATCHER-ERROR") || !strings.Contains(out, "WATCHER-SELFTEST-OK") {
+		t.Fatalf("watcher did not start clean:\n%s", out)
+	}
+	if !strings.Contains(out, "REACTION added 👀 by bob on your message "+mine["id"].(string)) {
+		t.Fatalf("watcher missed bob's reaction on alice's post:\n%s", out)
+	}
+	// exactly one reaction event: alice's own two never surface
+	if n := strings.Count(out, `"type":"message.reaction"`); n != 1 {
+		t.Fatalf("watcher surfaced %d reaction events, want 1 (bob's):\n%s", n, out)
+	}
+}

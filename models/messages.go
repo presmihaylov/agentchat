@@ -51,7 +51,17 @@ const messageColumns = `
 	                'status', mm.status, 'updated_at', mm.updated_at) ORDER BY mm.updated_at)
 	            FROM message_markers mm JOIN participants mkp ON mkp.id = mm.agent_id
 	            WHERE mm.message_id = m.id),
-	           '[]'::json) AS markers`
+	           '[]'::json) AS markers,
+	       COALESCE(
+	           (SELECT json_agg(json_build_object(
+	                'emoji', g.emoji, 'count', g.n,
+	                'participant_ids', g.ids, 'names', g.names) ORDER BY g.first_at)
+	            FROM (SELECT mr.emoji, count(*) AS n, min(mr.created_at) AS first_at,
+	                         json_agg(mr.participant_id ORDER BY mr.created_at) AS ids,
+	                         json_agg(rp.name ORDER BY mr.created_at) AS names
+	                    FROM message_reactions mr JOIN participants rp ON rp.id = mr.participant_id
+	                   WHERE mr.message_id = m.id GROUP BY mr.emoji) g),
+	           '[]'::json) AS reactions`
 
 const messageFrom = `
 	FROM messages m
@@ -61,10 +71,10 @@ const messageSelect = "SELECT" + messageColumns + messageFrom
 
 func scanMessage(row pgx.Row) (Message, error) {
 	var m Message
-	var attJSON, menJSON, repJSON, mkrJSON []byte
+	var attJSON, menJSON, repJSON, mkrJSON, rxnJSON []byte
 	err := row.Scan(&m.ID, &m.RoomID, &m.ChannelID, &m.ThreadRootID, &m.AuthorID, &m.AuthorName,
 		&m.Body, &m.IsBroadcast, &m.Kind, &m.CreatedAt, &m.EditedAt, &m.ReplyCount, &m.LastReplyAt,
-		&repJSON, &attJSON, &menJSON, &mkrJSON)
+		&repJSON, &attJSON, &menJSON, &mkrJSON, &rxnJSON)
 	if err != nil {
 		return m, err
 	}
@@ -79,6 +89,9 @@ func scanMessage(row pgx.Row) (Message, error) {
 	}
 	m.ReplyToID = m.ReplyTo()
 	if err := json.Unmarshal(mkrJSON, &m.Markers); err != nil {
+		return m, err
+	}
+	if err := json.Unmarshal(rxnJSON, &m.Reactions); err != nil {
 		return m, err
 	}
 	return m, nil

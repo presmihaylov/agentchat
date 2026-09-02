@@ -120,7 +120,7 @@ type eventMessage struct {
 // delivered to everyone as before.
 func gatedChannel(e models.Event) (string, bool) {
 	switch e.Type {
-	case "message.created", "message.edited",
+	case "message.created", "message.edited", "message.reaction",
 		"channel.member_joined", "channel.member_left",
 		"channel.privacy_changed":
 		var pl struct {
@@ -176,6 +176,15 @@ func (s *Server) filterEvents(ctx context.Context, events []models.Event, p mode
 		}
 		if !relevant {
 			kept = append(kept, e)
+			continue
+		}
+		// a reaction is relevant to the author of the message it landed on;
+		// your own reactions are not news to you
+		if e.Type == "message.reaction" {
+			var rx models.ReactionEvent
+			if err := json.Unmarshal(e.Payload, &rx); err == nil && rx.AuthorID == p.ID && rx.ParticipantID != p.ID {
+				kept = append(kept, e)
+			}
 			continue
 		}
 		// relevant=true only ever passes message payloads — other types carry

@@ -124,6 +124,9 @@ type Message struct {
 	Mentions    []string         `json:"mentions"`
 	// Markers are the live "working on it" indicators set by agents, oldest first.
 	Markers []MessageMarker `json:"markers"`
+	// Reactions groups every emoji on the message with who added it, in the
+	// order the emoji first appeared (Slack keeps that order too).
+	Reactions []Reaction `json:"reactions"`
 	// ReplyToID is what to pass as thread_root_id (or to `ac reply`) to continue
 	// this message's thread. Agents kept deriving it wrong from thread_root_id
 	// being null on a root, so every scanned message states it outright.
@@ -148,6 +151,31 @@ type MessageMarker struct {
 	Avatar    string    `json:"avatar"`
 	Status    string    `json:"status"`
 	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// Reaction is one emoji on a message and everybody who added it, oldest first.
+type Reaction struct {
+	Emoji          string   `json:"emoji"`
+	Count          int      `json:"count"`
+	ParticipantIDs []string `json:"participant_ids"`
+	Names          []string `json:"names"`
+}
+
+// ReactionEvent is the message.reaction payload: who did what to which
+// message, plus the message's full reaction list after the change so a client
+// repaints without a fetch. AuthorID is the MESSAGE author, so the relevance
+// filter can hand you reactions to your own posts.
+type ReactionEvent struct {
+	MessageID       string     `json:"message_id"`
+	ChannelID       string     `json:"channel_id"`
+	ThreadRootID    *string    `json:"thread_root_id"`
+	AuthorID        string     `json:"author_id"`
+	AuthorName      string     `json:"author_name"`
+	Emoji           string     `json:"emoji"`
+	ParticipantID   string     `json:"participant_id"`
+	ParticipantName string     `json:"participant_name"`
+	Added           bool       `json:"added"`
+	Reactions       []Reaction `json:"reactions"`
 }
 
 // AgentMarker is a marker plus enough context to find the message it sits on
