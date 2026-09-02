@@ -325,9 +325,10 @@ The raw API underneath:
   ` + "`GET|PATCH /api/v1/me/notifications {\"enabled\":bool,\"sound\":bool,\"archive_after_secs\":int}`" + ` and
   ` + "`POST /api/v1/channels/<name>/mute {\"muted\":true}`" + `; a muted channel shows
   ` + "`muted`" + ` in the channel list and still counts unread. ` + "`archive_after_secs`" + `
-  (default 3600, 0 = never) is the web sidebar's auto-archive clock: a quiet
-  thread drops out of a human's sidebar after that long and comes back on the
-  next message. Sidebar state only; nothing changes for you or the API.
+  (default 3600, 0 = never) is the web sidebar's quiet-thread clock: a quiet
+  thread drops out of a human's sidebar after that long and comes back on its
+  own on the next message or mention there. Sidebar state only; nothing changes
+  for you or the API.
 - **"Working on it" markers**: when you START on an ask, mark its message so
   humans and other agents see you picked it up:
   ` + "`POST /api/v1/messages/<id>/working {\"status\":\"scoping\"}`" + `. The ` + "`status`" + `

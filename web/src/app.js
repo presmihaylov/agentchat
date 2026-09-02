@@ -576,9 +576,9 @@ import { emojify, searchEmoji, rememberEmoji } from './emoji.js';
   // One thread leaf, rendered nested under its parent channel (Discord-style).
   // Same mention-only rule as channels: glow on any unread, a number only for
   // unread @mentions.
-  const threadLeafLi = (t, archived = false) => {
+  const threadLeafLi = (t) => {
     const li = document.createElement('li');
-    li.className = 'thread-leaf' + (archived ? ' archived' : '');
+    li.className = 'thread-leaf';
     const active = t.root_id === openThreadRoot;
     if (active) li.classList.add('active');
     const snippet = t.body.replace(/\s+/g, ' ').slice(0, 30) || '(attachment)';
@@ -594,24 +594,23 @@ import { emojify, searchEmoji, rememberEmoji } from './emoji.js';
         li.appendChild(b);
       }
     }
-    li.title = `${t.author_name}: ${t.body.slice(0, 200)}\n(hover to ${archived ? 'unarchive' : 'archive'}, right-click for actions)`;
+    li.title = `${t.author_name}: ${t.body.slice(0, 200)}\n(hover to hide, right-click for actions)`;
     const act = async (path, body) => {
       try {
         await api(`/api/v1/threads/${t.root_id}/${path}`, { method: 'POST', body });
         loadThreads();
       } catch (e) { alert(e.message); }
     };
-    // hover-reveal archive (resolve): a resolved thread leaves the sidebar and
-    // resurfaces only when someone replies again
+    // hover-reveal hide (resolve): the thread leaves the sidebar and comes back
+    // on its own the next time anyone writes in it or mentions you there
     const x = document.createElement('button');
     x.type = 'button';
     x.className = 't-archive';
-    x.textContent = archived ? '↩' : '✕';
-    x.title = archived ? 'Unarchive thread' : 'Archive thread';
+    x.textContent = '✕';
+    x.title = 'Hide thread';
     x.setAttribute('aria-label', x.title);
     x.onclick = (ev) => {
       ev.stopPropagation(); // do not open the thread
-      if (archived) { act('resolve', { resolved: false }); return; }
       if (openThreadRoot === t.root_id) closeThread();
       act('resolve', { resolved: true });
     };
@@ -622,9 +621,7 @@ import { emojify, searchEmoji, rememberEmoji } from './emoji.js';
       openContextMenu(ev.clientX, ev.clientY, [
         { label: t.subscribed ? 'Unsubscribe' : 'Subscribe', run: () => act('subscribe', { subscribed: !t.subscribed }) },
         { label: t.muted ? 'Unmute thread' : 'Mute thread', run: () => act('mute', { muted: !t.muted }) },
-        archived
-          ? { label: 'Unarchive thread', run: () => act('resolve', { resolved: false }) }
-          : { label: 'Archive thread', danger: true, run: () => act('resolve', { resolved: true }) },
+        { label: 'Hide thread', danger: true, run: () => act('resolve', { resolved: true }) },
       ]);
     };
     return li;
@@ -759,38 +756,22 @@ import { emojify, searchEmoji, rememberEmoji } from './emoji.js';
     };
     makeDragRow(li, ch, groupID);
     ul.appendChild(li);
-    threads.filter((t) => t.channel_id === ch.id && !isArchived(t)).forEach((t) => ul.appendChild(threadLeafLi(t)));
+    threads.filter((t) => t.channel_id === ch.id && !isQuiet(t)).forEach((t) => ul.appendChild(threadLeafLi(t)));
   };
 
-  // Archived is sidebar state only. A thread is archived when you archived it
-  // by hand (resolved), or when nobody wrote in it for archive_after_secs and
-  // you did not unarchive it since the last message. Any new message revives.
-  const isArchived = (t) => {
-    if (t.resolved) return true;
+  // A thread you hid by hand never reaches the client (the server drops it
+  // until the next message there). A quiet one just leaves the sidebar after
+  // archive_after_secs; any new message or mention moves its activity clock,
+  // which brings it back on its own. The open thread always stays visible.
+  const isQuiet = (t) => {
+    if (t.root_id === openThreadRoot) return false;
     const after = Number(notifyPrefs.archive_after_secs) || 0;
     if (after <= 0) return false;
-    const last = Date.parse(t.last_activity_at);
-    if (t.unarchived_at && Date.parse(t.unarchived_at) > last) return false;
-    return Date.now() - last > after * 1000;
-  };
-  let archivedOpen = false;
-  const appendArchived = (ul) => {
-    const list = threads.filter(isArchived);
-    if (!list.length) return;
-    const header = document.createElement('li');
-    header.className = 'section-header archived-header' + (archivedOpen ? '' : ' collapsed');
-    header.innerHTML = `<span class="sec-chevron">${archivedOpen ? '▾' : '▸'}</span><span class="sec-name">Archived</span>`;
-    const n = document.createElement('span');
-    n.className = 'sec-count';
-    n.textContent = String(list.length);
-    header.appendChild(n);
-    header.onclick = () => { archivedOpen = !archivedOpen; renderChannels(); };
-    ul.appendChild(header);
-    if (archivedOpen) list.forEach((t) => ul.appendChild(threadLeafLi(t, true)));
+    return Date.now() - Date.parse(t.last_activity_at) > after * 1000;
   };
   // the inactivity clock is client-side; the server holds the truth it reads,
-  // and a periodic refetch keeps a second tab's manual archives in step
-  setInterval(() => { if (threads.some((t) => !t.resolved)) renderChannels(); }, 10000);
+  // and a periodic refetch keeps a second tab's manual hides in step
+  setInterval(() => { if (threads.length) renderChannels(); }, 10000);
   setInterval(() => { if (me) loadThreads(); }, 30000);
 
   const groupOf = () => {
@@ -844,7 +825,6 @@ import { emojify, searchEmoji, rememberEmoji } from './emoji.js';
       ul.appendChild(header);
       if (!g.collapsed) members.forEach((ch) => appendChannel(ul, ch, g.id));
     });
-    appendArchived(ul);
   };
 
   const fetchGroups = async () => {
@@ -1247,7 +1227,7 @@ import { emojify, searchEmoji, rememberEmoji } from './emoji.js';
   // nest under their parent channel in the sidebar.
   const loadThreads = async () => {
     try {
-      const out = await api(`/api/v1/threads?include_archived=1`);
+      const out = await api('/api/v1/threads');
       threads = out.threads || [];
       renderChannels();
       syncReplyBars();
@@ -1574,7 +1554,7 @@ import { emojify, searchEmoji, rememberEmoji } from './emoji.js';
       if (m.thread_root_id && current && m.channel_id === current.id) {
         await refreshRootBar(m.thread_root_id); // just the root's reply bar, not the whole channel
       }
-      // any reply, in any channel, can revive an archived thread in the sidebar
+      // any reply, in any channel, can bring a hidden or quiet thread back
       if (m.thread_root_id) loadThreads(); // tree + reply-bar unread glow
       return;
     }
@@ -1732,7 +1712,7 @@ import { emojify, searchEmoji, rememberEmoji } from './emoji.js';
     try { await post(text, root); } catch (e) { threadBox.setMarkdown(text); alert(e.message); }
   });
 
-  // ---------- slash commands: /invite, /join, /leave, /archive ----------
+  // ---------- slash commands: /invite, /join, /leave, /hide ----------
   // Autocomplete mirrors the mention popup; commands run client-side against
   // the existing APIs and never post the raw "/command" text as a message.
   const SLASH_COMMANDS = [
@@ -1740,7 +1720,7 @@ import { emojify, searchEmoji, rememberEmoji } from './emoji.js';
     { name: 'remove', args: '@participant', hint: 'remove someone from this channel (admin)' },
     { name: 'join', args: '#channel', hint: 'join a public channel' },
     { name: 'leave', args: '', hint: 'leave this channel' },
-    { name: 'archive', args: '', hint: 'archive the open thread' },
+    { name: 'hide', args: '', hint: 'hide the open thread until someone writes in it' },
   ];
 
   // the two WYSIWYG composers (Tiptap); the wire format stays markdown
@@ -1858,13 +1838,13 @@ import { emojify, searchEmoji, rememberEmoji } from './emoji.js';
         await leaveChannel(current);
         return done('Left #' + name);
       }
-      if (cmd === 'archive') {
-        if (box !== threadBox || !openThreadRoot) return fail('/archive works in an open thread.');
+      if (cmd === 'hide') {
+        if (box !== threadBox || !openThreadRoot) return fail('/hide works in an open thread.');
         const root = openThreadRoot;
         await api('/api/v1/threads/' + root + '/resolve', { method: 'POST', body: { resolved: true } });
         closeThread();
         loadThreads();
-        return done('Thread archived.');
+        return done('Thread hidden.');
       }
       fail('Unknown command /' + cmd);
     } catch (e) { fail('/' + cmd + ' failed: ' + e.message); }

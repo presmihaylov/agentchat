@@ -1,5 +1,5 @@
 // E2E for the sidebar thread-leaf context menu (FR-D). Right-click a thread leaf
-// must open a themed menu (NOT instantly toggle mute); "Archive thread" removes
+// must open a themed menu (NOT instantly toggle mute); "Hide thread" removes
 // the leaf from the tree; the menu dismisses on Esc.
 // Run: NODE_PATH=<dir with puppeteer-core> node scripts/threadmenu-check.js
 const puppeteer = require('puppeteer-core');
@@ -48,7 +48,7 @@ async function api(path, opts = {}) {
 
   const items = await page.$$eval('.context-menu .ctx-item', (els) => els.map((e) => e.textContent));
   if (!items.some((t) => /mute/i.test(t))) fail('no Mute item in menu: ' + JSON.stringify(items));
-  if (!items.some((t) => /archive/i.test(t))) fail('no Archive item in menu: ' + JSON.stringify(items));
+  if (!items.some((t) => /hide/i.test(t))) fail('no Hide item in menu: ' + JSON.stringify(items));
 
   const iconAfterOpen = await page.$eval('.thread-leaf .t-icon', (e) => e.textContent);
   if (iconAfterOpen === '🔇') fail('right-click instantly muted (icon changed) instead of opening a menu');
@@ -58,13 +58,13 @@ async function api(path, opts = {}) {
   await new Promise((r) => setTimeout(r, 150));
   if (await page.$('.context-menu')) fail('menu did not dismiss on Esc');
 
-  // reopen and click Archive -> leaf disappears from the tree
+  // reopen and click Hide -> leaf disappears from the tree
   await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2, { button: 'right' });
   await page.waitForSelector('.context-menu', { timeout: 3000 });
-  const resolveIdx = (await page.$$eval('.context-menu .ctx-item', (els) => els.map((e) => e.textContent))).findIndex((t) => /archive/i.test(t));
+  const resolveIdx = (await page.$$eval('.context-menu .ctx-item', (els) => els.map((e) => e.textContent))).findIndex((t) => /hide/i.test(t));
   const btns = await page.$$('.context-menu .ctx-item');
   await btns[resolveIdx].click();
-  await page.waitForFunction(() => !document.querySelector('.thread-leaf'), { timeout: 4000 }).catch(() => fail('leaf still present after Archive'));
+  await page.waitForFunction(() => !document.querySelector('.thread-leaf'), { timeout: 4000 }).catch(() => fail('leaf still present after Hide'));
 
   await browser.close();
   if (!process.exitCode) console.log('THREADMENU_CHECK_OK');
