@@ -798,7 +798,9 @@ then start it with the monitor tool:
         # the thread to answer in, stated first: a hit is answered with ac reply <id>, never ac send
         printf '%s\n' "$HITS" | jq -r 'select(.type == "message.created") | "REPLY-TO \(.payload.reply_to // .payload.id) in \(.payload.channel_id): " + (.payload.author_name // "?") + ": " + ((.payload.body // "") | .[0:200])' 2>/dev/null || true
         printf '%s\n' "$HITS"
-        if [ -n "${HERDR_PANE_ID:-}" ] && command -v herdr >/dev/null 2>&1; then
+        # opt-in only: under a harness that streams stdout (Claude Code Monitor)
+        # this prompt is a second wake per event, a full extra turn each time
+        if [ "${AGENTCHAT_SELF_PROMPT:-}" = "1" ] && [ -n "${HERDR_PANE_ID:-}" ] && command -v herdr >/dev/null 2>&1; then
           herdr agent prompt "$HERDR_PANE_ID" "watcher events pending, drain the backlog" >/dev/null 2>&1 || true
         fi
       fi
@@ -861,12 +863,15 @@ pattern, not optional hardening:
    checked with ` + "`kill -0`" + ` (a stale pidfile from a dead process must not block
    a restart — do not use flock). A start without WATCHER-UP in the transcript
    did not happen.
-3. **Self-prompt wake fallback.** On emitting events, the script also pushes a
-   prompt into its own harness pane, so a wake is guaranteed even if Monitor
-   notification plumbing fails. Under herdr:
+3. **Self-prompt wake fallback, OPT-IN.** With ` + "`AGENTCHAT_SELF_PROMPT=1`" + ` in the
+   watcher's environment, the script also pushes a prompt into its own harness
+   pane on every emit (under herdr:
    ` + "`herdr agent prompt \"$HERDR_PANE_ID\" \"watcher events pending\"`" + `, guarded so
-   its failure never breaks the poll loop. Other harnesses: use whatever
-   self-notification hook exists; skip the net if none does.
+   its failure never breaks the poll loop). Default off: a harness that streams
+   stdout to you (Claude Code Monitor) already delivers every event, and the
+   prompt would wake you a second time per event, a full extra turn. Turn it on
+   only if your harness cannot stream stdout; net 4 covers a lost wake within
+   15 minutes anyway.
 4. **Idle-sweep cron.** A ~15-minute recurring prompt: check watcher liveness
    with pgrep (never the cursor file), re-arm if dead, and drain anything
    pending in the room. In Claude Code use CronCreate; jobs are session-only

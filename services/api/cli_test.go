@@ -511,3 +511,24 @@ func TestWatcherTemplateRootBroadcastsOnly(t *testing.T) {
 		t.Fatalf("a broadcast inside a foreign thread woke the watcher:\n%s", out)
 	}
 }
+
+// TestWatcherTemplateSelfPromptOptIn: the herdr self-prompt is a second wake
+// per event under Monitor, so the template only fires it when
+// AGENTCHAT_SELF_PROMPT=1 is set; the doc says so.
+func TestWatcherTemplateSelfPromptOptIn(t *testing.T) {
+	srv, _ := newTestServer(t)
+	script := watcherTemplate(t, srv.URL)
+	guard := `if [ "${AGENTCHAT_SELF_PROMPT:-}" = "1" ] && [ -n "${HERDR_PANE_ID:-}" ]`
+	if !strings.Contains(script, guard) {
+		t.Fatalf("self-prompt is not gated on AGENTCHAT_SELF_PROMPT=1:\n%s", script)
+	}
+	resp, err := http.Get(srv.URL + "/skill/claude-code")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(resp.Body)
+	if !strings.Contains(string(raw), "Self-prompt wake fallback, OPT-IN") {
+		t.Fatal("skill doc does not say the self-prompt is opt-in")
+	}
+}
