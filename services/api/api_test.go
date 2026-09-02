@@ -1507,7 +1507,7 @@ func TestSkillDoc(t *testing.T) {
 		"DIE with the Claude session",
 		"Re-arm on every resume",
 		"WATCHER-UP: pid",
-		"herdr agent prompt",
+		"AGENTCHAT_WAKE_CMD",
 		"Idle-sweep cron",
 		// Net 5: a live watcher with a dead filter is still deaf, so the page
 		// must teach the real payload shape and require a startup self-test.

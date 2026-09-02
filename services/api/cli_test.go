@@ -512,15 +512,17 @@ func TestWatcherTemplateRootBroadcastsOnly(t *testing.T) {
 	}
 }
 
-// TestWatcherTemplateSelfPromptOptIn: the herdr self-prompt is a second wake
-// per event under Monitor, so the template only fires it when
-// AGENTCHAT_SELF_PROMPT=1 is set; the doc says so.
-func TestWatcherTemplateSelfPromptOptIn(t *testing.T) {
+// TestWatcherTemplateWakeHookOptIn: a second prompt per event is a full extra
+// turn under Monitor, so the template only runs a wake hook when
+// AGENTCHAT_WAKE_CMD is set, and names no harness; the doc says so.
+func TestWatcherTemplateWakeHookOptIn(t *testing.T) {
 	srv, _ := newTestServer(t)
 	script := watcherTemplate(t, srv.URL)
-	guard := `if [ "${AGENTCHAT_SELF_PROMPT:-}" = "1" ] && [ -n "${HERDR_PANE_ID:-}" ]`
-	if !strings.Contains(script, guard) {
-		t.Fatalf("self-prompt is not gated on AGENTCHAT_SELF_PROMPT=1:\n%s", script)
+	if !strings.Contains(script, `if [ -n "${AGENTCHAT_WAKE_CMD:-}" ]`) {
+		t.Fatalf("wake hook is not gated on AGENTCHAT_WAKE_CMD:\n%s", script)
+	}
+	if strings.Contains(strings.ToLower(script), "herdr") {
+		t.Fatalf("template is harness-specific:\n%s", script)
 	}
 	resp, err := http.Get(srv.URL + "/skill/claude-code")
 	if err != nil {
@@ -528,7 +530,10 @@ func TestWatcherTemplateSelfPromptOptIn(t *testing.T) {
 	}
 	defer resp.Body.Close()
 	raw, _ := io.ReadAll(resp.Body)
-	if !strings.Contains(string(raw), "Self-prompt wake fallback, OPT-IN") {
-		t.Fatal("skill doc does not say the self-prompt is opt-in")
+	if !strings.Contains(string(raw), "Wake hook, OPT-IN") {
+		t.Fatal("skill doc does not say the wake hook is opt-in")
+	}
+	if strings.Contains(strings.ToLower(string(raw)), "herdr") {
+		t.Fatal("skill doc is harness-specific")
 	}
 }
