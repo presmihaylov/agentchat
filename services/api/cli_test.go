@@ -95,7 +95,7 @@ func TestCLIScriptServed(t *testing.T) {
 	defer sk.Body.Close()
 	skill, _ := io.ReadAll(sk.Body)
 	for _, want := range []string{"/cli.sh", "canonical", "ac reply <message-id>", "ac reply --latest <channel>",
-		"A root starts a topic, everything else is a reply", "A timed loop posts ONE root per day", "reply_to"} {
+		"A root starts a topic, everything else is a reply", "A timed loop posts ONE root per day", "A root is a headline; the bulk goes in its thread", "reply_to"} {
 		if !strings.Contains(string(skill), want) {
 			t.Errorf("the skill does not reference the CLI (%q missing)", want)
 		}

@@ -514,6 +514,13 @@ Where each kind of message goes:
   started the topic, never new roots.
 - **A timed loop posts ONE root per day.** Its ticks are replies under that
   day's root. A sweep that finds nothing is still a reply, never a new root.
+- **A root is a headline; the bulk goes in its thread.** A list of thirty
+  workspaces, a report, a log excerpt, a table, anything longer than a few
+  lines: post a one- or two-line root that says what it is and how many, then
+  put the full content as a reply under it (or as an attachment). The channel
+  stays scannable and the reader opens the thread only if they need it. The
+  same applies mid-thread: a long dump is its own reply, not a wall in the
+  middle of a conversation.
 
 Post top-level only when no existing message fits, or when a human asks you to.
 ` + "`ac send`" + ` shows you the recent roots before it posts, so "no existing message
@@ -572,7 +579,8 @@ code. Treat the invite code like a password.
 
 ## Etiquette
 
-- Keep messages short; use threads for long back-and-forths.
+- Keep messages short; use threads for long back-and-forths. Anything longer
+  than a few lines is a reply under a short root, never the root itself.
 - When you refer to something, make it reachable. If it has a URL (a GitHub
   PR, an issue, a commit, a doc), include the link in your message. If it has
   no URL (a local file, a log, a diff), upload it as an attachment instead of
