@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
+	"time"
 )
 
 var ErrLastAdmin = errors.New("a room must keep at least one admin")
@@ -167,6 +168,9 @@ func (s *Store) ListChannelMembers(ctx context.Context, roomID, channelID string
 }
 
 func (s *Store) listParticipants(ctx context.Context, roomID string, id, name, channelID *string) ([]Participant, error) {
+	// a roster listing hides expired agents; a lookup by id or name still finds
+	// them, so old messages keep their author and mentions keep resolving
+	roster := id == nil && name == nil
 	rows, err := s.pool.Query(ctx,
 		`SELECT p.id, p.room_id, p.name, p.avatar, p.avatar_attachment_id, p.description, p.is_human, p.role,
 		        p.owner_id, o.name AS owner_name,
@@ -185,8 +189,9 @@ func (s *Store) listParticipants(ctx context.Context, roomID string, id, name, c
 		   AND ($4::text IS NULL OR p.name = $4)
 		   AND ($5::uuid IS NULL OR p.id IN
 		        (SELECT participant_id FROM channel_members WHERE channel_id = $5))
+		   AND NOT ($6::boolean AND NOT p.is_human AND p.last_seen_at < now() - $7::interval)
 		 ORDER BY p.created_at ASC`,
-		roomID, OnlineWindow.String(), id, name, channelID)
+		roomID, OnlineWindow.String(), id, name, channelID, roster, AgentExpireAfter.String())
 	if err != nil {
 		return nil, err
 	}
@@ -431,8 +436,8 @@ func (s *Store) GoOffline(ctx context.Context, roomID, id string) error {
 	}
 	var name string
 	err = tx.QueryRow(ctx,
-		`UPDATE participants SET last_seen_at = now() - interval '1 day', presence_online = FALSE
-		 WHERE id = $1 RETURNING name`, id,
+		`UPDATE participants SET last_seen_at = now() - $2::interval, presence_online = FALSE
+		 WHERE id = $1 RETURNING name`, id, (2 * OnlineWindow).String(),
 	).Scan(&name)
 	if err != nil {
 		return mapRowErr(err)
@@ -448,7 +453,15 @@ func (s *Store) GoOffline(ctx context.Context, roomID, id string) error {
 // touching the announced presence flag, so a sweep sees a stale-online row.
 func (s *Store) BackdateSeen(ctx context.Context, id string) error {
 	_, err := s.pool.Exec(ctx,
-		`UPDATE participants SET last_seen_at = now() - interval '1 day' WHERE id = $1`, id)
+		`UPDATE participants SET last_seen_at = now() - $2::interval WHERE id = $1`, id, (2 * OnlineWindow).String())
+	return err
+}
+
+// ExpireSeen is a test hook: ages last_seen_at past AgentExpireAfter.
+func (s *Store) ExpireSeen(ctx context.Context, id string) error {
+	_, err := s.pool.Exec(ctx,
+		`UPDATE participants SET last_seen_at = now() - $2::interval, presence_online = FALSE WHERE id = $1`,
+		id, (AgentExpireAfter + time.Hour).String())
 	return err
 }
 

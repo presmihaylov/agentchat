@@ -217,3 +217,8 @@ type SearchFilters struct {
 
 // OnlineWindow is how recently a participant must have been seen to count as online.
 const OnlineWindow = 90 * time.Second
+
+// AgentExpireAfter is how long an agent (is_human=false) may stay unseen before
+// it drops off every roster. The row stays, so its messages keep their author
+// and the next request from its token puts it back. Humans never expire.
+const AgentExpireAfter = 24 * time.Hour

@@ -2937,6 +2937,64 @@ func TestThreadLeave(t *testing.T) {
 	alice.must("POST", "/api/v1/threads/00000000-0000-0000-0000-000000000000/leave", map[string]any{"left": true}, 404)
 }
 
+// TestAgentRosterExpiry: an agent unseen for 24h drops off the rosters, a
+// human never does, the agent's messages keep their author, and its next
+// request puts it back.
+func TestAgentRosterExpiry(t *testing.T) {
+	srv, store := newTestServer(t)
+	secret, alice, bob := setupRoom(t, srv.URL)
+	ctx := context.Background()
+	maya := &testClient{t: t, base: srv.URL}
+	out := maya.must("POST", "/api/v1/rooms/join", map[string]any{
+		"invite_code": secret, "name": "maya", "description": "the human", "is_human": true,
+	}, 201)
+	maya.token = out["token"].(string)
+	mayaID := out["participant"].(map[string]any)["id"].(string)
+	bobID := bob.must("GET", "/api/v1/me", nil, 200)["id"].(string)
+	post := bob.must("POST", "/api/v1/channels/general/messages", map[string]any{"body": "bob was here"}, 201)
+
+	names := func(path, key, field string) string {
+		t.Helper()
+		got := []string{}
+		for _, raw := range alice.must("GET", path, nil, 200)[key].([]any) {
+			got = append(got, raw.(map[string]any)[field].(string))
+		}
+		return fmt.Sprint(got)
+	}
+	if err := store.ExpireSeen(ctx, bobID); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.ExpireSeen(ctx, mayaID); err != nil {
+		t.Fatal(err)
+	}
+	if got := names("/api/v1/participants", "participants", "name"); got != "[alice maya]" {
+		t.Fatalf("participants after expiry: %s", got)
+	}
+	if got := names("/api/v1/members", "members", "handle"); got != "[alice maya]" {
+		t.Fatalf("members after expiry: %s", got)
+	}
+	if got := names("/api/v1/channels/general/members", "members", "name"); got != "[alice maya]" {
+		t.Fatalf("channel members after expiry: %s", got)
+	}
+	// the row is not gone: the message keeps its author, the id still resolves
+	if m := alice.must("GET", "/api/v1/messages/"+post["id"].(string), nil, 200); m["author_name"] != "bob" {
+		t.Fatalf("expired agent lost its authorship: %v", m["author_name"])
+	}
+	alice.must("GET", "/api/v1/participants/"+bobID, nil, 200)
+	// bob's token connects again: back on the roster, timer reset
+	bob.must("GET", "/api/v1/me", nil, 200)
+	if got := names("/api/v1/members", "members", "handle"); got != "[alice bob maya]" {
+		t.Fatalf("members after bob returned: %s", got)
+	}
+	// ac offline (GoOffline) makes an agent offline, not expired
+	if err := store.GoOffline(ctx, out["participant"].(map[string]any)["room_id"].(string), bobID); err != nil {
+		t.Fatal(err)
+	}
+	if got := names("/api/v1/members", "members", "handle"); got != "[alice bob maya]" {
+		t.Fatalf("going offline expired the agent: %s", got)
+	}
+}
+
 // TestThreadLeaveTimelineEntry: leaving and rejoining show in the thread as
 // system entries, once per change; the entry is not a reply (it does not pull
 // the leaver back in) and it is news to nobody (relevant=true skips it).
