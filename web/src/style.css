@@ -279,10 +279,10 @@ button { cursor: pointer; }
 .rx-add-icon { display: block; }
 .msg-actions button[data-act="react"] { display: inline-flex; align-items: center; }
 /* the reaction tooltip: Slack-style black card with the big emoji on the left */
-.rx-tip { position: fixed; z-index: 60; display: flex; align-items: center; gap: 10px; max-width: 280px; padding: 8px 12px;
-  background: #1a1d21; color: #fff; border: 1px solid #3a3d42; border-radius: 8px; box-shadow: 0 8px 24px var(--shadow);
-  font-size: 13px; line-height: 1.3; pointer-events: none; }
-.rx-tip .rx-tip-emoji { font-size: 30px; line-height: 1; flex: none; }
+.rx-tip { position: fixed; z-index: 60; display: flex; align-items: center; gap: 8px; max-width: 230px; padding: 6px 10px;
+  background: #1a1d21; color: #fff; border: 1px solid #3a3d42; border-radius: 7px; box-shadow: 0 6px 20px var(--shadow);
+  font-size: 11px; line-height: 1.3; pointer-events: none; }
+.rx-tip .rx-tip-emoji { font-size: 24px; line-height: 1; flex: none; }
 .rx-tip::after { content: ''; position: absolute; left: 50%; bottom: -6px; margin-left: -6px; border: 6px solid transparent; border-bottom: 0; border-top-color: #1a1d21; }
 .rx-tip.below::after { bottom: auto; top: -6px; border-top: 0; border-bottom: 6px solid #1a1d21; }
 .reaction-picker { position: fixed; z-index: 50; width: 290px; padding: 8px; background: var(--panel2); border: 1px solid var(--border);
