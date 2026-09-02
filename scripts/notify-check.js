@@ -1,6 +1,6 @@
 // E2E for notifications: one ping per burst in a thread (debounce), none for
 // your own messages or the channel you are viewing, a muted channel stays
-// quiet except for mentions and broadcasts, and the settings persist on the
+// quiet and dark except for mentions and broadcasts, and the settings persist on the
 // participant across a reload.
 // Run: NODE_PATH=<dir with puppeteer-core> node scripts/notify-check.js
 const puppeteer = require('puppeteer-core');
@@ -100,12 +100,13 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   await sleep(1500);
   got = await notes();
   assert(got.length === 0, 'muted channel must not ping: ' + JSON.stringify(got));
-  const mutedRow = await page.evaluate(() => [...document.querySelectorAll('#channel-list li')].find((li) => /plaza/.test(li.textContent)).classList.contains('unread'));
-  assert(mutedRow, 'a muted channel must still show unread');
+  const plazaGlows = () => page.evaluate(() => [...document.querySelectorAll('#channel-list li')].find((li) => /plaza/.test(li.textContent)).classList.contains('unread'));
+  assert(!(await plazaGlows()), 'a muted channel must not glow on a plain message');
   await say('plaza', 'hey @alice still here?');
   await settle(() => window.__notes.length >= 1);
   got = await notes();
   assert(got.length === 1 && got[0].why === 'mention', 'mention in muted channel must ping: ' + JSON.stringify(got));
+  assert(await plazaGlows(), 'a mention must still glow a muted channel');
   await sleep(3200); // the mention opened plaza's quiet window; let it close
   await say('plaza', 'all hands', { broadcast: true });
   await settle(() => window.__notes.length >= 1);

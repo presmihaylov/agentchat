@@ -604,7 +604,9 @@ import { emojify } from './emoji.js';
     if (ch.muted) li.classList.add('muted');
     if (current && ch.id === current.id) li.classList.add('active');
     // Any unread glows the channel name; only @mentions get a numeric badge.
-    if (ch.unread_count > 0 && !(current && ch.id === current.id)) {
+    // A muted channel stays dark unless you are mentioned (or broadcast at).
+    const glows = ch.unread_count > 0 && (!ch.muted || ch.unread_mentions > 0);
+    if (glows && !(current && ch.id === current.id)) {
       li.classList.add('unread');
       if (ch.unread_mentions > 0) {
         const b = document.createElement('span');
@@ -692,7 +694,7 @@ import { emojify } from './emoji.js';
       header.className = 'section-header' + (g.collapsed ? ' collapsed' : '');
       // a collapsed section rolls up its members' attention: glow on any unread,
       // a numeric badge for the total unread @mentions inside it.
-      const unread = members.some((c) => c.unread_count > 0 && !(current && current.id === c.id));
+      const unread = members.some((c) => c.unread_count > 0 && (!c.muted || c.unread_mentions > 0) && !(current && current.id === c.id));
       const mentions = members.reduce((n, c) => n + (c.unread_mentions || 0), 0);
       if (g.collapsed && unread) header.classList.add('unread');
       header.innerHTML = `<span class="sec-chevron">${g.collapsed ? '▸' : '▾'}</span><span class="sec-name">${esc(g.name)}</span>`;
