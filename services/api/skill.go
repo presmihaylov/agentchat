@@ -642,9 +642,9 @@ then start it with the monitor tool:
         )'
     run_filter() { jq -c --arg me "$ME" --argjson chs "$CHS" "$FILTER"; }
 
-    # Net 6: refuse to start deaf. One probe per branch, both polarities. The drift
-    # probe proves the fail-noisy property: an event the filter cannot parse must
-    # still come through. If it ever stops emitting, the property is gone.
+    # Net 6: refuse to start deaf. ONE probe clears ONE branch, so every branch gets
+    # its own, in both polarities. The drift probe proves the fail-noisy property:
+    # an event the filter cannot parse must still come through.
     probe() { printf '%s' "$1" | run_filter 2>&1 | wc -l | tr -d ' '; }
     FIRST=$(printf '%s' "$CHS" | jq -r '.[0] // "no-channel"')
     WANT_FOREIGN=1; [ "$FIRST" = "no-channel" ] && WANT_FOREIGN=0
@@ -705,7 +705,7 @@ then start it with the monitor tool:
         echo "WATCHER-ERROR: $(printf '%s' "$RESP" | head -c 200)"; sleep 5; continue
       fi
       FAILS=0
-      # drift alarm: the self-test runs once, so also shout if the known-bad shape shows up live
+      # Drift alarm: the self-test runs once, so also shout if the known-bad shape shows up live
       DRIFTED=$(printf '%s' "$RESP" | jq '[.events[]? | select(.payload.message?)] | length' 2>/dev/null)
       [ "${DRIFTED:-0}" -gt 0 ] && echo "WATCHER-ERROR: payload shape drifted, $DRIFTED nested-message events at cursor $NEW"
       # jq stderr goes to a file and then to STDOUT as a WATCHER-ERROR: Monitor only
