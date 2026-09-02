@@ -24,14 +24,18 @@ const BROADCASTS = ['channel', 'everyone', 'here'];
 // app.js: same known-name list, same longest-first ordering so "@John Smith" is
 // not eaten by a "@John" match, same amber-for-you / blue-for-others split. If
 // the two ever disagree, the composer is lying about what will be sent.
-const MentionHighlight = (getMentionOptions, getMeName) => Extension.create({
+const MentionHighlight = (getMentionOptions, getMeName, getChannelOptions) => Extension.create({
   name: 'mentionHighlight',
   addProseMirrorPlugins() {
     const decorate = (doc) => {
       const names = (getMentionOptions ? getMentionOptions() : []).map((o) => o.name).concat(BROADCASTS);
-      if (!names.length) return DecorationSet.empty;
+      const chans = (getChannelOptions ? getChannelOptions() : []).map((o) => o.name);
+      if (!names.length && !chans.length) return DecorationSet.empty;
       const re = new RegExp('@(' + names.slice().sort((a, b) => b.length - a.length).map(escRe).join('|')
         + ')(?![\\w-])', 'g');
+      // #channel chips: only channels you are in, same rule as the feed renderer
+      const chRe = chans.length
+        ? new RegExp('(^|[\\s(\\[])#(' + chans.map(escRe).join('|') + ')(?![\\w-])', 'g') : null;
       const meTargets = new Set(BROADCASTS.concat(getMeName ? [getMeName()] : []));
       const decos = [];
       doc.descendants((node, pos) => {
@@ -41,6 +45,12 @@ const MentionHighlight = (getMentionOptions, getMeName) => Extension.create({
         while ((m = re.exec(node.text)) !== null) {
           decos.push(Decoration.inline(pos + m.index, pos + m.index + m[0].length,
             { class: 'mention' + (meTargets.has(m[1]) ? ' mention-me' : '') }));
+        }
+        if (!chRe) return;
+        chRe.lastIndex = 0;
+        while ((m = chRe.exec(node.text)) !== null) {
+          const start = pos + m.index + m[1].length;
+          decos.push(Decoration.inline(start, start + 1 + m[2].length, { class: 'chanlink' }));
         }
       });
       return DecorationSet.create(doc, decos);
@@ -52,7 +62,7 @@ const MentionHighlight = (getMentionOptions, getMeName) => Extension.create({
 // createComposer replaces one textarea. The contenteditable element gets the
 // old textarea's id plus a `.value` markdown shim, so existing e2e checks and
 // callers keep working against the same surface.
-export const createComposer = ({ mount, id, placeholder, onSubmit, getMentionOptions, getMeName, slashCommands, browseChannels, onImageFile }) => {
+export const createComposer = ({ mount, id, placeholder, onSubmit, getMentionOptions, getMeName, getChannelOptions, slashCommands, browseChannels, onImageFile }) => {
   let editor = null;
 
   const getMarkdown = () => editor.getMarkdown();
@@ -76,13 +86,17 @@ export const createComposer = ({ mount, id, placeholder, onSubmit, getMentionOpt
     return box;
   };
   const mentionBox = mkBox('mention-ac');
+  const chanBox = mkBox('mention-ac chan-ac');
   const slashBox = mkBox('mention-ac slash-ac');
 
   const mention = { items: [], sel: 0, from: 0 };
+  const chan = { items: [], sel: 0, from: 0 };
   const slash = { items: [], sel: 0, browseCache: null };
 
   const closeMention = () => { mention.items = []; mentionBox.classList.add('hidden'); };
+  const closeChan = () => { chan.items = []; chanBox.classList.add('hidden'); };
   const closeSlash = () => { slash.items = []; slash.browseCache = null; slashBox.classList.add('hidden'); };
+  mention.close = closeMention; chan.close = closeChan; slash.close = closeSlash;
 
   const renderList = (box, st, fill, pick) => {
     box.innerHTML = '';
@@ -110,6 +124,10 @@ export const createComposer = ({ mount, id, placeholder, onSubmit, getMentionOpt
       d.appendChild(hint);
     }
   }, applyMention);
+  const renderChan = () => renderList(chanBox, chan, (d, it) => {
+    d.innerHTML = (it.private ? '🔒 ' : '#') + esc(it.name)
+      + '<span class="slash-hint">' + esc(it.topic || '') + '</span>';
+  }, applyChan);
   const renderSlash = () => renderList(slashBox, slash, (d, it) => {
     d.innerHTML = it.kind === 'cmd'
       ? '/' + esc(it.name) + (it.args ? ' <span class="slash-args">' + esc(it.args) + '</span>' : '') +
@@ -123,6 +141,14 @@ export const createComposer = ({ mount, id, placeholder, onSubmit, getMentionOpt
       .insertContentAt({ from: mention.from, to }, [{ type: 'text', text: '@' + it.name + ' ' }])
       .run();
     closeMention();
+  }
+
+  function applyChan(it) {
+    const to = editor.state.selection.from;
+    editor.chain().focus()
+      .insertContentAt({ from: chan.from, to }, [{ type: 'text', text: '#' + it.name + ' ' }])
+      .run();
+    closeChan();
   }
 
   function applySlash(it) {
@@ -180,6 +206,26 @@ export const createComposer = ({ mount, id, placeholder, onSubmit, getMentionOpt
     renderMention();
   };
 
+  // "#part" completes the channels you are in; a channel you cannot see is
+  // never offered, so the popup leaks nothing
+  const updateChan = () => {
+    if (!getChannelOptions) return;
+    const { $from, empty } = editor.state.selection;
+    if (!empty || !$from.parent.isTextblock) return closeChan();
+    const head = $from.parent.textBetween(0, $from.parentOffset, '\0', '\0');
+    const m = head.match(/(^|\s)#([A-Za-z0-9_-]*)$/);
+    if (!m) return closeChan();
+    chan.from = $from.pos - m[2].length - 1;
+    const typed = m[2].toLowerCase();
+    chan.items = getChannelOptions()
+      .filter((c) => c.name.toLowerCase().includes(typed))
+      .sort((a, b) => (b.name.toLowerCase().startsWith(typed) - a.name.toLowerCase().startsWith(typed))
+        || a.name.localeCompare(b.name))
+      .slice(0, 8);
+    chan.sel = 0;
+    renderChan();
+  };
+
   const updateSlash = () => {
     if (!slashCommands) return;
     const { doc, selection } = editor.state;
@@ -214,7 +260,7 @@ export const createComposer = ({ mount, id, placeholder, onSubmit, getMentionOpt
     if (ev.key === 'ArrowDown') { st.sel = (st.sel + 1) % st.items.length; return true; }
     if (ev.key === 'ArrowUp') { st.sel = (st.sel + st.items.length - 1) % st.items.length; return true; }
     if (ev.key === 'Enter' || ev.key === 'Tab') { pick(st.items[st.sel]); return true; }
-    if (ev.key === 'Escape') { st === mention ? closeMention() : closeSlash(); return true; }
+    if (ev.key === 'Escape') { st.close(); return true; }
     return false;
   };
 
@@ -287,12 +333,13 @@ export const createComposer = ({ mount, id, placeholder, onSubmit, getMentionOpt
       Placeholder.configure({ placeholder }),
       ComposerKeys,
       ListAfterBreak,
-      MentionHighlight(getMentionOptions, getMeName),
+      MentionHighlight(getMentionOptions, getMeName, getChannelOptions),
     ],
     editorProps: {
       handleKeyDown: (view, ev) => {
         if (ev.isComposing) return false;
         if (popupKeydown(mentionBox, mention, applyMention, ev)) { renderMention(); return true; }
+        if (popupKeydown(chanBox, chan, applyChan, ev)) { renderChan(); return true; }
         if (popupKeydown(slashBox, slash, applySlash, ev)) { renderSlash(); return true; }
         if (ev.key !== 'Enter') return false;
         if (ev.metaKey || ev.ctrlKey) { onSubmit(); return true; }
@@ -320,9 +367,9 @@ export const createComposer = ({ mount, id, placeholder, onSubmit, getMentionOpt
         return false;
       },
     },
-    onUpdate: () => { updateMention(); updateSlash(); },
-    onSelectionUpdate: () => { updateMention(); updateSlash(); },
-    onBlur: () => setTimeout(() => { closeMention(); closeSlash(); }, 100),
+    onUpdate: () => { updateMention(); updateChan(); updateSlash(); },
+    onSelectionUpdate: () => { updateMention(); updateChan(); updateSlash(); },
+    onBlur: () => setTimeout(() => { closeMention(); closeChan(); closeSlash(); }, 100),
   });
 
   // agents read the raw wire: keep typed text verbatim (the stock serializer

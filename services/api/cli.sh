@@ -261,12 +261,73 @@ print(" ".join(bad))
   return 0
 }
 
+# ---------- #channels: validate before sending ----------
+
+channels_cache() { printf '%s/channels%s.json' "$(state_dir)" "$(state_key)"; }
+
+# every channel this agent may link: the ones it is in plus the public ones it
+# is not; a private channel it cannot see is unknown on purpose
+refresh_channels() {
+  local mine="" pub=""
+  request GET /api/v1/channels
+  [ "$CODE" = "200" ] || return 0
+  mine="$RESP"
+  request GET /api/v1/channels/browse
+  [ "$CODE" = "200" ] && pub="$RESP"
+  MINE="$mine" PUB="$pub" python3 -c '
+import json, os
+names = set()
+for raw in (os.environ["MINE"], os.environ["PUB"]):
+    if not raw: continue
+    try: d = json.loads(raw)
+    except Exception: continue
+    for c in d.get("channels") or []:
+        if c.get("name"): names.add(c["name"])
+print(json.dumps(sorted(names)))
+' > "$(channels_cache)"
+}
+
+# unknown_channels BODY — the #names in BODY that match no cached channel
+unknown_channels() {
+  printf '%s' "$1" | python3 -c '
+import sys, json, re
+body = sys.stdin.read()
+try:
+    known = set(json.load(open(sys.argv[1])))
+except Exception:
+    sys.exit(0)
+body = re.sub(r"(?s)```.*?```", " ", body)
+body = re.sub(r"`[^`\n]*`", " ", body)
+bad = []
+for m in re.finditer(r"(^|[^\w#/&])#([A-Za-z0-9][A-Za-z0-9_-]*)", body):
+    n = m.group(2)
+    if n.isdigit() or n in known or n in bad:   # #123 is an issue ref, not a channel
+        continue
+    bad.append(n)
+print(" ".join(bad))
+' "$(channels_cache)"
+}
+
+# warn_unknown_channels BODY — a #name that is no channel is a warning, not a
+# refusal: "#10020" and "#hashtag" are legitimate prose, the server accepts them
+warn_unknown_channels() {
+  [ -f "$(channels_cache)" ] || refresh_channels
+  [ -f "$(channels_cache)" ] || return 0
+  local unknown; unknown=$(unknown_channels "$1")
+  [ -z "$unknown" ] && return 0
+  # a channel made since the cache was written is not unknown: look once more
+  refresh_channels
+  unknown=$(unknown_channels "$1")
+  [ -n "$unknown" ] && printf 'agentchat: warning, no channel named: %s (put it in `backticks` to write about it)\n' "$unknown" >&2
+  return 0
+}
+
 # post_message CHANNEL BODY THREAD_ROOT BROADCAST — the one write path
 post_message() {
   local channel="$1" body="$2" root="$3" broadcast="$4" ids payload
   ids=$(upload_attachments)
   # --force-mentions already says "I know", so do not nag about it
-  [ "$FORCE_MENTIONS" = "1" ] || warn_unknown_mentions "$body"
+  [ "$FORCE_MENTIONS" = "1" ] || { warn_unknown_mentions "$body"; warn_unknown_channels "$body"; }
   payload=$(BODY="$body" ROOT="$root" BCAST="$broadcast" IDS="$ids" FORCE="$FORCE_MENTIONS" python3 -c '
 import json, os
 p = {"body": os.environ["BODY"], "broadcast": os.environ["BCAST"] == "1"}

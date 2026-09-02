@@ -94,6 +94,15 @@ import { createComposer } from './composer.js';
       html = html.replace(re, (m, name) =>
         `<strong class="mention${meTargets.has(name) ? ' mention-me' : ''}">${esc(m)}</strong>`);
     }
+    // #channel links: only channels you are in. A private channel you are not
+    // in stays plain text, so the render leaks nothing about it existing. The
+    // wire body stays "#name"; only the view changes.
+    const chNames = linkableChannels().map((c) => c.name).sort((a, b) => b.length - a.length);
+    if (chNames.length && room) {
+      const re = new RegExp('(^|[\\s>(\\[])#(' + chNames.map(escRe).join('|') + ')(?![\\w-])', 'g');
+      html = html.replace(re, (m, pre, name) =>
+        `${pre}<a class="chanlink" href="/r/${encodeURIComponent(room.slug)}/c/${encodeURIComponent(name)}">#${esc(name)}</a>`);
+    }
     // ALLOW_DATA_ATTR:false so markdown can't inject data-act and hijack the msg click handler;
     // SANITIZE_NAMED_PROPS namespaces any user id/name so markdown can't DOM-clobber our elements
     return DOMPurify.sanitize(html, { FORBID_TAGS: ['style', 'form', 'input'], FORBID_ATTR: ['onerror', 'onclick'], ALLOW_DATA_ATTR: false, SANITIZE_NAMED_PROPS: true });
@@ -301,6 +310,14 @@ import { createComposer } from './composer.js';
     });
 
     el.addEventListener('click', (ev) => {
+      // a #channel link navigates in-app, no reload
+      const chLink = ev.target.closest('a.chanlink');
+      if (chLink && el.contains(chLink)) {
+        ev.preventDefault();
+        const name = decodeURIComponent(chLink.getAttribute('href').split('/c/')[1] || '');
+        goToChannel(name);
+        return;
+      }
       const inlineImg = ev.target.closest('img.inline-img');
       if (inlineImg && el.contains(inlineImg) && inlineImg.dataset.att) {
         openLightbox(inlineImg.dataset.att, inlineImg.dataset.name); return;
@@ -870,6 +887,17 @@ import { createComposer } from './composer.js';
 
   // ---------- data flows ----------
 
+  // public channels you are not in: a "#name" for one still links, and
+  // clicking it joins. A private one you are not in is not here, so it never
+  // links and leaks nothing.
+  let publicChannels = [];
+  const fetchPublicChannels = async () => {
+    try {
+      publicChannels = ((await api('/api/v1/channels/browse')).channels || []).filter((c) => !c.member);
+    } catch { publicChannels = []; }
+  };
+  const linkableChannels = () => channels.filter((c) => !c.archived).concat(publicChannels);
+
   const refreshRoom = async () => {
     const out = await api('/api/v1/room');
     room = out.room;
@@ -878,6 +906,7 @@ import { createComposer } from './composer.js';
     channels = out.channels || [];
     participants = out.participants || [];
     await fetchGroups();
+    await fetchPublicChannels();
     $('room-name').textContent = room.name;
     const foot = $('me-footer');
     foot.innerHTML = '';
@@ -1415,12 +1444,32 @@ import { createComposer } from './composer.js';
     }));
   };
 
+  // what "#" completes to: your channels first, then public ones you could join
+  const channelOptions = () => channels.filter((c) => !c.archived)
+    .map((c) => ({ name: c.name, private: !!c.private, topic: c.topic }))
+    .concat(publicChannels.map((c) => ({ name: c.name, private: false, topic: 'not joined' })));
+
+  // a #channel link: open it, joining first when it is public and you are not in
+  const goToChannel = async (name) => {
+    const mine = channels.find((c) => c.name === name);
+    if (mine) return selectChannel(mine);
+    const pub = publicChannels.find((c) => c.name === name);
+    if (!pub) return;
+    try {
+      await api('/api/v1/channels/' + pub.id + '/join', { method: 'POST' });
+      await refreshRoom();
+      const joined = channels.find((c) => c.id === pub.id);
+      if (joined) await selectChannel(joined);
+    } catch (e) { alert(e.message); }
+  };
+
   const composerBox = createComposer({
     mount: $('composer-mount'), id: 'composer-input',
-    placeholder: 'Message… (@name to mention, markdown ok)',
+    placeholder: 'Message… (@name to mention, #channel to link, markdown ok)',
     onSubmit: () => $('composer').requestSubmit(),
     getMentionOptions: mentionOptions,
     getMeName: () => (me ? me.name : ''),
+    getChannelOptions: channelOptions,
     slashCommands: SLASH_COMMANDS,
     browseChannels: async () => ((await api('/api/v1/channels/browse')).channels || []).filter((c) => !c.member),
     onImageFile: (f) => uploadPending('main', new File([f], f.name || 'pasted-image.png', { type: f.type })),
@@ -1431,6 +1480,7 @@ import { createComposer } from './composer.js';
     onSubmit: () => $('thread-composer').requestSubmit(),
     getMentionOptions: mentionOptions,
     getMeName: () => (me ? me.name : ''),
+    getChannelOptions: channelOptions,
     slashCommands: SLASH_COMMANDS,
     browseChannels: async () => ((await api('/api/v1/channels/browse')).channels || []).filter((c) => !c.member),
     onImageFile: (f) => uploadPending('thread', new File([f], f.name || 'pasted-image.png', { type: f.type })),

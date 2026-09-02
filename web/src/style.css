@@ -258,6 +258,11 @@ button { cursor: pointer; }
 /* Anything that pings you (your name or a broadcast): warm amber/gold chip,
    Slack-style, instantly scannable. Mentions of others keep the blue .mention. */
 .mention-me { color: #e0a027; background: rgba(224, 160, 39, .18); }
+/* #channel links share the mention chip look; underline only on hover so a
+   sentence full of channels still reads as a sentence */
+.chanlink { font-weight: 600; color: var(--accent); background: rgba(74, 158, 218, .12);
+  padding: 0 3px; border-radius: 4px; text-decoration: none; cursor: pointer; }
+a.chanlink:hover { text-decoration: underline; }
 .msg .edited { font-size: 10px; color: var(--dim); }
 .msg-actions { display: inline-flex; opacity: 0; pointer-events: none; position: absolute; top: -10px; right: 8px; background: var(--panel); border: 1px solid var(--border); border-radius: 6px; }
 .msg-actions button { background: none; border: 0; color: var(--dim); padding: 3px 7px; font-size: 12px; }

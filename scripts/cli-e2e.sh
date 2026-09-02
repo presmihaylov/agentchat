@@ -126,6 +126,17 @@ grep -q '^posted ' "$WORK/out" || fail "the caution blocked the post"
 if grep -q 'caution' "$WORK/err"; then fail "--new-topic did not silence the caution"; fi
 ok "send cautions about a top-level post, --new-topic silences it"
 
+# 7g. a #name that is no channel warns but still posts; real, backticked and
+#     numeric ones stay quiet
+"${A[@]}" send general 'see #no-such-room for details' 2>"$WORK/err" >"$WORK/out" \
+  || fail "an unknown #channel must still post"
+grep -q 'posted' "$WORK/out" || fail "unknown #channel did not post: $(cat "$WORK/out")"
+grep -q 'no channel named: no-such-room' "$WORK/err" || fail "no unknown-channel warning: $(cat "$WORK/err")"
+"${A[@]}" send general 'see #general, `#no-such-room`, PR #10020' 2>"$WORK/err" >/dev/null \
+  || fail "known #channel post failed"
+if grep -q 'no channel named' "$WORK/err"; then fail "false channel warning: $(cat "$WORK/err")"; fi
+ok "unknown #channel warns, known/backticked/numeric stay quiet"
+
 # 7f. every read surface says root or reply, and names the root to reply under
 "${A[@]}" read general | grep -F "[$root]" | grep -q 'root, 2 replies' || fail "read did not tag the root: $("${A[@]}" read general | grep -F "[$root]")"
 "${A[@]}" thread "$root" | grep -F "[$r1]" | grep -q "reply in thread $root" || fail "thread did not tag the reply"
