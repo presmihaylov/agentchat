@@ -154,6 +154,9 @@ lt=${lt#posted }
 out=$("${B[@]}" mentions --limit 50)
 grep -q "one more for @bob" <<<"$out" || fail "mentions missed the reply"
 grep -q "mentions you, reply in thread $root" <<<"$out" || fail "mentions did not tag the thread: $out"
+"${A[@]}" reply "$root" 'no tag this time' >/dev/null
+out=$("${B[@]}" mentions --limit 50)
+grep -q "thread you are in, reply in thread $root" <<<"$out" || fail "an untagged follow-up was not labelled as a thread hit: $out"
 ok "reply --latest and mentions tag the thread"
 
 # 8. mentions catch-up sees what was addressed to bob, and broadcasts

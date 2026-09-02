@@ -281,6 +281,15 @@ func watcherTemplate(t *testing.T, base string) string {
 // returns everything it printed.
 func runWatcher(t *testing.T, script, home string, bob *testClient) string {
 	t.Helper()
+	return runWatcherPosting(t, script, home, func() {
+		bob.must("POST", "/api/v1/channels/general/messages", map[string]any{"body": "@alice are you there"}, 201)
+	})
+}
+
+// runWatcherPosting runs the template for a few seconds, calls post once it is
+// up, and returns everything it printed.
+func runWatcherPosting(t *testing.T, script, home string, post func()) string {
+	t.Helper()
 	path := filepath.Join(home, "watch.sh")
 	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
@@ -300,7 +309,7 @@ func runWatcher(t *testing.T, script, home string, bob *testClient) string {
 		t.Fatal(err)
 	}
 	time.Sleep(1500 * time.Millisecond)
-	bob.must("POST", "/api/v1/channels/general/messages", map[string]any{"body": "@alice are you there"}, 201)
+	post()
 	time.Sleep(1500 * time.Millisecond)
 	cancel()
 	_ = cmd.Wait()
@@ -386,5 +395,43 @@ func TestSkillRawCurlsCarryAccessHeaders(t *testing.T) {
 	resp.Body.Close()
 	if !strings.Contains(string(raw), `req.add_header("CF-Access-Client-Id"`) {
 		t.Error("hermes helper does not send the Access headers")
+	}
+}
+
+// TestWatcherTemplateHearsOwnThreads: with WATCH empty (no channel heard in
+// full), an untagged reply in a thread alice wrote in must still surface.
+// Before thread_participants rode on the event, the elsewhere rule ate it.
+func TestWatcherTemplateHearsOwnThreads(t *testing.T) {
+	if _, err := exec.LookPath("jq"); err != nil {
+		t.Skip("template needs jq")
+	}
+	srv, _ := newTestServer(t)
+	_, alice, bob := setupRoom(t, srv.URL)
+	script := strings.ReplaceAll(watcherTemplate(t, srv.URL), `WATCH="general"`, `WATCH=""`)
+	if !strings.Contains(script, `WATCH=""`) {
+		t.Fatal("could not empty WATCH in the template")
+	}
+	root := alice.must("POST", "/api/v1/channels/general/messages", map[string]any{"body": "my topic"}, 201)
+
+	home := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(home, ".agentchat"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	envFile := filepath.Join(home, ".agentchat", "room.alice.env")
+	if err := os.WriteFile(envFile, []byte("SERVER="+srv.URL+"\nTOKEN="+alice.token+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	out := runWatcherPosting(t, script, home, func() {
+		bob.must("POST", "/api/v1/channels/general/messages", map[string]any{"body": "plain top-level, not for alice"}, 201)
+		bob.must("POST", "/api/v1/channels/general/messages", map[string]any{"body": "untagged follow-up", "thread_root_id": root["id"].(string)}, 201)
+	})
+	if strings.Contains(out, "WATCHER-ERROR") || !strings.Contains(out, "WATCHER-SELFTEST-OK") {
+		t.Fatalf("watcher did not start clean:\n%s", out)
+	}
+	if !strings.Contains(out, "REPLY-TO "+root["id"].(string)) || !strings.Contains(out, "untagged follow-up") {
+		t.Fatalf("watcher missed an untagged reply in alice's thread:\n%s", out)
+	}
+	if strings.Contains(out, "plain top-level") {
+		t.Fatalf("watcher with WATCH=\"\" leaked a plain top-level message:\n%s", out)
 	}
 }

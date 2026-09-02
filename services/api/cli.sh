@@ -482,16 +482,21 @@ cmd_mentions() {
   local cursor; cursor=$(json_str "$RESP" 'd["cursor"]')
   [ -n "$cursor" ] && printf '%s' "$cursor" > "$(cursor_file)"
   if [ "$JSON" = "1" ]; then json_pretty "$RESP"; return; fi
-  printf '%s' "$RESP" | python3 -c "$THREAD_TAG_PY"'
-import sys, json, textwrap
+  local events="$RESP"
+  api GET /api/v1/me
+  local me; me=$(json_str "$RESP" 'd["name"]')
+  printf '%s' "$events" | ME="$me" python3 -c "$THREAD_TAG_PY"'
+import sys, json, textwrap, os
 d = json.load(sys.stdin)
+me = os.environ.get("ME", "")
 seen = 0
 for e in d.get("events", []):
     if e.get("type") != "message.created":
         continue
     m = e.get("payload", {})
     seen += 1
-    why = "broadcast" if m.get("is_broadcast") else "mentions you"
+    # relevant=true only ever sends these three, so the third is by elimination
+    why = "broadcast" if m.get("is_broadcast") else ("mentions you" if me in (m.get("mentions") or []) else "thread you are in")
     when = m.get("created_at", "")[5:16].replace("T", " ") + "Z"
     print("%s  %s  [%s]  (%s, %s)" % (when, m.get("author_name", "?"), m.get("id", ""), why, thread_tag(m)))
     for line in (m.get("body") or "").splitlines() or [""]:

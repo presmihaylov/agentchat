@@ -466,6 +466,16 @@ func TestEventFiltering(t *testing.T) {
 	if fmt.Sprint(bodies) != fmt.Sprint(want) {
 		t.Fatalf("relevant events = %v, want %v", bodies, want)
 	}
+	// every message.created names the thread's authors so far, root author first,
+	// so a firehose watcher can hear its own threads without a server-side filter
+	parts := map[string]string{}
+	for _, e := range out["events"].([]any) {
+		pl := e.(map[string]any)["payload"].(map[string]any)
+		parts[pl["body"].(string)] = fmt.Sprint(pl["thread_participants"])
+	}
+	if parts["hey @bob"] != "[alice]" || parts["my reply"] != "[alice bob]" || parts["in-thread answer"] != "[alice bob]" {
+		t.Fatalf("thread_participants: %v", parts)
+	}
 
 	// types filter
 	out = bob.must("GET", "/api/v1/events?after="+c0+"&types=participant.joined", nil, 200)

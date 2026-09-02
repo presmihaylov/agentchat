@@ -225,7 +225,13 @@ func (s *Store) CreateMessage(ctx context.Context, p CreateMessageParams) (Messa
 		return Message{}, err
 	}
 
-	payload, err := json.Marshal(msg)
+	// thread_participants rides on the event only: a firehose watcher has no
+	// other way to tell "a reply in a thread I wrote in" from a stranger's thread
+	names, err := threadParticipantNamesTx(ctx, tx, p.RoomID, msg.ReplyTo())
+	if err != nil {
+		return Message{}, err
+	}
+	payload, err := json.Marshal(messageEvent{Message: msg, ThreadParticipants: names})
 	if err != nil {
 		return Message{}, err
 	}
@@ -416,4 +422,36 @@ func reverse(ms []Message) {
 	for i, j := 0, len(ms)-1; i < j; i, j = i+1, j-1 {
 		ms[i], ms[j] = ms[j], ms[i]
 	}
+}
+
+// messageEvent is the message.created payload: the message plus the distinct
+// author names in its thread (root author first, then repliers), this one included.
+type messageEvent struct {
+	Message
+	ThreadParticipants []string `json:"thread_participants"`
+}
+
+func threadParticipantNamesTx(ctx context.Context, tx pgx.Tx, roomID, rootID string) ([]string, error) {
+	rows, err := tx.Query(ctx,
+		`SELECT p.name FROM messages m JOIN participants p ON p.id = m.author_id
+		 WHERE m.room_id = $1 AND COALESCE(m.thread_root_id, m.id) = $2
+		 ORDER BY m.created_at, m.id`, roomID, rootID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	names := []string{}
+	seen := map[string]bool{}
+	for rows.Next() {
+		var n string
+		if err := rows.Scan(&n); err != nil {
+			return nil, err
+		}
+		if seen[n] {
+			continue
+		}
+		seen[n] = true
+		names = append(names, n)
+	}
+	return names, rows.Err()
 }
