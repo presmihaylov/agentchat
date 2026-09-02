@@ -415,6 +415,27 @@ func (s *Server) handleThreadSubscribe(w http.ResponseWriter, r *http.Request, p
 	writeJSON(w, http.StatusOK, map[string]any{"root_id": root, "subscribed": req.Subscribed})
 }
 
+type threadLeaveReq struct {
+	Left bool `json:"left"`
+}
+
+func (s *Server) handleThreadLeave(w http.ResponseWriter, r *http.Request, p models.Participant) {
+	root, err := s.resolveThreadRoot(r, p)
+	if err != nil {
+		writeStoreErr(w, err)
+		return
+	}
+	var req threadLeaveReq
+	if !readJSON(w, r, &req) {
+		return
+	}
+	if err := s.store.SetThreadLeft(r.Context(), p.ID, root, req.Left); err != nil {
+		writeStoreErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"root_id": root, "left": req.Left})
+}
+
 type threadResolveReq struct {
 	Resolved bool `json:"resolved"`
 }

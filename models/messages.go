@@ -176,16 +176,26 @@ func (s *Store) CreateMessage(ctx context.Context, p CreateMessageParams) (Messa
 		if res.RowsAffected() == 0 {
 			return Message{}, ErrNotFound
 		}
-		// a direct @mention breaks a thread mute and un-resolves it, so the
-		// tagged person starts glowing again / the thread reappears
+		// a direct @mention breaks a thread mute, un-resolves it and pulls a
+		// participant who left back in, so the tagged person hears the thread again
 		if p.ThreadRootID != nil {
 			if _, err := tx.Exec(ctx,
-				`UPDATE thread_states SET muted = false, resolved_at = NULL
+				`UPDATE thread_states SET muted = false, resolved_at = NULL, left_at = NULL
 				 WHERE root_id = $1 AND participant_id = $2
-				   AND (muted OR resolved_at IS NOT NULL)`,
+				   AND (muted OR resolved_at IS NOT NULL OR left_at IS NOT NULL)`,
 				*p.ThreadRootID, pid); err != nil {
 				return Message{}, err
 			}
+		}
+	}
+
+	// Writing in a thread again is rejoining it
+	if p.ThreadRootID != nil {
+		if _, err := tx.Exec(ctx,
+			`UPDATE thread_states SET left_at = NULL
+			 WHERE root_id = $1 AND participant_id = $2 AND left_at IS NOT NULL`,
+			*p.ThreadRootID, p.AuthorID); err != nil {
+			return Message{}, err
 		}
 	}
 
@@ -448,6 +458,9 @@ func threadParticipantNamesTx(ctx context.Context, tx pgx.Tx, roomID, rootID str
 	rows, err := tx.Query(ctx,
 		`SELECT p.name FROM messages m JOIN participants p ON p.id = m.author_id
 		 WHERE m.room_id = $1 AND COALESCE(m.thread_root_id, m.id) = $2
+		   AND NOT EXISTS (SELECT 1 FROM thread_states ts
+		                   WHERE ts.root_id = $2 AND ts.participant_id = p.id
+		                     AND ts.left_at IS NOT NULL)
 		 ORDER BY m.created_at, m.id`, roomID, rootID)
 	if err != nil {
 		return nil, err

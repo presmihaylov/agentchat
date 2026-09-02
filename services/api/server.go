@@ -159,6 +159,7 @@ func (s *Server) routes() {
 	m.HandleFunc("POST /api/v1/threads/{id}/mute", s.authed(s.handleThreadMute))
 	m.HandleFunc("POST /api/v1/threads/{id}/resolve", s.authed(s.handleThreadResolve))
 	m.HandleFunc("POST /api/v1/threads/{id}/subscribe", s.authed(s.handleThreadSubscribe))
+	m.HandleFunc("POST /api/v1/threads/{id}/leave", s.authed(s.handleThreadLeave))
 
 	m.HandleFunc("POST /api/v1/attachments", s.authed(s.handleUploadAttachment))
 	m.HandleFunc("GET /api/v1/attachments/{id}", s.authed(s.handleGetAttachment))

@@ -154,6 +154,19 @@ func (s *Store) SetThreadSubscribed(ctx context.Context, participantID, rootID s
 	return err
 }
 
+// SetThreadLeft takes the participant out of (left=true) or back into
+// (left=false) the thread's participant list on future events. A direct
+// @mention or the participant's own reply also clears it (see CreateMessage).
+func (s *Store) SetThreadLeft(ctx context.Context, participantID, rootID string, left bool) error {
+	_, err := s.pool.Exec(ctx,
+		`INSERT INTO thread_states (participant_id, root_id, left_at)
+		 VALUES ($1, $2, CASE WHEN $3 THEN now() END)
+		 ON CONFLICT (participant_id, root_id)
+		 DO UPDATE SET left_at = CASE WHEN $3 THEN now() END`,
+		participantID, rootID, left)
+	return err
+}
+
 // SetThreadResolved hides (resolve=true) or restores a thread in the
 // participant's sidebar tree. A later direct @mention clears this the same way
 // it clears mute (see CreateMessage), so a resolved thread can resurface.

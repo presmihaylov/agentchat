@@ -48,7 +48,7 @@ func TestCLIScriptServed(t *testing.T) {
 	for _, want := range []string{
 		"cmd_send()", "cmd_reply()", "cmd_broadcast()", "cmd_read()", "cmd_thread()",
 		"cmd_msg()", "cmd_mentions()", "cmd_channels()", "cmd_members()", "cmd_whoami()",
-		"cmd_working()", "cmd_download()", "cmd_join()",
+		"cmd_working()", "cmd_download()", "cmd_join()", "cmd_leave()", "cmd_rejoin()",
 	} {
 		if !strings.Contains(script, want) {
 			t.Errorf("cli.sh is missing %q", want)

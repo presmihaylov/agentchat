@@ -2875,3 +2875,64 @@ func TestEventsExclude(t *testing.T) {
 		}
 	}
 }
+
+// TestThreadLeave: after `ac leave`, untagged replies in the thread no longer
+// name alice in thread_participants (so a mentions-only watcher stays quiet);
+// a direct @mention or her own reply puts her back.
+func TestThreadLeave(t *testing.T) {
+	srv, _ := newTestServer(t)
+	_, alice, bob := setupRoom(t, srv.URL)
+	root := bob.must("POST", "/api/v1/channels/general/messages", map[string]any{"body": "bob's topic"}, 201)
+	rootID := root["id"].(string)
+	alice.must("POST", "/api/v1/channels/general/messages", map[string]any{"body": "my part", "thread_root_id": rootID}, 201)
+	cursor := int64(alice.must("GET", "/api/v1/events?after=0", nil, 200)["cursor"].(float64))
+
+	partsOf := func(body string) string {
+		t.Helper()
+		bob.must("POST", "/api/v1/channels/general/messages", map[string]any{"body": body, "thread_root_id": rootID}, 201)
+		evs, c := eventsAfter(t, alice, cursor)
+		cursor = c
+		for _, e := range evs {
+			pl := e["payload"].(map[string]any)
+			if e["type"] == "message.created" && pl["body"] == body {
+				return fmt.Sprint(pl["thread_participants"])
+			}
+		}
+		t.Fatalf("no event for %q", body)
+		return ""
+	}
+	if got := partsOf("untagged 1"); got != "[bob alice]" {
+		t.Fatalf("before leave: %s", got)
+	}
+	// leaving via a reply id resolves to the root, like ac leave does
+	out := alice.must("POST", "/api/v1/threads/"+rootID+"/leave", map[string]any{"left": true}, 200)
+	if out["left"] != true || out["root_id"] != rootID {
+		t.Fatalf("leave: %v", out)
+	}
+	if got := partsOf("untagged 2"); got != "[bob]" {
+		t.Fatalf("after leave: %s", got)
+	}
+	// a direct mention pulls her back in, for that reply and the ones after it
+	if got := partsOf("hey @alice"); got != "[bob alice]" {
+		t.Fatalf("mention after leave: %s", got)
+	}
+	if got := partsOf("untagged 3"); got != "[bob alice]" {
+		t.Fatalf("after mention: %s", got)
+	}
+	alice.must("POST", "/api/v1/threads/"+rootID+"/leave", map[string]any{"left": true}, 200)
+	if got := partsOf("untagged 4"); got != "[bob]" {
+		t.Fatalf("second leave: %s", got)
+	}
+	// her own reply rejoins
+	alice.must("POST", "/api/v1/channels/general/messages", map[string]any{"body": "back", "thread_root_id": rootID}, 201)
+	if got := partsOf("untagged 5"); got != "[bob alice]" {
+		t.Fatalf("after own reply: %s", got)
+	}
+	alice.must("POST", "/api/v1/threads/"+rootID+"/leave", map[string]any{"left": true}, 200)
+	alice.must("POST", "/api/v1/threads/"+rootID+"/leave", map[string]any{"left": false}, 200)
+	if got := partsOf("untagged 6"); got != "[bob alice]" {
+		t.Fatalf("after rejoin: %s", got)
+	}
+	// a stranger to the thread cannot leave it into a 404-free no-op: unknown root is 404
+	alice.must("POST", "/api/v1/threads/00000000-0000-0000-0000-000000000000/leave", map[string]any{"left": true}, 404)
+}

@@ -8,7 +8,7 @@
 # thread, whether the id is the root or any reply inside it.
 set -euo pipefail
 
-VERSION="1.2.0"
+VERSION="1.3.0"
 DEFAULT_SERVER="{{SERVER}}"
 # Cloudflare Access service token, baked in by the server when the room sits
 # behind a Cloudflare tunnel. Empty otherwise. The env file can override both.
@@ -42,6 +42,9 @@ DO
   working <message-id> <status>  show "working on it" on a task (--clear to stop)
   react <message-id> <emoji>     add an emoji reaction (👀 or :eyes:); repeat is a no-op
   unreact <message-id> <emoji>   take your reaction off again
+  leave <message-id>             done with that thread: untagged replies stop waking
+                                 you (a direct @mention or your own reply rejoins)
+  rejoin <message-id>            hear that thread's untagged replies again
   markers                        YOUR still-active markers, oldest first
   download <message-id>          save that message's attachments
   join <channel>                 join a public channel
@@ -585,6 +588,20 @@ cmd_react() {
   printf 'reacted %s on %s\n' "$2" "$1"
 }
 
+cmd_leave() {
+  [ $# -ge 1 ] || die "usage: cli.sh leave <message-id>"
+  local root; root=$(thread_root_of "$1")
+  api POST "/api/v1/threads/$root/leave" '{"left":true}'
+  printf 'left thread %s: untagged replies no longer wake you; a direct @mention or your own reply rejoins\n' "$root"
+}
+
+cmd_rejoin() {
+  [ $# -ge 1 ] || die "usage: cli.sh rejoin <message-id>"
+  local root; root=$(thread_root_of "$1")
+  api POST "/api/v1/threads/$root/leave" '{"left":false}'
+  printf 'rejoined thread %s\n' "$root"
+}
+
 cmd_unreact() {
   [ $# -ge 2 ] || die "usage: cli.sh unreact <message-id> <emoji>"
   local enc; enc=$(EMOJI="$2" python3 -c 'import os,urllib.parse;print(urllib.parse.quote(os.environ["EMOJI"], safe=""))')
@@ -666,6 +683,8 @@ case "$cmd" in
   working) cmd_working "$@" ;;
   react) cmd_react "$@" ;;
   unreact) cmd_unreact "$@" ;;
+  leave) cmd_leave "$@" ;;
+  rejoin) cmd_rejoin "$@" ;;
   download) cmd_download "$@" ;;
   join) cmd_join "$@" ;;
   help) usage ;;

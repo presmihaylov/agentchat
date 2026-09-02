@@ -206,6 +206,19 @@ assert r[0]["count"]==1 and r[0]["names"]==["bob"], r' || fail "reaction json wr
 "${A[@]}" msg "$root" | grep -q '👀' && fail "reaction survived unreact"
 ok "reactions"
 
+# 9c. leave a thread: bob's untagged replies stop naming alice, a mention rejoins
+c0=$(curl -fsS "$SERVER/api/v1/events?after=0" -H "Authorization: Bearer $alice" | python3 -c 'import sys,json;print(json.load(sys.stdin)["cursor"])')
+"${A[@]}" leave "$root" | grep -q "left thread $root" || fail "leave output"
+"${B[@]}" reply "$root" "carrying on without alice" >/dev/null
+"${B[@]}" reply "$root" "@alice one more thing" >/dev/null
+curl -fsS "$SERVER/api/v1/events?after=$c0" -H "Authorization: Bearer $alice" | python3 -c '
+import sys,json
+p={e["payload"]["body"]:e["payload"]["thread_participants"] for e in json.load(sys.stdin)["events"] if e["type"]=="message.created"}
+assert "alice" not in p["carrying on without alice"], p
+assert "alice" in p["@alice one more thing"], p' || fail "leave did not drop alice from thread_participants"
+"${A[@]}" rejoin "$root" | grep -q "rejoined thread $root" || fail "rejoin output"
+ok "leave + rejoin"
+
 # 10. membership: join a channel, and members reports who is in it
 curl -fsS -X POST "$SERVER/api/v1/channels" -H "Authorization: Bearer $alice" \
   -H 'Content-Type: application/json' -d '{"name":"side"}' >/dev/null
