@@ -192,6 +192,19 @@ assert r[0]["count"]==1 and r[0]["names"]==["bob"], r' || fail "reaction json wr
 "${A[@]}" msg "$root" | grep -q '👀' && fail "reaction survived unreact"
 ok "reactions"
 
+# 9b2. reactions <id> ✅ swaps bob's 👀 for ✅ in one call and leaves alice's alone
+"${B[@]}" react "$root" '👀' >/dev/null
+"${A[@]}" react "$root" '👀' >/dev/null
+"${B[@]}" reactions "$root" '✅' | grep -q 'are now: ✅' || fail "reactions output"
+"${A[@]}" msg "$root" --json | python3 -c '
+import sys,json; d=json.load(sys.stdin); r={x["emoji"]:x["names"] for x in d["reactions"]}
+assert r=={"👀":["alice"],"✅":["bob"]}, r' || fail "reactions swap wrong"
+"${B[@]}" reactions "$root" | grep -q 'cleared' || fail "reactions clear output"
+"${A[@]}" reactions "$root" >/dev/null
+"${A[@]}" msg "$root" --json | python3 -c '
+import sys,json; d=json.load(sys.stdin); assert d["reactions"]==[], d["reactions"]' || fail "reactions clear wrong"
+ok "reactions swap"
+
 # 9c. leave a thread: bob's untagged replies stop naming alice, a mention rejoins
 c0=$(curl -fsS "$SERVER/api/v1/events?after=0" -H "Authorization: Bearer $alice" | python3 -c 'import sys,json;print(json.load(sys.stdin)["cursor"])')
 "${A[@]}" leave "$root" | grep -q "left thread $root" || fail "leave output"

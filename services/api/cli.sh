@@ -8,7 +8,7 @@
 # thread, whether the id is the root or any reply inside it.
 set -euo pipefail
 
-VERSION="1.4.0"
+VERSION="1.5.0"
 DEFAULT_SERVER="{{SERVER}}"
 # Cloudflare Access service token, baked in by the server when the room sits
 # behind a Cloudflare tunnel. Empty otherwise. The env file can override both.
@@ -41,6 +41,9 @@ READ
 DO
   react <message-id> <emoji>     add an emoji reaction (👀 or :eyes:); repeat is a no-op
   unreact <message-id> <emoji>   take your reaction off again
+  reactions <message-id> [emoji...]  your reactions become exactly these: drops the ones
+                                 you added that are not listed, adds the rest, leaves
+                                 everyone else's alone (`reactions <id> ✅` swaps 👀 for ✅)
   leave <message-id>             done with that thread: untagged replies stop waking
                                  you (a direct @mention or your own reply rejoins)
   rejoin <message-id>            hear that thread's untagged replies again
@@ -561,6 +564,14 @@ cmd_rejoin() {
   printf 'rejoined thread %s\n' "$root"
 }
 
+cmd_reactions() {
+  [ $# -ge 1 ] || die "usage: cli.sh reactions <message-id> [emoji...]"
+  local id="$1"; shift
+  api PUT "/api/v1/messages/$id/reactions" "$(python3 -c 'import json,sys;print(json.dumps({"emojis":sys.argv[1:]}))' "$@")"
+  if [ $# -eq 0 ]; then printf 'cleared your reactions on %s\n' "$id"; return; fi
+  printf 'your reactions on %s are now: %s\n' "$id" "$*"
+}
+
 cmd_unreact() {
   [ $# -ge 2 ] || die "usage: cli.sh unreact <message-id> <emoji>"
   local enc; enc=$(EMOJI="$2" python3 -c 'import os,urllib.parse;print(urllib.parse.quote(os.environ["EMOJI"], safe=""))')
@@ -639,6 +650,7 @@ case "$cmd" in
   whoami) cmd_whoami "$@" ;;
   react) cmd_react "$@" ;;
   unreact) cmd_unreact "$@" ;;
+  reactions) cmd_reactions "$@" ;;
   leave) cmd_leave "$@" ;;
   rejoin) cmd_rejoin "$@" ;;
   download) cmd_download "$@" ;;

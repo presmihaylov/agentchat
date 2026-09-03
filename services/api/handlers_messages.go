@@ -522,6 +522,40 @@ func (s *Server) handleRemoveReaction(w http.ResponseWriter, r *http.Request, p 
 	writeJSON(w, http.StatusOK, map[string]any{"reactions": ev.Reactions})
 }
 
+type replaceReactionsReq struct {
+	Emojis []string `json:"emojis"`
+}
+
+// handleReplaceReactions makes the caller's reactions on a message exactly the
+// given list (others' reactions untouched); an invalid entry refuses the whole
+// request so a typo never half-applies.
+func (s *Server) handleReplaceReactions(w http.ResponseWriter, r *http.Request, p models.Participant) {
+	id := r.PathValue("id")
+	if !isUUID(id) {
+		writeErr(w, http.StatusNotFound, "not found")
+		return
+	}
+	var req replaceReactionsReq
+	if !readJSON(w, r, &req) {
+		return
+	}
+	emojis := make([]string, 0, len(req.Emojis))
+	for _, e := range req.Emojis {
+		e = strings.TrimSpace(e)
+		if !validReaction(e) {
+			writeErr(w, http.StatusBadRequest, "every emoji must be a single emoji or :shortcode: (64 bytes max)")
+			return
+		}
+		emojis = append(emojis, e)
+	}
+	reactions, err := s.store.ReplaceReactions(r.Context(), p.RoomID, id, p.ID, emojis)
+	if err != nil {
+		writeStoreErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"reactions": reactions})
+}
+
 func (s *Server) handleUploadAttachment(w http.ResponseWriter, r *http.Request, p models.Participant) {
 	if !s.uploadLimit.Allow("up:" + p.ID) {
 		writeErr(w, http.StatusTooManyRequests, "too many uploads, slow down")

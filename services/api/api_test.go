@@ -1336,8 +1336,11 @@ func TestSkillDoc(t *testing.T) {
 		"Your token is a secret. Never post it",
 		"There is no \"working on\n  it\" marker any more",
 		"put 👀 on its message",
-		"put ✅ on it",
+		"swap it for ✅",
 		"Bodies are markdown, not chat lines.",
+		"when it is DONE, swap it for ✅ with\n  `ac reactions <id> ✅`. That one call takes your 👀 off and puts ✅ on",
+		"`PUT /api/v1/messages/<id>/reactions {\"emojis\":[\"✅\"]}` makes",
+		"ac reactions <message-id> [emoji...]",
 		"Markdown carries the shape, emojis mark the kind, brevity applies to the\n  root.",
 		"Do not flatten a\n  document into emoji-led paragraphs",
 		// gap 3 from byoa-dev's request: the doc shows one worked report body
@@ -2639,6 +2642,90 @@ func TestMessageReactions(t *testing.T) {
 	}
 	// joining an existing emoji is still allowed at the cap
 	bob.must("POST", "/api/v1/messages/"+capped+"/reactions", map[string]any{"emoji": ":e0:"}, 200)
+}
+
+// TestReplaceReactions: PUT makes the caller's reactions on a message exactly
+// the given list in one call (the ✅-replaces-👀 move), never touching what
+// other participants added, and emits one event per actual change.
+func TestReplaceReactions(t *testing.T) {
+	srv, _ := newTestServer(t)
+	defer srv.Close()
+	_, alice, bob := setupRoom(t, srv.URL)
+
+	summary := func(raw any) string {
+		parts := []string{}
+		for _, r := range raw.([]any) {
+			m := r.(map[string]any)
+			parts = append(parts, fmt.Sprintf("%s%v", m["emoji"], m["names"]))
+		}
+		return strings.Join(parts, " ")
+	}
+	reactionEvents := func(after float64) []map[string]any {
+		out := alice.must("GET", fmt.Sprintf("/api/v1/events?after=%d", int(after)), nil, 200)
+		evs := []map[string]any{}
+		for _, raw := range out["events"].([]any) {
+			e := raw.(map[string]any)
+			if e["type"] == "message.reaction" {
+				evs = append(evs, e["payload"].(map[string]any))
+			}
+		}
+		return evs
+	}
+	cursor := func() float64 { return alice.must("GET", "/api/v1/events?after=0", nil, 200)["cursor"].(float64) }
+
+	rootID := alice.must("POST", "/api/v1/channels/general/messages", map[string]any{"body": "swap on me"}, 201)["id"].(string)
+	bob.must("POST", "/api/v1/messages/"+rootID+"/reactions", map[string]any{"emoji": "👀"}, 200)
+	alice.must("POST", "/api/v1/messages/"+rootID+"/reactions", map[string]any{"emoji": "👀"}, 200)
+
+	// bob swaps 👀 for ✅: his 👀 goes, alice's 👀 stays, one event per change
+	c0 := cursor()
+	out := bob.must("PUT", "/api/v1/messages/"+rootID+"/reactions", map[string]any{"emojis": []string{"✅"}}, 200)
+	if got := summary(out["reactions"]); got != "👀[alice] ✅[bob]" {
+		t.Fatalf("after the swap: %s", got)
+	}
+	evs := reactionEvents(c0)
+	if len(evs) != 2 || evs[0]["emoji"] != "👀" || evs[0]["added"] != false || evs[1]["emoji"] != "✅" || evs[1]["added"] != true {
+		t.Fatalf("swap events: %v", evs)
+	}
+	for _, e := range evs {
+		if e["participant_name"] != "bob" || e["author_name"] != "alice" || summary(e["reactions"]) != "👀[alice] ✅[bob]" {
+			t.Fatalf("swap event payload: %v", e)
+		}
+	}
+
+	// the same list again changes nothing and emits nothing
+	c1 := cursor()
+	bob.must("PUT", "/api/v1/messages/"+rootID+"/reactions", map[string]any{"emojis": []string{"✅"}}, 200)
+	if evs := reactionEvents(c1); len(evs) != 0 {
+		t.Fatalf("a no-op PUT emitted: %v", evs)
+	}
+
+	// adding to the list keeps the existing one (no remove-and-re-add); dupes collapse
+	c2 := cursor()
+	out = bob.must("PUT", "/api/v1/messages/"+rootID+"/reactions", map[string]any{"emojis": []string{"✅", "🎉", "🎉"}}, 200)
+	if got := summary(out["reactions"]); got != "👀[alice] ✅[bob] 🎉[bob]" {
+		t.Fatalf("after adding: %s", got)
+	}
+	if evs := reactionEvents(c2); len(evs) != 1 || evs[0]["emoji"] != "🎉" {
+		t.Fatalf("add events: %v", evs)
+	}
+
+	// an empty list clears only bob's reactions
+	out = bob.must("PUT", "/api/v1/messages/"+rootID+"/reactions", map[string]any{"emojis": []string{}}, 200)
+	if got := summary(out["reactions"]); got != "👀[alice]" {
+		t.Fatalf("after clearing: %s", got)
+	}
+
+	// bad input is refused whole, so a typo never half-applies
+	if code, _ := bob.do("PUT", "/api/v1/messages/"+rootID+"/reactions", map[string]any{"emojis": []string{"👍", "thumbs up"}}); code != 400 {
+		t.Fatalf("bad emoji in the list returned %d, want 400", code)
+	}
+	if got := summary(alice.must("GET", "/api/v1/messages/"+rootID, nil, 200)["reactions"]); got != "👀[alice]" {
+		t.Fatalf("a refused PUT changed reactions: %s", got)
+	}
+	if code, _ := bob.do("PUT", "/api/v1/messages/00000000-0000-0000-0000-000000000000/reactions", map[string]any{"emojis": []string{"👍"}}); code != 404 {
+		t.Fatalf("PUT on a missing message returned %d", code)
+	}
 }
 
 func TestReactionEvents(t *testing.T) {

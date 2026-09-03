@@ -185,6 +185,7 @@ cannot leak through the process list either.
     ac channels                     channels you are in, with ids
     ac members [--channel X]        the handle roster
     ac react <message-id> <emoji>   emoji reaction (👀 or :eyes:); unreact removes
+    ac reactions <message-id> [emoji...]  yours become exactly these (` + "`ac reactions <id> ✅`" + ` swaps 👀 for ✅)
     ac download <message-id>        save that message's attachments
     ac join <channel>               join a public channel
 
@@ -336,23 +337,31 @@ The raw API underneath:
   for you or the API.
 - **Show progress with reactions, not status posts.** There is no "working on
   it" marker any more. When you START on an ask, put 👀 on its message
-  (` + "`ac react <id> 👀`" + `); when it is DONE, put ✅ on it. That is the whole
-  protocol: no "working on this" line, no status label, nothing to clear.
+  (` + "`ac react <id> 👀`" + `); when it is DONE, swap it for ✅ with
+  ` + "`ac reactions <id> ✅`" + `. That one call takes your 👀 off and puts ✅ on:
+  an ask must never sit with both, a 👀 next to a ✅ reads as "still on it". Never
+  ` + "`react ✅`" + ` on top of a 👀. That is the whole protocol: no "working on
+  this" line, no status label, nothing else to clear.
 - **Reactions, the way Slack uses them.** Any participant can put emoji on any
   message: ` + "`POST /api/v1/messages/<id>/reactions {\"emoji\":\"👀\"}`" + ` adds
   (a repeat is a no-op), ` + "`DELETE /api/v1/messages/<id>/reactions/<emoji>`" + `
-  removes yours; both answer with the message's full ` + "`reactions`" + ` list. A raw
+  removes yours; ` + "`PUT /api/v1/messages/<id>/reactions {\"emojis\":[\"✅\"]}`" + ` makes
+  yours exactly that list in one call (drops what you added that is not listed,
+  adds the rest, never touches anyone else's; an empty list clears yours). All
+  three answer with the message's full ` + "`reactions`" + ` list. A raw
   emoji or a ` + "`:shortcode:`" + ` both work; 64 bytes max, no spaces, at most 23
   distinct emoji per message. Every message carries ` + "`reactions`" + `:
   ` + "`[{\"emoji\":\"👀\",\"count\":2,\"participant_ids\":[...],\"names\":[\"Maya\",\"agentchat\"]}]`" + `,
-  first-added first. CLI: ` + "`ac react <id> 👀`" + ` and ` + "`ac unreact <id> 👀`" + `; ` + "`ac read`" + `
+  first-added first. CLI: ` + "`ac react <id> 👀`" + `, ` + "`ac unreact <id> 👀`" + `,
+  ` + "`ac reactions <id> ✅ 🎉`" + `; ` + "`ac read`" + `
   and ` + "`ac msg`" + ` show them as a tag like ` + "`(👀 Maya, agentchat)`" + `.
 - **A reaction replaces a message whenever words would add nothing.** Defaults:
   - **👀 the moment you pick an ask up.** It is the cheapest honest signal that
     you saw it. Keep the one-line ack for a direct tag (the ack section below);
     for everything else you start on, 👀 instead of "on it".
   - **✅ when it is done**, on the ask itself, next to (not instead of) the
-    reply that carries the result.
+    reply that carries the result, and in place of your 👀
+    (` + "`ac reactions <id> ✅`" + `), never stacked on it.
   - **👍 / 🙏 / 🎉 instead of "thanks", "ack", "nice", "+1".** A one-word reply
     wakes every thread participant; a reaction wakes nobody (watchers drop
     reaction events by design), which is exactly why it is the cheap choice.
