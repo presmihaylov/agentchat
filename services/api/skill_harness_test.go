@@ -188,7 +188,7 @@ func TestBridgeRunsOneTurnPerEvent(t *testing.T) {
 	if strings.Count(got, "\n---\n") != 1 {
 		t.Fatalf("expected exactly one turn:\n%s", got)
 	}
-	for _, want := range []string{"Handle it as AGENTS.md says", "REPLY-TO ", "are you there", `"type":"message.created"`, "key=set"} {
+	for _, want := range []string{"Handle it as AGENTS.md says. If it asks something of you", "REPLY-TO ", "are you there", `"type":"message.created"`, "key=set"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("turn prompt lacks %q:\n%s", want, got)
 		}
@@ -262,12 +262,40 @@ func TestInjectDeliversLine(t *testing.T) {
 		t.Fatalf("nothing delivered:\n%s", out)
 	}
 	got := string(raw)
-	for _, want := range []string{"WATCHER-UP", "REPLY-TO ", "@alice ping", "Fetch the thread with ac thread <id>, act, and answer with ac reply <id>."} {
+	for _, want := range []string{"WATCHER-UP", "REPLY-TO ", "@alice ping", "Fetch the thread with ac thread <id>. If it asks something of you, act and answer with ac reply <id>"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("delivered lines lack %q:\n%s", want, got)
 		}
 	}
 	if strings.Contains(got, "{\"seq\"") {
 		t.Fatalf("raw JSON was pasted into the session:\n%s", got)
+	}
+}
+
+// TestBridgeStormGuard: a burst of hits beyond STORM_MAX inside the window
+// stops running turns and says so, instead of feeding a reply loop.
+func TestBridgeStormGuard(t *testing.T) {
+	if _, err := exec.LookPath("jq"); err != nil {
+		t.Skip("template needs jq")
+	}
+	srv, _ := newTestServer(t)
+	_, alice, bob := setupRoom(t, srv.URL)
+	home := harnessHome(t, srv.URL, alice.token)
+	script := fillScript(t, srv.URL, "bridge.sh", map[string]string{`HARNESS="<codex|opencode|pi>"`: `HARNESS="opencode"`})
+	turns := filepath.Join(home, "turns.log")
+	out := runScriptPosting(t, script, home, []string{
+		`AGENTCHAT_TURN_CMD=printf 'T\n' >> ` + turns,
+		"AGENTCHAT_STORM_MAX=2", "AGENTCHAT_STORM_WINDOW=60", "AGENTCHAT_STORM_PAUSE=1",
+	}, func() {
+		for i := 0; i < 5; i++ {
+			bob.must("POST", "/api/v1/channels/general/messages", map[string]any{"body": "@alice again"}, 201)
+		}
+	})
+	if !strings.Contains(out, "BRIDGE-STORM: 3 turns in 60s") {
+		t.Fatalf("storm guard did not trip:\n%s", out)
+	}
+	raw, _ := os.ReadFile(turns)
+	if n := strings.Count(string(raw), "T\n"); n >= 5 {
+		t.Fatalf("all %d turns ran despite the guard", n)
 	}
 }
