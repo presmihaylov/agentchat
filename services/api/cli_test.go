@@ -606,11 +606,11 @@ func TestWatcherTemplateWakeHookOptIn(t *testing.T) {
 	}
 }
 
-// TestWatcherTemplateBacksOffOnOutage: a dead server used to be a WATCHER-ERROR
-// wake every 5s for every agent. Now the first failure prints once, repeats of
-// the same code stay silent, recovery prints one WATCHER-BACK line, and the
-// cursor is untouched so a message posted during the outage still arrives.
-func TestWatcherTemplateBacksOffOnOutage(t *testing.T) {
+// gatedWatcher runs the watcher template through a proxy that can be switched
+// to answer /events with a Cloudflare-style 502 page. It returns the switch,
+// the failed-poll count, and a stop that yields the watcher's output.
+func gatedWatcher(t *testing.T) (setDown func(bool), failed func() int, post func(string), stop func() string) {
+	t.Helper()
 	if _, err := exec.LookPath("jq"); err != nil {
 		t.Skip("template needs jq")
 	}
@@ -636,7 +636,7 @@ func TestWatcherTemplateBacksOffOnOutage(t *testing.T) {
 		}
 		proxy.ServeHTTP(w, r)
 	}))
-	defer gate.Close()
+	t.Cleanup(gate.Close)
 	script := watcherTemplate(t, gate.URL)
 	for from, to := range map[string]string{
 		"wait=25":          "wait=1",
@@ -660,7 +660,6 @@ func TestWatcherTemplateBacksOffOnOutage(t *testing.T) {
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
-	defer cancel()
 	cmd := exec.CommandContext(ctx, "sh", path)
 	cmd.Env = append(os.Environ(), "HOME="+home)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
@@ -669,22 +668,36 @@ func TestWatcherTemplateBacksOffOnOutage(t *testing.T) {
 	var out bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &out
 	if err := cmd.Start(); err != nil {
+		cancel()
 		t.Fatal(err)
 	}
 	time.Sleep(2 * time.Second)
-	mu.Lock()
-	down = true
-	mu.Unlock()
+	setDown = func(v bool) { mu.Lock(); down = v; mu.Unlock() }
+	failed = func() int { mu.Lock(); defer mu.Unlock(); return fails }
+	post = func(body string) {
+		bob.must("POST", "/api/v1/channels/general/messages", map[string]any{"body": body}, 201)
+	}
+	stop = func() string {
+		cancel()
+		_ = cmd.Wait()
+		return out.String()
+	}
+	return setDown, failed, post, stop
+}
+
+// TestWatcherTemplateBacksOffOnOutage: a dead server used to be a WATCHER-ERROR
+// wake every 5s for every agent. Now a failed retry prints once, repeats of
+// the same code stay silent, recovery prints one WATCHER-BACK line, and the
+// cursor is untouched so a message posted during the outage still arrives.
+func TestWatcherTemplateBacksOffOnOutage(t *testing.T) {
+	setDown, failed, post, stop := gatedWatcher(t)
+	setDown(true)
 	time.Sleep(4 * time.Second)
-	bob.must("POST", "/api/v1/channels/general/messages", map[string]any{"body": "@alice posted while you were down"}, 201)
-	mu.Lock()
-	down = false
-	n := fails
-	mu.Unlock()
+	post("@alice posted while you were down")
+	setDown(false)
+	n := failed()
 	time.Sleep(3 * time.Second)
-	cancel()
-	_ = cmd.Wait()
-	got := out.String()
+	got := stop()
 	if n < 3 {
 		t.Fatalf("expected at least 3 failed polls, got %d:\n%s", n, got)
 	}
@@ -696,6 +709,32 @@ func TestWatcherTemplateBacksOffOnOutage(t *testing.T) {
 	}
 	if !strings.Contains(got, "posted while you were down") {
 		t.Fatalf("a mention posted during the outage was lost:\n%s", got)
+	}
+}
+
+// TestWatcherTemplateSilentOnBlip: a deploy restart cuts one long-poll and the
+// server is back before the 5s retry. That used to cost every agent two wakes
+// (ERROR + BACK) per deploy; now a single failed poll prints nothing at all,
+// and the mention posted during the blip still arrives.
+func TestWatcherTemplateSilentOnBlip(t *testing.T) {
+	setDown, failed, post, stop := gatedWatcher(t)
+	setDown(true)
+	deadline := time.Now().Add(5 * time.Second)
+	for failed() == 0 && time.Now().Before(deadline) {
+		time.Sleep(50 * time.Millisecond)
+	}
+	setDown(false)
+	post("@alice posted during the blip")
+	time.Sleep(3 * time.Second)
+	got := stop()
+	if n := failed(); n != 1 {
+		t.Fatalf("wanted exactly one failed poll, got %d:\n%s", n, got)
+	}
+	if strings.Contains(got, "WATCHER-ERROR: HTTP 502") || strings.Contains(got, "WATCHER-BACK") {
+		t.Fatalf("a one-poll blip must be silent:\n%s", got)
+	}
+	if !strings.Contains(got, "posted during the blip") {
+		t.Fatalf("a mention posted during the blip was lost:\n%s", got)
 	}
 }
 
