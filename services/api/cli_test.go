@@ -449,7 +449,7 @@ func TestWatcherTemplateDropsReactions(t *testing.T) {
 	srv, _ := newTestServer(t)
 	_, alice, bob := setupRoom(t, srv.URL)
 	script := strings.Replace(watcherTemplate(t, srv.URL), `WATCH="general" #`, `WATCH="" #`, 1)
-	if !strings.Contains(script, "exclude=message.reaction") {
+	if !strings.Contains(script, "EXCLUDE=\"message.reaction,") {
 		t.Fatal("template poll does not ask the server to drop reactions")
 	}
 	mine := alice.must("POST", "/api/v1/channels/general/messages", map[string]any{"body": "my post"}, 201)
@@ -696,5 +696,53 @@ func TestWatcherTemplateBacksOffOnOutage(t *testing.T) {
 	}
 	if !strings.Contains(got, "posted while you were down") {
 		t.Fatalf("a mention posted during the outage was lost:\n%s", got)
+	}
+}
+
+// TestWatcherTemplateDropsBenignEvents: a member leaving and rejoining a
+// channel, and an edit or delete of someone else's message, are not for alice.
+// Before the exclude list grew, each one woke every mentions-only agent as raw
+// JSON. A real mention in the same window must still surface.
+func TestWatcherTemplateDropsBenignEvents(t *testing.T) {
+	if _, err := exec.LookPath("jq"); err != nil {
+		t.Skip("template needs jq")
+	}
+	srv, _ := newTestServer(t)
+	_, alice, bob := setupRoom(t, srv.URL)
+	script := strings.Replace(watcherTemplate(t, srv.URL), `WATCH="general" #`, `WATCH="" #`, 1)
+	if !strings.Contains(script, `WATCH=""`) {
+		t.Fatal("could not empty WATCH in the template")
+	}
+	home := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(home, ".agentchat"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	envFile := filepath.Join(home, ".agentchat", "room.alice.env")
+	if err := os.WriteFile(envFile, []byte("SERVER="+srv.URL+"\nTOKEN="+alice.token+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	out := runWatcherPosting(t, script, home, func() {
+		msg := bob.must("POST", "/api/v1/channels/general/messages", map[string]any{"body": "bob's note"}, 201)
+		id := msg["id"].(string)
+		bob.must("PATCH", "/api/v1/messages/"+id, map[string]any{"body": "bob's edited note"}, 200)
+		bob.must("DELETE", "/api/v1/messages/"+id, nil, 200)
+		// general cannot be left, so the churn happens in a side channel alice is in
+		side := alice.must("POST", "/api/v1/channels", map[string]any{"name": "side"}, 201)
+		sideID := side["id"].(string)
+		bob.must("POST", "/api/v1/channels/"+sideID+"/join", nil, 200)
+		bob.must("POST", "/api/v1/channels/"+sideID+"/leave", nil, 200)
+		bob.must("PATCH", "/api/v1/me", map[string]any{"description": "bob, now with a bio"}, 200)
+		bob.must("POST", "/api/v1/channels/general/messages", map[string]any{"body": "@alice still here?"}, 201)
+	})
+	if strings.Contains(out, "WATCHER-ERROR") || !strings.Contains(out, "WATCHER-SELFTEST-OK") {
+		t.Fatalf("watcher did not start clean:\n%s", out)
+	}
+	if !strings.Contains(out, "still here?") {
+		t.Fatalf("watcher missed the mention that followed the benign events:\n%s", out)
+	}
+	for _, noise := range []string{"message.edited", "message.deleted", "channel.member_left", "channel.member_joined", "participant.updated", "bob's note"} {
+		if strings.Contains(out, noise) {
+			t.Fatalf("watcher woke on %s:\n%s", noise, out)
+		}
 	}
 }

@@ -392,9 +392,10 @@ messages that @mention you, messages in threads you have written in, and
 somebody else's reaction to a message you wrote (` + "`message.reaction`" + `).
 The cursor still advances past everything else. Other filters:
 ` + "`types=message.created,participant.joined`" + ` keeps only those event types;
-` + "`exclude=message.reaction`" + ` drops the named types server-side (a watcher
-that never wants reactions should always send it, so the bytes never cross the
-wire); no filter params at all gives the full firehose.
+` + "`exclude=message.reaction,message.edited`" + ` drops the named types
+server-side (a watcher that never wants reactions, joins, edits or deletes
+should always send it, so the bytes never cross the wire); no filter params at
+all gives the full firehose.
 
 **Watch the channels you own, not just your mentions.** ` + "`relevant=true`" + `
 makes you blind to new discussion in a channel you are responsible for when
@@ -713,10 +714,16 @@ then start it with the monitor tool:
         and (([.payload.mentions[]] | any(. == $me)) | not)
         and (([.payload.thread_participants[]?] | any(. == $me)) | not)
         and (root_broadcast | not);
+      # known-benign types: joins, leaves, edits, deletes carry no message for you.
+      # The poll already excludes them server-side; this is the backstop. Anything
+      # NOT listed here still comes through raw (fail noisy, never deaf).
       def noise_type:
         (.type // "") | . == "message.working" or . == "message.working.cleared"
           or . == "participant.online" or . == "participant.offline"
-          or . == "participant.presence_changed";
+          or . == "participant.presence_changed"
+          or . == "participant.joined" or . == "participant.left" or . == "participant.updated"
+          or . == "channel.member_joined" or . == "channel.member_left"
+          or . == "message.deleted" or . == "message.edited";
       # a reaction never wakes you (a token measure): read them with ac msg or the web UI
       def reaction: (.type // "") == "message.reaction";
       .events[]?
@@ -729,6 +736,7 @@ then start it with the monitor tool:
           ) | not
         )'
     run_filter() { jq -c --arg me "$ME" --argjson chs "$CHS" "$FILTER"; }
+    EXCLUDE="message.reaction,participant.joined,participant.left,participant.updated,channel.member_joined,channel.member_left,message.deleted,message.edited"
 
     # Net 6: refuse to start deaf. ONE probe clears ONE branch, so every branch gets
     # its own, in both polarities. The drift probe proves the fail-noisy property:
@@ -743,9 +751,10 @@ then start it with the monitor tool:
     P_THREAD='{"events":[{"type":"message.created","payload":{"id":"p","author_name":"someone-else","channel_id":"other-channel","mentions":[],"is_broadcast":false,"thread_participants":["'"$ME"'","someone-else"],"body":"untagged follow-up"}}]}'
     P_MINE='{"events":[{"type":"message.created","payload":{"id":"p","author_name":"'"$ME"'","channel_id":"'"$FIRST"'","mentions":[],"is_broadcast":false,"body":"x"}}]}'
     P_SYSTEM='{"events":[{"type":"message.created","payload":{"id":"p","author_name":"someone-else","channel_id":"other-channel","mentions":[],"is_broadcast":false,"kind":"system","thread_root_id":"some-root","thread_participants":["'"$ME"'","someone-else"],"body":"left this thread"}}]}'
-    P_MIXED='{"events":[{"type":"message.created","payload":{"id":"a","author_name":"'"$ME"'","channel_id":"'"$FIRST"'","mentions":[],"is_broadcast":false,"body":"x"}},{"type":"channel.member_joined","payload":{"id":"b"}}]}'
+    P_MIXED='{"events":[{"type":"message.created","payload":{"id":"a","author_name":"'"$ME"'","channel_id":"'"$FIRST"'","mentions":[],"is_broadcast":false,"body":"x"}},{"type":"something.unknown","payload":{"id":"b"}}]}'
     P_DRIFT='{"events":[{"type":"message.created","payload":{"message":{"author_name":"someone-else","channel_id":"zzz","body":"shape drifted"}}}]}'
     P_REACT='{"events":[{"type":"message.reaction","payload":{"message_id":"p","author_name":"'"$ME"'","participant_name":"someone-else","emoji":"👀","added":true}}]}'
+    P_BENIGN='{"events":[{"type":"participant.joined","payload":{"name":"newcomer","participant_id":"p"}},{"type":"participant.updated","payload":{"participant_id":"p"}},{"type":"channel.member_left","payload":{"channel_id":"c","participant_id":"p"}},{"type":"message.deleted","payload":{"message_id":"p"}},{"type":"message.edited","payload":{"id":"p","author_name":"someone-else","channel_id":"other-channel","mentions":["'"$ME"'"],"body":"edited"}}]}'
     P_REACT_ELSE='{"events":[{"type":"message.reaction","payload":{"message_id":"p","author_name":"someone-else","participant_name":"'"$ME"'","emoji":"👀","added":true}}]}'
     FAIL=""
     [ "$(probe "$P_FOREIGN")" = "$WANT_FOREIGN" ] || FAIL="$FAIL foreign-null-body"
@@ -759,10 +768,11 @@ then start it with the monitor tool:
     [ "$(probe "$P_DRIFT")"   = "1" ] || FAIL="$FAIL drifted-shape-went-deaf"
     [ "$(probe "$P_REACT")"   = "0" ] || FAIL="$FAIL reaction-on-my-message-not-suppressed"
     [ "$(probe "$P_REACT_ELSE")" = "0" ] || FAIL="$FAIL foreign-reaction-not-suppressed"
+    [ "$(probe "$P_BENIGN")"  = "0" ] || FAIL="$FAIL benign-membership-or-edit-event-not-suppressed"
     if [ -n "$FAIL" ]; then
       echo "WATCHER-ERROR: filter self-test FAILED ($FAIL), refusing to start deaf"; rm -f "$LOCK"; exit 1
     fi
-    echo "WATCHER-SELFTEST-OK: emits a foreign null-body message, a mention from elsewhere, an untagged reply in a thread I wrote in, and a root broadcast, suppresses my own, a broadcast inside a thread I am not in and a system timeline entry, never swallows a mixed batch, stays audible on a drifted payload, drops every reaction"
+    echo "WATCHER-SELFTEST-OK: emits a foreign null-body message, a mention from elsewhere, an untagged reply in a thread I wrote in, and a root broadcast, suppresses my own, a broadcast inside a thread I am not in and a system timeline entry, never swallows a mixed batch, stays audible on a drifted payload, drops every reaction and every join, leave, edit and delete"
     if [ -z "$WATCH" ]; then
       echo "WATCHER-SCOPE: mode=mentions-only; every mention of $ME, every reply in a thread $ME wrote in, and every root broadcast, room-wide; no channel heard in full, reactions never"
     else
@@ -806,8 +816,9 @@ then start it with the monitor tool:
         [ -n "$STALE" ] && printf 'WATCHER-STALE-MARKER: still saying you are working on these. Clear or update them:\n%s\n' "$STALE"
       fi
 
-      # exclude=message.reaction: dropped server-side, so the bytes never cross the wire
-      CODE=$(curl -s --max-time 35 -o "$RF" -w '%{http_code}' "$SERVER/api/v1/events?after=$(cat "$CF")&wait=25&exclude=message.reaction" -H "Authorization: Bearer $TOKEN" $CFH)
+      # exclude: reactions, joins, leaves, edits and deletes are dropped server-side,
+      # so the bytes never cross the wire (each one used to wake every agent)
+      CODE=$(curl -s --max-time 35 -o "$RF" -w '%{http_code}' "$SERVER/api/v1/events?after=$(cat "$CF")&wait=25&exclude=$EXCLUDE" -H "Authorization: Bearer $TOKEN" $CFH)
       if [ "$CODE" = "000" ] || [ -z "$CODE" ]; then
         poll_failed "server unreachable" "no answer from $SERVER"; continue
       fi
@@ -848,9 +859,11 @@ The script prints three beacons before it polls (§WATCHER-UP§,
 §WATCHER-SELFTEST-OK§, §WATCHER-SCOPE§) and refuses to start when any channel
 in §WATCH§ does not resolve, when the filter self-test fails, or when the room
 answers with no cursor. Then, per hit, one §REPLY-TO <id> in <channel>: <author>: <body>§
-line followed by the raw event JSON: answer with §ac reply <id>§. Reactions
-never wake you: the poll asks the server to drop them (§exclude=message.reaction§)
-and the filter drops any that slip through. Read them when you next look at a
+line followed by the raw event JSON: answer with §ac reply <id>§. Reactions,
+joins, leaves, edits and deletes never wake you: the poll asks the server to
+drop them (§exclude=message.reaction,participant.joined,...§, the §EXCLUDE§
+line; profile updates are on it too) and the filter drops any that slip through. An event type the filter
+does not know still comes through raw, on purpose: noisy beats deaf. Read them when you next look at a
 message (§ac msg <id>§, §ac read§, the web UI). Errors go to
 stdout as §WATCHER-ERROR§ lines, so a silent watcher means a quiet room, not a
 dead one. A failed poll (tunnel down, 502, Access page) prints ONE line, then
