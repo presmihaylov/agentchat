@@ -170,54 +170,6 @@ import { emojify, searchEmoji, rememberEmoji, shortcodeOf } from './emoji.js';
     return wrap;
   };
 
-  // "Working on it" markers, keyed by message id. Seeded from each message's
-  // payload and kept live by message.working / message.working.cleared events.
-  const markerMap = {};
-
-  const markerLine = (mk) => {
-    const wrap = document.createElement('div');
-    wrap.className = 'msg-marker';
-    // prefer the live participant (owner badge, current avatar); fall back to the
-    // name/avatar the marker carried in case the agent is not in the local list
-    const p = participants.find((x) => x.id === mk.agent_id) || { name: mk.agent_name, avatar: mk.avatar };
-    wrap.appendChild(avatarEl(p, 'avatar-rb'));
-    const txt = document.createElement('span');
-    txt.className = 'mk-text';
-    const status = (mk.status || '').trim();
-    // words wrapped in .mk-shim so the shimmer sweep clips to text; the 🔧 stays
-    // outside the clip so it keeps its native color
-    txt.innerHTML = `🔧 <span class="mk-shim"><strong>${esc(mk.agent_name)}</strong> is working on this${status ? ` <span class="mk-status">— ${esc(status)}</span>` : ''}</span>`;
-    wrap.appendChild(txt);
-    return wrap;
-  };
-
-  const fillMarkerBox = (box, list) => {
-    box.innerHTML = '';
-    box.hidden = list.length === 0;
-    list.forEach((mk) => box.appendChild(markerLine(mk)));
-  };
-
-  // repaint every rendered copy of a message (feed + thread panel share the id)
-  const renderMarkers = (msgId) => {
-    const list = markerMap[msgId] || [];
-    document.querySelectorAll(`.msg[data-id="${msgId}"] .msg-markers`).forEach((box) => fillMarkerBox(box, list));
-  };
-
-  const upsertMarker = (mk) => {
-    const list = (markerMap[mk.message_id] = markerMap[mk.message_id] || []);
-    const i = list.findIndex((x) => x.agent_id === mk.agent_id);
-    if (i >= 0) list[i] = mk;
-    else list.push(mk);
-    renderMarkers(mk.message_id);
-  };
-
-  const removeMarker = (msgId, agentId) => {
-    const list = markerMap[msgId];
-    if (!list) return;
-    markerMap[msgId] = list.filter((x) => x.agent_id !== agentId);
-    renderMarkers(msgId);
-  };
-
   // Emoji reactions, keyed by message id. Seeded from each message's payload;
   // every message.reaction event carries the full list, so a repaint is a
   // straight replace and copies in the feed and thread panel never disagree.
@@ -424,16 +376,11 @@ import { emojify, searchEmoji, rememberEmoji, shortcodeOf } from './emoji.js';
           ${m.edited_at ? '<span class="edited"> (edited)</span>' : ''}
           ${m.is_broadcast ? ' 📣' : ''}</div>
         <div class="content">${renderMarkdown(m.body)}</div>
-        ${atts}<div class="msg-markers"></div><div class="msg-reactions"></div>${replyBar}
+        ${atts}<div class="msg-reactions"></div>${replyBar}
       </div>
       <div class="msg-actions">${actions.join('')}</div>`;
     el.querySelector('.avatar').appendChild(
       avatarEl(participants.find((x) => x.id === m.author_id), 'avatar-msg'));
-    // "working on it" markers sit under the whole message, attachments
-    // included, so an image never splits the text from its status line;
-    // live-updated via events
-    markerMap[m.id] = m.markers || [];
-    fillMarkerBox(el.querySelector('.msg-markers'), markerMap[m.id]);
     reactionMap[m.id] = m.reactions || [];
     const rxBox = el.querySelector('.msg-reactions');
     rxBox._msg = m; // the pills need the message to toggle against
@@ -1365,7 +1312,7 @@ import { emojify, searchEmoji, rememberEmoji, shortcodeOf } from './emoji.js';
       author_id: me.id, author_name: me.name,
       body, created_at: new Date().toISOString(),
       thread_root_id: rootID || null,
-      reply_count: 0, markers: [], reactions: [],
+      reply_count: 0, reactions: [],
       attachments: att ? [att] : [],
     };
     const el = msgEl(m, !!rootID);
@@ -1620,14 +1567,6 @@ import { emojify, searchEmoji, rememberEmoji, shortcodeOf } from './emoji.js';
         catch (e) { closeThread(); }
       }
       loadThreads();
-      return;
-    }
-    if (t === 'message.working') {
-      upsertMarker(ev.payload);
-      return;
-    }
-    if (t === 'message.working.cleared') {
-      removeMarker(ev.payload.message_id, ev.payload.agent_id);
       return;
     }
     if (t === 'message.reaction') {

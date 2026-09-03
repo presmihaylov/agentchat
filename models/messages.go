@@ -46,14 +46,6 @@ const messageColumns = `
 	           '[]'::json) AS mentions,
 	       COALESCE(
 	           (SELECT json_agg(json_build_object(
-	                'message_id', mm.message_id, 'agent_id', mm.agent_id,
-	                'agent_name', mkp.name, 'avatar', mkp.avatar,
-	                'status', mm.status, 'updated_at', mm.updated_at) ORDER BY mm.updated_at)
-	            FROM message_markers mm JOIN participants mkp ON mkp.id = mm.agent_id
-	            WHERE mm.message_id = m.id),
-	           '[]'::json) AS markers,
-	       COALESCE(
-	           (SELECT json_agg(json_build_object(
 	                'emoji', g.emoji, 'count', g.n,
 	                'participant_ids', g.ids, 'names', g.names) ORDER BY g.first_at)
 	            FROM (SELECT mr.emoji, count(*) AS n, min(mr.created_at) AS first_at,
@@ -71,10 +63,10 @@ const messageSelect = "SELECT" + messageColumns + messageFrom
 
 func scanMessage(row pgx.Row) (Message, error) {
 	var m Message
-	var attJSON, menJSON, repJSON, mkrJSON, rxnJSON []byte
+	var attJSON, menJSON, repJSON, rxnJSON []byte
 	err := row.Scan(&m.ID, &m.RoomID, &m.ChannelID, &m.ThreadRootID, &m.AuthorID, &m.AuthorName,
 		&m.Body, &m.IsBroadcast, &m.Kind, &m.CreatedAt, &m.EditedAt, &m.ReplyCount, &m.LastReplyAt,
-		&repJSON, &attJSON, &menJSON, &mkrJSON, &rxnJSON)
+		&repJSON, &attJSON, &menJSON, &rxnJSON)
 	if err != nil {
 		return m, err
 	}
@@ -88,9 +80,6 @@ func scanMessage(row pgx.Row) (Message, error) {
 		return m, err
 	}
 	m.ReplyToID = m.ReplyTo()
-	if err := json.Unmarshal(mkrJSON, &m.Markers); err != nil {
-		return m, err
-	}
 	if err := json.Unmarshal(rxnJSON, &m.Reactions); err != nil {
 		return m, err
 	}
@@ -207,39 +196,6 @@ func (s *Store) CreateMessage(ctx context.Context, p CreateMessageParams) (Messa
 			 WHERE root_id = $1 AND resolved_at IS NOT NULL`,
 			*p.ThreadRootID); err != nil {
 			return Message{}, err
-		}
-	}
-
-	// Auto-clear: posting into a thread clears the author's own "working on it"
-	// markers on that thread (root + replies), since the reply IS the answer.
-	if p.ThreadRootID != nil {
-		rows, err := tx.Query(ctx,
-			`DELETE FROM message_markers
-			 WHERE agent_id = $1
-			   AND message_id IN (SELECT id FROM messages WHERE id = $2 OR thread_root_id = $2)
-			 RETURNING message_id`,
-			p.AuthorID, *p.ThreadRootID)
-		if err != nil {
-			return Message{}, err
-		}
-		var cleared []string
-		for rows.Next() {
-			var mid string
-			if err := rows.Scan(&mid); err != nil {
-				rows.Close()
-				return Message{}, err
-			}
-			cleared = append(cleared, mid)
-		}
-		rows.Close()
-		if err := rows.Err(); err != nil {
-			return Message{}, err
-		}
-		for _, mid := range cleared {
-			cp, _ := json.Marshal(map[string]string{"message_id": mid, "agent_id": p.AuthorID})
-			if err := appendEventTx(ctx, tx, p.RoomID, "message.working.cleared", cp); err != nil {
-				return Message{}, err
-			}
 		}
 	}
 

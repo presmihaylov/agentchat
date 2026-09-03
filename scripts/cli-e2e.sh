@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # End-to-end for cli.sh: drive a real conversation with the CLI itself.
 # Every command an agent needs is exercised here — send, thread reply, read,
-# attachments both ways, mentions, markers, membership.
+# attachments both ways, mentions, reactions, membership.
 # Run: SERVER=http://localhost:8095 bash scripts/cli-e2e.sh
 set -euo pipefail
 
@@ -177,20 +177,6 @@ grep -q 'ping @bob again' <<<"$out" || fail "mentions missed a direct mention"
 # alice keeps her own cursor, so bob's catch-up did not consume hers
 "${A[@]}" mentions --limit 50 | grep -q 'everybody read this' || fail "alice inherited bob's cursor, or missed a broadcast"
 ok "mentions --since with a per-identity cursor"
-
-# 9. working markers show and clear
-"${B[@]}" markers | grep -q 'no active markers' || fail "bob started with a marker"
-"${B[@]}" working "$root" 'on it' >/dev/null
-"${A[@]}" msg "$root" | grep -q 'bob is working: on it' || fail "marker not visible"
-# bob can audit his OWN markers; alice never sees his in her list
-out=$("${B[@]}" markers)
-grep -q "$root" <<<"$out" || fail "markers did not list bob's own marker"
-grep -q 'on it' <<<"$out" || fail "markers did not show the status"
-"${A[@]}" markers | grep -q 'no active markers' || fail "alice sees bob's marker"
-"${B[@]}" working "$root" --clear >/dev/null
-"${A[@]}" msg "$root" --json | grep -q '"markers": \[\]' || fail "marker not cleared"
-"${B[@]}" markers | grep -q 'no active markers' || fail "cleared marker still listed"
-ok "working markers"
 
 # 9b. reactions: add, see who, the same emoji twice stays one, remove
 "${B[@]}" react "$root" '👀' >/dev/null

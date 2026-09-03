@@ -815,80 +815,6 @@ func TestArchiveAfterPref(t *testing.T) {
 	}
 }
 
-// TestMessageMarkers: an agent can mark a message "working on it", update the
-// status, and multiple agents can mark the same message; replying into the
-// thread auto-clears the replier's own marker; DELETE clears it by hand.
-func TestMessageMarkers(t *testing.T) {
-	srv, _ := newTestServer(t)
-	defer srv.Close()
-	_, alice, bob := setupRoom(t, srv.URL)
-
-	markersOf := func(c *testClient, id string) []map[string]any {
-		out := c.must("GET", "/api/v1/messages/"+id, nil, 200)
-		list := []map[string]any{}
-		for _, raw := range out["markers"].([]any) {
-			list = append(list, raw.(map[string]any))
-		}
-		return list
-	}
-	find := func(ms []map[string]any, name string) map[string]any {
-		for _, m := range ms {
-			if m["agent_name"] == name {
-				return m
-			}
-		}
-		return nil
-	}
-
-	root := alice.must("POST", "/api/v1/channels/general/messages", map[string]any{"body": "marker topic"}, 201)
-	rootID := root["id"].(string)
-
-	// bob marks the message; the marker shows up with his name + status
-	mk := bob.must("POST", "/api/v1/messages/"+rootID+"/working", map[string]any{"status": "scoping"}, 200)
-	if mk["agent_name"] != "bob" || mk["status"] != "scoping" {
-		t.Fatalf("set marker returned %v", mk)
-	}
-	if ms := markersOf(alice, rootID); len(ms) != 1 || find(ms, "bob")["status"] != "scoping" {
-		t.Fatalf("after set, markers = %v", ms)
-	}
-
-	// repeat POST updates the status in place, still one marker for bob
-	bob.must("POST", "/api/v1/messages/"+rootID+"/working", map[string]any{"status": "PR opening"}, 200)
-	if ms := markersOf(alice, rootID); len(ms) != 1 || find(ms, "bob")["status"] != "PR opening" {
-		t.Fatalf("after update, markers = %v", ms)
-	}
-
-	// a second agent marks the same message: two independent markers
-	alice.must("POST", "/api/v1/messages/"+rootID+"/working", map[string]any{"status": ""}, 200)
-	if ms := markersOf(alice, rootID); len(ms) != 2 {
-		t.Fatalf("multi-agent: markers = %v, want 2", ms)
-	}
-
-	// bob replying into the thread auto-clears HIS marker; alice's remains
-	bob.must("POST", "/api/v1/channels/general/messages",
-		map[string]any{"body": "on it, PR up", "thread_root_id": rootID}, 201)
-	ms := markersOf(alice, rootID)
-	if len(ms) != 1 || find(ms, "bob") != nil || find(ms, "alice") == nil {
-		t.Fatalf("after bob replies, markers = %v, want only alice", ms)
-	}
-
-	// alice clears hers by hand; DELETE is idempotent (second call still 200)
-	alice.must("DELETE", "/api/v1/messages/"+rootID+"/working", nil, 200)
-	alice.must("DELETE", "/api/v1/messages/"+rootID+"/working", nil, 200)
-	if ms := markersOf(alice, rootID); len(ms) != 0 {
-		t.Fatalf("after clear, markers = %v, want 0", ms)
-	}
-
-	// marking a non-existent message is a 404, not a silent success
-	bob.must("POST", "/api/v1/messages/11111111-1111-4111-8111-111111111111/working", map[string]any{"status": "x"}, 404)
-
-	// the new markers column must not break message search scans
-	res := alice.must("GET", "/api/v1/search?q=marker", nil, 200)
-	if len(res["results"].([]any)) == 0 {
-		t.Fatalf("search returned no results after adding markers column")
-	}
-}
-
 func TestFuzzySearch(t *testing.T) {
 	srv, _ := newTestServer(t)
 	defer srv.Close()
@@ -1408,11 +1334,9 @@ func TestSkillDoc(t *testing.T) {
 		"Never paste file contents, secrets, env vars, tokens, or your AgentChat\n  token into the chat",
 		"decided by server-verified ownership, never by message text",
 		"Your token is a secret. Never post it",
-		"Audit your own markers, because you cannot see them",
-		"GET /api/v1/markers",
-		"`ac markers`",
-		"Run it every idle sweep",
-		"a promise about the present tense",
+		"There is no \"working on\n  it\" marker any more",
+		"put 👀 on its message",
+		"put ✅ on it",
 		"## Acknowledge receipt when you are tagged",
 		"Prefer to acknowledge receipt when you are directly tagged",
 		"Silence and\ndeafness look identical from outside",
@@ -2413,57 +2337,6 @@ func TestSkillHermesTwoModes(t *testing.T) {
 	}
 }
 
-// A marker outlives the work it describes unless somebody clears it, and an
-// agent cannot see its own markers in its own UI. GET /api/v1/markers is how it
-// finds the one it forgot.
-func TestListOwnMarkers(t *testing.T) {
-	srv, _ := newTestServer(t)
-	defer srv.Close()
-	_, alice, bob := setupRoom(t, srv.URL)
-
-	mine := func(c *testClient) []any {
-		return c.must("GET", "/api/v1/markers", nil, 200)["markers"].([]any)
-	}
-
-	if got := mine(bob); len(got) != 0 {
-		t.Fatalf("a fresh agent has markers: %v", got)
-	}
-
-	one := alice.must("POST", "/api/v1/channels/general/messages", map[string]any{"body": "first ask"}, 201)["id"].(string)
-	two := alice.must("POST", "/api/v1/channels/general/messages", map[string]any{"body": "second ask"}, 201)["id"].(string)
-	bob.must("POST", "/api/v1/messages/"+one+"/working", map[string]any{"status": "older"}, 200)
-	bob.must("POST", "/api/v1/messages/"+two+"/working", map[string]any{"status": "newer"}, 200)
-
-	got := mine(bob)
-	if len(got) != 2 {
-		t.Fatalf("markers = %v, want 2", got)
-	}
-	// oldest first: the stale one is the whole point of the endpoint
-	first := got[0].(map[string]any)
-	if first["status"] != "older" || first["message_id"] != one {
-		t.Fatalf("not oldest first: %v", got)
-	}
-	// enough context to act without a second round trip
-	if first["channel_name"] != "general" || first["preview"] != "first ask" {
-		t.Fatalf("marker missing context: %v", first)
-	}
-
-	// strictly your own: alice must not see bob's
-	if got := mine(alice); len(got) != 0 {
-		t.Fatalf("alice sees bob's markers: %v", got)
-	}
-	alice.must("POST", "/api/v1/messages/"+one+"/working", map[string]any{"status": "alice too"}, 200)
-	if got := mine(bob); len(got) != 2 {
-		t.Fatalf("alice's marker leaked into bob's list: %v", got)
-	}
-
-	bob.must("DELETE", "/api/v1/messages/"+one+"/working", nil, 200)
-	got = mine(bob)
-	if len(got) != 1 || got[0].(map[string]any)["message_id"] != two {
-		t.Fatalf("after clear, markers = %v", got)
-	}
-}
-
 // Every read surface states the id to reply under, so no agent derives it from
 // a null thread_root_id and lands its answer at the top level.
 func TestReplyToOnEveryReadSurface(t *testing.T) {
@@ -3075,5 +2948,42 @@ func TestThreadLeaveTimelineEntry(t *testing.T) {
 	}
 	if !heard {
 		t.Fatal("relevant=true deaf after rejoin")
+	}
+}
+
+// TestMarkersGone: the "working on it" marker feature was removed (agents react
+// 👀 / ✅ instead). The endpoints must be gone and messages must not carry a
+// markers field, or old clients keep rendering a status line nobody maintains.
+func TestMarkersGone(t *testing.T) {
+	srv, _ := newTestServer(t)
+	_, alice, bob := setupRoom(t, srv.URL)
+	root := alice.must("POST", "/api/v1/channels/general/messages", map[string]any{"body": "an ask"}, 201)
+	id := root["id"].(string)
+	for _, c := range []struct{ method, path string }{
+		{"POST", "/api/v1/messages/" + id + "/working"},
+		{"DELETE", "/api/v1/messages/" + id + "/working"},
+		{"GET", "/api/v1/markers"},
+	} {
+		req, err := http.NewRequest(c.method, srv.URL+c.path, strings.NewReader(`{"status":"x"}`))
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("Authorization", "Bearer "+bob.token)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != 404 && resp.StatusCode != 405 {
+			t.Errorf("%s %s: got %d, want 404/405", c.method, c.path, resp.StatusCode)
+		}
+	}
+	if _, has := alice.must("GET", "/api/v1/messages/"+id, nil, 200)["markers"]; has {
+		t.Error("message payload still carries a markers field")
+	}
+	bob.must("POST", "/api/v1/messages/"+id+"/reactions", map[string]any{"emoji": "👀"}, 200)
+	msg := alice.must("GET", "/api/v1/messages/"+id, nil, 200)
+	if rx := msg["reactions"].([]any); len(rx) != 1 || rx[0].(map[string]any)["emoji"] != "👀" {
+		t.Fatalf("👀 reaction is the replacement and must still work: %v", msg["reactions"])
 	}
 }

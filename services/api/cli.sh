@@ -8,7 +8,7 @@
 # thread, whether the id is the root or any reply inside it.
 set -euo pipefail
 
-VERSION="1.3.1"
+VERSION="1.4.0"
 DEFAULT_SERVER="{{SERVER}}"
 # Cloudflare Access service token, baked in by the server when the room sits
 # behind a Cloudflare tunnel. Empty otherwise. The env file can override both.
@@ -39,13 +39,11 @@ READ
   whoami                         your identity in this room
 
 DO
-  working <message-id> <status>  show "working on it" on a task (--clear to stop)
   react <message-id> <emoji>     add an emoji reaction (👀 or :eyes:); repeat is a no-op
   unreact <message-id> <emoji>   take your reaction off again
   leave <message-id>             done with that thread: untagged replies stop waking
                                  you (a direct @mention or your own reply rejoins)
   rejoin <message-id>            hear that thread's untagged replies again
-  markers                        YOUR still-active markers, oldest first
   download <message-id>          save that message's attachments
   join <channel>                 join a public channel
 
@@ -216,8 +214,6 @@ for m in msgs:
     if m.get("is_broadcast"): tags.append("BROADCAST")
     for a in m.get("attachments") or []:
         tags.append("attachment: %s" % a.get("filename"))
-    for k in m.get("markers") or []:
-        tags.append("%s is working: %s" % (k.get("agent_name"), k.get("status") or "…"))
     for r in m.get("reactions") or []:
         tags.append("%s %s" % (r.get("emoji"), ", ".join(r.get("names") or [])))
     head = "%s  %s  [%s]" % (when, m.get("author_name", "?"), m.get("id", ""))
@@ -521,31 +517,6 @@ print("cursor: %s" % d.get("cursor"))
 '
 }
 
-# A marker outlives the work unless you clear it, and you cannot see your own in
-# your own UI. This is the check that catches the one you forgot.
-cmd_markers() {
-  api GET /api/v1/markers
-  if [ "$JSON" = "1" ]; then json_pretty "$RESP"; return; fi
-  printf '%s' "$RESP" | python3 -c '
-import sys, json, datetime
-d = json.load(sys.stdin)
-ms = d.get("markers") or []
-if not ms:
-    print("no active markers")
-    raise SystemExit
-now = datetime.datetime.now(datetime.timezone.utc)
-for m in ms:
-    t = datetime.datetime.fromisoformat(m["updated_at"].replace("Z", "+00:00"))
-    mins = int((now - t).total_seconds() // 60)
-    age = "%dm" % mins if mins < 90 else "%.1fh" % (mins / 60.0)
-    print("%-7s #%-14s %s" % (age, m.get("channel_name", "?"), m["message_id"]))
-    print("    status:  %s" % m.get("status", ""))
-    print("    on:      %s" % " ".join((m.get("preview") or "").split())[:100])
-print()
-print("clear one with: cli.sh working <message-id> --clear")
-'
-}
-
 cmd_channels() {
   api GET /api/v1/channels
   if [ "$JSON" = "1" ]; then json_pretty "$RESP"; return; fi
@@ -568,18 +539,6 @@ cmd_whoami() {
   api GET /api/v1/me
   if [ "$JSON" = "1" ]; then json_pretty "$RESP"; return; fi
   json_str "$RESP" '"%s (%s, %s)" % (d["name"], "human" if d["is_human"] else "agent", d["role"])'
-}
-
-cmd_working() {
-  [ $# -ge 1 ] || die "usage: cli.sh working <message-id> <status>   (or --clear)"
-  if [ "$CLEAR" = "1" ]; then
-    api DELETE "/api/v1/messages/$1/working"
-    printf 'marker cleared\n'
-    return
-  fi
-  [ $# -ge 2 ] || die "usage: cli.sh working <message-id> <status>"
-  api POST "/api/v1/messages/$1/working" "$(STATUS="$2" python3 -c 'import json,os;print(json.dumps({"status":os.environ["STATUS"]}))')"
-  printf 'working on %s: %s\n' "$1" "$2"
 }
 
 cmd_react() {
@@ -631,7 +590,7 @@ cmd_join() {
 
 # ---------- flags ----------
 
-JSON=0; LIMIT=30; SINCE=""; WAIT=0; ORDER="oldest"; OUT="."; CHANNEL=""; CLEAR=0; FORCE_MENTIONS=0
+JSON=0; LIMIT=30; SINCE=""; WAIT=0; ORDER="oldest"; OUT="."; CHANNEL=""; FORCE_MENTIONS=0
 NEW_TOPIC=0; LATEST=""
 ENV_FILE=""; SERVER_FLAG=""; ATTACH=()
 ARGS=()
@@ -647,7 +606,6 @@ while [ $# -gt 0 ]; do
     --attach) ATTACH+=("${2:?--attach needs a file}"); shift ;;
     --out) OUT="${2:?--out needs a directory}"; shift ;;
     --channel) CHANNEL="${2:?--channel needs a name or id}"; shift ;;
-    --clear) CLEAR=1 ;;
     --force-mentions) FORCE_MENTIONS=1 ;;
     --new-topic) NEW_TOPIC=1 ;;
     --latest) LATEST="${2:?--latest needs a channel}"; shift ;;
@@ -676,11 +634,9 @@ case "$cmd" in
   thread) cmd_thread "$@" ;;
   msg) cmd_msg "$@" ;;
   mentions) cmd_mentions "$@" ;;
-  markers) cmd_markers "$@" ;;
   channels) cmd_channels "$@" ;;
   members) cmd_members "$@" ;;
   whoami) cmd_whoami "$@" ;;
-  working) cmd_working "$@" ;;
   react) cmd_react "$@" ;;
   unreact) cmd_unreact "$@" ;;
   leave) cmd_leave "$@" ;;

@@ -143,10 +143,10 @@ func collectSearchResults(rows pgx.Rows) ([]SearchResult, error) {
 func scanSearchResult(rows pgx.Rows) (SearchResult, error) {
 	var r SearchResult
 	// same order as scanMessage plus trailing score
-	var attJSON, menJSON, repJSON, mkrJSON, rxnJSON []byte
+	var attJSON, menJSON, repJSON, rxnJSON []byte
 	err := rows.Scan(&r.ID, &r.RoomID, &r.ChannelID, &r.ThreadRootID, &r.AuthorID, &r.AuthorName,
 		&r.Body, &r.IsBroadcast, &r.Kind, &r.CreatedAt, &r.EditedAt, &r.ReplyCount, &r.LastReplyAt,
-		&repJSON, &attJSON, &menJSON, &mkrJSON, &rxnJSON, &r.Score)
+		&repJSON, &attJSON, &menJSON, &rxnJSON, &r.Score)
 	if err != nil {
 		return r, err
 	}
@@ -160,8 +160,5 @@ func scanSearchResult(rows pgx.Rows) (SearchResult, error) {
 		return r, err
 	}
 	r.ReplyToID = r.ReplyTo()
-	if err := json.Unmarshal(mkrJSON, &r.Markers); err != nil {
-		return r, err
-	}
 	return r, json.Unmarshal(rxnJSON, &r.Reactions)
 }

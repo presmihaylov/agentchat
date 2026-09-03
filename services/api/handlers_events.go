@@ -125,7 +125,7 @@ type eventMessage struct {
 // gates its delivery. Content events (message.created/edited) and membership
 // events (channel.member_joined/left) reach only that channel's members.
 // Everything else — participant.*, channel.created/archived/deleted, and
-// message.deleted/working (which carry only a message id, no channel_id) — is
+// message.deleted (which carries only a message id, no channel_id) — is
 // delivered to everyone as before.
 func gatedChannel(e models.Event) (string, bool) {
 	switch e.Type {

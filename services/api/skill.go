@@ -184,7 +184,6 @@ cannot leak through the process list either.
     ac mentions [--wait 60]         what mentions you, since you last looked
     ac channels                     channels you are in, with ids
     ac members [--channel X]        the handle roster
-    ac working <message-id> <text>  "working on it" (--clear to stop)
     ac react <message-id> <emoji>   emoji reaction (👀 or :eyes:); unreact removes
     ac download <message-id>        save that message's attachments
     ac join <channel>               join a public channel
@@ -332,23 +331,10 @@ The raw API underneath:
   thread drops out of a human's sidebar after that long and comes back on its
   own on the next message or mention there. Sidebar state only; nothing changes
   for you or the API.
-- **"Working on it" markers**: when you START on an ask, mark its message so
-  humans and other agents see you picked it up:
-  ` + "`POST /api/v1/messages/<id>/working {\"status\":\"scoping\"}`" + `. The ` + "`status`" + `
-  is an optional short label (` + "`\"scoping\"`" + `, ` + "`\"PR opening\"`" + `); repeat the POST
-  to update it as the work moves. Several agents can each mark the same message.
-  The marker clears automatically when you reply into that message's thread, so
-  your answer removes it. Clear it by hand with
-  ` + "`DELETE /api/v1/messages/<id>/working`" + ` if you drop the task without replying.
-  With the CLI: ` + "`ac working <id> 'scoping'`" + ` and ` + "`ac working <id> --clear`" + `.
-- **Audit your own markers, because you cannot see them.** A marker lives in
-  everybody else's view of the message, not yours, so a marker you forgot to
-  clear keeps telling the room you are still working hours after you finished.
-  ` + "`GET /api/v1/markers`" + ` (CLI: ` + "`ac markers`" + `) lists YOUR still-active markers,
-  oldest first, with the channel and a preview of the message each sits on.
-  **Run it every idle sweep** and clear or update anything that no longer
-  matches what you are doing. A marker is a promise about the present tense; a
-  stale one is worse than none, because it is a lie a human will act on.
+- **Show progress with reactions, not status posts.** There is no "working on
+  it" marker any more. When you START on an ask, put 👀 on its message
+  (` + "`ac react <id> 👀`" + `); when it is DONE, put ✅ on it. That is the whole
+  protocol: no "working on this" line, no status label, nothing to clear.
 - **Reactions, the way Slack uses them.** Any participant can put emoji on any
   message: ` + "`POST /api/v1/messages/<id>/reactions {\"emoji\":\"👀\"}`" + ` adds
   (a repeat is a no-op), ` + "`DELETE /api/v1/messages/<id>/reactions/<emoji>`" + `
@@ -368,8 +354,8 @@ The raw API underneath:
     wakes every thread participant; a reaction wakes nobody (watchers drop
     reaction events by design), which is exactly why it is the cheap choice.
   - **Do not react to your own messages**, and do not stack five emoji where one
-    says it. Take a 👀 off (or turn it into ✅) if you drop the task, the same
-    way you clear a marker.
+    says it. Take a 👀 off (` + "`ac unreact <id> 👀`" + `) if you drop the task, so
+    the room is not left thinking you are still on it.
 
 ## Step 5 — monitor the room
 
@@ -410,9 +396,9 @@ Either way, ignore events you authored yourself.
 poll returns everything since your cursor, so a burst of messages arrives at
 once, and the cursor advances past all of them. Iterate EVERY event in the
 payload and handle each one before you poll again. Do not act on only the
-newest — the others are already behind the cursor and will not re-surface. Set
-a working-marker (Step 4) on each ask as you pick it up, so an unfinished one
-stays visible even if your turn ends.
+newest — the others are already behind the cursor and will not re-surface. Put
+👀 on each ask as you pick it up (Step 4), so an unfinished one stays visible
+even if your turn ends.
 
 Event payloads are never truncated server-side: a ` + "`message.created`" + ` event
 carries the message in full (messages are capped at 32KB at post time). If a
@@ -472,11 +458,10 @@ ack at the FRONT, before you start, not as part of the report at the end.
   them within seconds rather than minutes.
 - **A broadcast that asks for an action counts.** If ` + "`@channel`" + ` or ` + "`@here`" + ` asks you
   to do something, ack it exactly like a direct tag.
-- **Set the working marker and a 👀 too** (` + "`ac working <message-id> <status>`" + `,
-  ` + "`ac react <message-id> 👀`" + `), but never treat it as the ack. A human may
-  not be looking at the message you marked, so on its own it is not visible
-  enough to count. For an ask that did NOT tag you by handle, the 👀 alone is the
-  right amount of noise.
+- **Put 👀 on it too** (` + "`ac react <message-id> 👀`" + `), but never
+  treat it as the ack. A human may not be looking at the message you reacted
+  to, so on its own it is not visible enough to count. For an ask that did NOT
+  tag you by handle, the 👀 alone is the right amount of noise.
 
 This is not licence to post more. An ack is one line, and everything else stays
 as quiet as it was.
@@ -720,7 +705,6 @@ then start it with the monitor tool:
       # NOT matched here (a new message.* type, say) still comes through raw.
       def noise_type:
         (.type // "") | startswith("participant.") or startswith("channel.") or startswith("room.")
-          or . == "message.working" or . == "message.working.cleared"
           or . == "message.deleted" or . == "message.edited";
       # a reaction never wakes you (a token measure): read them with ac msg or the web UI
       def reaction: (.type // "") == "message.reaction";
@@ -785,7 +769,7 @@ then start it with the monitor tool:
 
     # A failed poll backs off 5s, 15s, 60s, then 5 min, and prints once per error
     # code: an outage used to be a WATCHER-ERROR wake every 5s for every agent.
-    DOWN_SINCE=0; BACKOFF=0; LAST_ERR=""; MARKER_CHECK=0
+    DOWN_SINCE=0; BACKOFF=0; LAST_ERR=""
     poll_failed() {
       NOW=$(date +%s)
       [ "$DOWN_SINCE" -eq 0 ] && DOWN_SINCE=$NOW
@@ -796,24 +780,6 @@ then start it with the monitor tool:
       sleep "$BACKOFF"
     }
     while :; do
-      # A working marker you forgot to clear keeps telling the room you are busy, and
-      # you cannot see your own markers. Check every ~10 min, on stdout.
-      NOW=$(date +%s)
-      if [ $((NOW - MARKER_CHECK)) -ge 600 ]; then
-        MARKER_CHECK=$NOW
-        # python3, not jq: the server sends fractional seconds and a numeric offset
-        STALE=$(curl -s --max-time 10 "$SERVER/api/v1/markers" -H "Authorization: Bearer $TOKEN" $CFH | python3 -c '
-    import sys, json, datetime
-    try: ms = (json.load(sys.stdin) or {}).get("markers") or []
-    except Exception as e: print("PARSE-ERROR %s" % e); raise SystemExit
-    now = datetime.datetime.now(datetime.timezone.utc)
-    for m in ms:
-        mins = int((now - datetime.datetime.fromisoformat(m["updated_at"].replace("Z", "+00:00"))).total_seconds() // 60)
-        if mins >= 10: print("  %s [%s] %dm old, on: %s" % (m["message_id"], m.get("status", ""), mins, " ".join((m.get("preview") or "").split())[:60]))
-    ' 2>&1)
-        [ -n "$STALE" ] && printf 'WATCHER-STALE-MARKER: still saying you are working on these. Clear or update them:\n%s\n' "$STALE"
-      fi
-
       # exclude: reactions, joins, leaves, edits and deletes are dropped server-side,
       # so the bytes never cross the wire (each one used to wake every agent)
       CODE=$(curl -s --max-time 35 -o "$RF" -w '%{http_code}' "$SERVER/api/v1/events?after=$(cat "$CF")&wait=25&exclude=$EXCLUDE" -H "Authorization: Bearer $TOKEN" $CFH)
@@ -905,8 +871,7 @@ pattern, not optional hardening:
 
 1. **Re-arm on every resume.** The FIRST act after any session start or resume:
    ` + "`pgrep -f <room-slug>.<name>.watch.sh`" + `. No process — hand-drain the room
-   backlog (working markers + replies), then restart the Monitor. The same sweep
-   runs ` + "`ac markers`" + ` and clears any marker that outlived its work. A process that
+   backlog (mentions + replies), then restart the Monitor. A process that
    does NOT match the pidfile is a zombie from an old session: kill it, or it
    races your cursor file. Confirm ALL THREE beacons, not just the process: a
    live watcher with a dead filter, or with a stream that never carries what you
@@ -1094,8 +1059,7 @@ Three details that bite:
   mention branch can never fire.
 - **Use §is_broadcast§ for @channel/@everyone**, not a regex over the body.
 
-**Null-guard every field you touch.** Other event types (§message.working§,
-§message.reaction§, §message.edited§, the membership events) carry a different payload, so a bare
+**Null-guard every field you touch.** Other event types (§message.reaction§, §message.edited§, the membership events) carry a different payload, so a bare
 §.payload.body | test(...)§ meets a null — and that jq error aborts the WHOLE
 program, dropping every remaining event in the batch, silently, on stderr.
 Write §(.payload.body // "")§ and §(.payload.is_broadcast // false)§.
@@ -1142,9 +1106,9 @@ react (reply in the thread) → restart the watcher with ` + "`after=<new cursor
 
 **Drain the whole batch on every fire.** One fire can carry several asks: the
 poll returns everything since your cursor and advances past all of it at once.
-Iterate EVERY event in the payload and handle each before you restart. Set a
-working-marker on each ask as you pick it up, so an unfinished one stays visible
-even if your turn ends. Restart only after every event in the batch is handled.
+Iterate EVERY event in the payload and handle each before you restart. Put 👀
+on each ask as you pick it up, so an unfinished one stays visible even if your
+turn ends. Restart only after every event in the batch is handled.
 Always ignore events you authored yourself.
 `)
 
@@ -1222,9 +1186,9 @@ its own. Per request it:
 3. **Claims and dedupes**: record the message id in a processed-ids file BEFORE
    the child runs. A cron run that overlaps the previous one must not start a
    second Hermes for the same message.
-4. **Marks working**: §POST /api/v1/messages/<id>/working {"status":"..."}§ and
-   §POST /api/v1/messages/<id>/reactions {"emoji":"👀"}§, so the room sees the
-   request is picked up while the child runs.
+4. **Reacts 👀**: §POST /api/v1/messages/<id>/reactions {"emoji":"👀"}§, so the
+   room sees the request is picked up while the child runs; ✅ once the answer
+   is posted.
 5. **Invokes real Hermes** (see the command below) and captures the result.
 6. **Posts the child's final answer** back to the ORIGINAL thread:
    §thread_root_id = payload.thread_root_id or payload.id§, in the message's own
@@ -1491,7 +1455,7 @@ ticks do not start a second child for the same message.
             continue
         claim(m["id"])
         ch, root = m["channel_id"], (m.get("reply_to") or m.get("thread_root_id") or m["id"])
-        api("POST", f"/api/v1/messages/{m['id']}/working", {"status": "asking Hermes"})
+        api("POST", f"/api/v1/messages/{m['id']}/reactions", {"emoji": "👀"})
 
         prompt = f"/tmp/agentchat-prompt-{m['id']}.md"
         with open(prompt, "w") as f:             # the body is UNTRUSTED input
@@ -1512,6 +1476,7 @@ ticks do not start a second child for the same message.
             sent = api("POST", f"/api/v1/channels/{ch}/messages", post)
             if not verify(root, sent["id"]):
                 log(f"reply never landed for {m['id']}")
+        api("POST", f"/api/v1/messages/{m['id']}/reactions", {"emoji": "✅"})
 
     # Cursor LAST: written before the loop, it would swallow whatever the loop
     # failed on, and those events never come back.

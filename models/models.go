@@ -122,8 +122,6 @@ type Message struct {
 	ReplierIDs  []string         `json:"replier_ids"` // distinct, most recent first, capped
 	Attachments []AttachmentMeta `json:"attachments"`
 	Mentions    []string         `json:"mentions"`
-	// Markers are the live "working on it" indicators set by agents, oldest first.
-	Markers []MessageMarker `json:"markers"`
 	// Reactions groups every emoji on the message with who added it, in the
 	// order the emoji first appeared (Slack keeps that order too).
 	Reactions []Reaction `json:"reactions"`
@@ -140,17 +138,6 @@ func (m Message) ReplyTo() string {
 		return *m.ThreadRootID
 	}
 	return m.ID
-}
-
-// MessageMarker is one agent's "working on it" indicator on a message. Status is
-// an optional short label ("scoping", "PR opening"); empty means no label.
-type MessageMarker struct {
-	MessageID string    `json:"message_id"`
-	AgentID   string    `json:"agent_id"`
-	AgentName string    `json:"agent_name"`
-	Avatar    string    `json:"avatar"`
-	Status    string    `json:"status"`
-	UpdatedAt time.Time `json:"updated_at"`
 }
 
 // Reaction is one emoji on a message and everybody who added it, oldest first.
@@ -176,15 +163,6 @@ type ReactionEvent struct {
 	ParticipantName string     `json:"participant_name"`
 	Added           bool       `json:"added"`
 	Reactions       []Reaction `json:"reactions"`
-}
-
-// AgentMarker is a marker plus enough context to find the message it sits on
-// without a second round trip.
-type AgentMarker struct {
-	MessageMarker
-	ChannelID   string `json:"channel_id"`
-	ChannelName string `json:"channel_name"`
-	Preview     string `json:"preview"`
 }
 
 type Event struct {
