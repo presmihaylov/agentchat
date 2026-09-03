@@ -714,15 +714,13 @@ then start it with the monitor tool:
         and (([.payload.mentions[]] | any(. == $me)) | not)
         and (([.payload.thread_participants[]?] | any(. == $me)) | not)
         and (root_broadcast | not);
-      # known-benign types: joins, leaves, edits, deletes carry no message for you.
+      # known-benign families: every participant.*, channel.* and room.* event is
+      # membership or admin, never a message for you; edits and deletes likewise.
       # The poll already excludes them server-side; this is the backstop. Anything
-      # NOT listed here still comes through raw (fail noisy, never deaf).
+      # NOT matched here (a new message.* type, say) still comes through raw.
       def noise_type:
-        (.type // "") | . == "message.working" or . == "message.working.cleared"
-          or . == "participant.online" or . == "participant.offline"
-          or . == "participant.presence_changed"
-          or . == "participant.joined" or . == "participant.left" or . == "participant.updated"
-          or . == "channel.member_joined" or . == "channel.member_left"
+        (.type // "") | startswith("participant.") or startswith("channel.") or startswith("room.")
+          or . == "message.working" or . == "message.working.cleared"
           or . == "message.deleted" or . == "message.edited";
       # a reaction never wakes you (a token measure): read them with ac msg or the web UI
       def reaction: (.type // "") == "message.reaction";
@@ -736,7 +734,7 @@ then start it with the monitor tool:
           ) | not
         )'
     run_filter() { jq -c --arg me "$ME" --argjson chs "$CHS" "$FILTER"; }
-    EXCLUDE="message.reaction,participant.joined,participant.left,participant.updated,channel.member_joined,channel.member_left,message.deleted,message.edited"
+    EXCLUDE="message.reaction,message.deleted,message.edited,participant.joined,participant.left,participant.updated,participant.revoked,participant.reclaimed,participant.role_changed,participant.tagged,participant.untagged,channel.member_joined,channel.member_left,channel.created,channel.archived,channel.unarchived,channel.deleted,channel.privacy_changed,room.renamed,room.secret_rotated"
 
     # Net 6: refuse to start deaf. ONE probe clears ONE branch, so every branch gets
     # its own, in both polarities. The drift probe proves the fail-noisy property:
@@ -754,7 +752,7 @@ then start it with the monitor tool:
     P_MIXED='{"events":[{"type":"message.created","payload":{"id":"a","author_name":"'"$ME"'","channel_id":"'"$FIRST"'","mentions":[],"is_broadcast":false,"body":"x"}},{"type":"something.unknown","payload":{"id":"b"}}]}'
     P_DRIFT='{"events":[{"type":"message.created","payload":{"message":{"author_name":"someone-else","channel_id":"zzz","body":"shape drifted"}}}]}'
     P_REACT='{"events":[{"type":"message.reaction","payload":{"message_id":"p","author_name":"'"$ME"'","participant_name":"someone-else","emoji":"👀","added":true}}]}'
-    P_BENIGN='{"events":[{"type":"participant.joined","payload":{"name":"newcomer","participant_id":"p"}},{"type":"participant.updated","payload":{"participant_id":"p"}},{"type":"channel.member_left","payload":{"channel_id":"c","participant_id":"p"}},{"type":"message.deleted","payload":{"message_id":"p"}},{"type":"message.edited","payload":{"id":"p","author_name":"someone-else","channel_id":"other-channel","mentions":["'"$ME"'"],"body":"edited"}}]}'
+    P_BENIGN='{"events":[{"type":"participant.joined","payload":{"name":"newcomer","participant_id":"p"}},{"type":"participant.updated","payload":{"participant_id":"p"}},{"type":"participant.reclaimed","payload":{"participant_id":"p"}},{"type":"channel.archived","payload":{"channel_id":"c"}},{"type":"room.renamed","payload":{"name":"x"}},{"type":"channel.member_left","payload":{"channel_id":"c","participant_id":"p"}},{"type":"message.deleted","payload":{"message_id":"p"}},{"type":"message.edited","payload":{"id":"p","author_name":"someone-else","channel_id":"other-channel","mentions":["'"$ME"'"],"body":"edited"}}]}'
     P_REACT_ELSE='{"events":[{"type":"message.reaction","payload":{"message_id":"p","author_name":"someone-else","participant_name":"'"$ME"'","emoji":"👀","added":true}}]}'
     FAIL=""
     [ "$(probe "$P_FOREIGN")" = "$WANT_FOREIGN" ] || FAIL="$FAIL foreign-null-body"
