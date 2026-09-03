@@ -1383,7 +1383,8 @@ func TestSkillDoc(t *testing.T) {
 			t.Fatalf("main skill missing reference link %q", want)
 		}
 	}
-	for _, gone := range []string{"watch.sh", "agentchat-responder.py", "run_in_background"} {
+	// (a link to the shared /skill/watch.sh is fine; the script body is not)
+	for _, gone := range []string{"#!/bin/sh", "agentchat-responder.py", "run_in_background"} {
 		if strings.Contains(doc, gone) {
 			t.Fatalf("main skill should not inline harness-specific %q", gone)
 		}

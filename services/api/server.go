@@ -92,6 +92,12 @@ func (s *Server) routes() {
 	m.HandleFunc("GET /skill", s.handleSkill)
 	m.HandleFunc("GET /skill/claude-code", s.handleSkillClaudeCode)
 	m.HandleFunc("GET /skill/hermes", s.handleSkillHermes)
+	m.HandleFunc("GET /skill/watch.sh", s.handleSkillWatchScript)
+	m.HandleFunc("GET /skill/bridge.sh", serveScript(bridgeScript))
+	m.HandleFunc("GET /skill/inject.sh", serveScript(injectScript))
+	for _, g := range harnessGuides {
+		m.HandleFunc("GET /skill/"+g.slug, s.handleSkillHarness(g))
+	}
 	m.HandleFunc("GET /cli.sh", s.handleCLI)
 	m.HandleFunc("POST /api/v1/rooms", s.handleCreateRoom)
 	m.HandleFunc("POST /api/v1/rooms/join", s.handleJoinRoom)
