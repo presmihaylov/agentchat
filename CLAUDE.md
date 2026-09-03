@@ -48,6 +48,7 @@ node scripts/archive-check.js               # ARCHIVE_CHECK_OK
 node scripts/emoji-check.js                 # EMOJI_CHECK_OK
 node scripts/theme-check.js                 # THEME_CHECK_OK
 node scripts/reactions-check.js             # REACTIONS_CHECK_OK
+node scripts/codeblock-check.js             # CODEBLOCK_CHECK_OK
 ```
 
 ## Conventions

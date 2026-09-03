@@ -320,9 +320,39 @@ export const createComposer = ({ mount, id, placeholder, onSubmit, getMentionOpt
       return {
         'Mod-Shift-c': () => this.editor.commands.toggleCodeBlock(),
         'Mod-k': () => editLink(),
+        // inside a code block Tab indents (two spaces, the way tablinum does
+        // it) instead of moving focus out of the composer
+        Tab: () => {
+          if (!this.editor.isActive('codeBlock')) return false;
+          return this.editor.commands.insertContent('  ');
+        },
       };
     },
   });
+
+  // A fence line "```lang" opens a code block on Enter or Shift-Enter, the way
+  // tablinum opens one on "```lang ". Without this, Enter sent a message that
+  // was just "```" and Shift-Enter left the marker sitting in the paragraph.
+  // The marker is swallowed and the language kept. At the start of the
+  // paragraph the paragraph itself becomes the block; after a hard break the
+  // text before the break stays a paragraph and the block follows it.
+  const FENCE_RE = /(^|\n)```([a-z0-9+#-]*)$/i;
+  const openFence = (view) => {
+    const { $from, empty } = view.state.selection;
+    if (!empty || $from.parent.type.name !== 'paragraph') return false;
+    if ($from.parentOffset !== $from.parent.content.size) return false;
+    const head = $from.parent.textBetween(0, $from.parentOffset, '\n', '\n');
+    const m = head.match(FENCE_RE);
+    if (!m) return false;
+    const language = m[2] || null;
+    const markerFrom = $from.pos - (m[0].length - m[1].length);
+    if (m[1] === '') {
+      editor.chain().deleteRange({ from: markerFrom, to: $from.pos }).setCodeBlock({ language }).run();
+      return true;
+    }
+    editor.chain().deleteRange({ from: markerFrom - 1, to: $from.pos }).splitBlock().setCodeBlock({ language }).run();
+    return true;
+  };
 
   // StarterKit's list input rules only fire when the marker starts the whole
   // paragraph, so after Shift-Enter they never fire: the line begins after a
@@ -344,6 +374,14 @@ export const createComposer = ({ mount, id, placeholder, onSubmit, getMentionOpt
       return [
         listAfterBreak(/(?<=\n)[-+*] $/, 'toggleBulletList'),
         listAfterBreak(/(?<=\n)\d+[.)] $/, 'toggleOrderedList'),
+        // the stock "```lang " rule has the same paragraph-start limit
+        new InputRule({
+          find: /(?<=\n)```([a-z0-9+#-]*) $/i,
+          handler: ({ range, chain, match }) => {
+            chain().deleteRange({ from: range.from - 1, to: range.to }).splitBlock()
+              .setCodeBlock({ language: match[1] || null }).run();
+          },
+        }),
       ];
     },
   });
@@ -377,6 +415,7 @@ export const createComposer = ({ mount, id, placeholder, onSubmit, getMentionOpt
         if (popupKeydown(emojiBox, emoji, applyEmoji, ev)) { renderEmoji(); return true; }
         if (ev.key !== 'Enter') return false;
         if (ev.metaKey || ev.ctrlKey) { onSubmit(); return true; }
+        if (openFence(view)) return true;
         if (ev.shiftKey) return false; // hard break
         // Enter makes a newline inside a code block; ⌘Enter still sends
         if (view.state.selection.$from.parent.type.name === 'codeBlock') return false;
