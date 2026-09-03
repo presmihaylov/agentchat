@@ -428,7 +428,11 @@ import { emojify, searchEmoji, rememberEmoji, shortcodeOf } from './emoji.js';
         openLightbox(inlineImg.dataset.att, inlineImg.dataset.name); return;
       }
       const attBtn = ev.target.closest('button.attachment');
-      if (attBtn && el.contains(attBtn)) { downloadAttachment(attBtn.dataset.att, attBtn.dataset.name); return; }
+      if (attBtn && el.contains(attBtn)) {
+        if (isTextAttachment(attBtn.dataset.name)) openDoc(attBtn.dataset.att, attBtn.dataset.name);
+        else downloadAttachment(attBtn.dataset.att, attBtn.dataset.name);
+        return;
+      }
       // only real action buttons act — rendered markdown can't fake these
       const btn = ev.target.closest('.msg-actions button, button.reply-bar');
       if (!btn || !el.contains(btn)) return;
@@ -1282,6 +1286,37 @@ import { emojify, searchEmoji, rememberEmoji, shortcodeOf } from './emoji.js';
       setTimeout(() => URL.revokeObjectURL(url), 10000);
     } catch (e) { alert(e.message); }
   };
+
+  // Uploads arrive as application/octet-stream, so the filename decides what
+  // can be read in place: markdown renders like a message, other text as-is.
+  const TEXT_EXT = /\.(md|markdown|txt|log|csv|json|ya?ml|toml|sh|diff|patch|go|js|ts|py|rb|rs|sql|html|css|xml)$/i;
+  const isTextAttachment = (name) => TEXT_EXT.test(name || '');
+  const openDoc = async (id, name) => {
+    const box = $('doc-body');
+    box.innerHTML = '';
+    $('doc-name').textContent = name || '';
+    $('doc-dl').onclick = () => downloadAttachment(id, name);
+    $('doc-modal').classList.remove('hidden');
+    try {
+      const resp = await fetch('/api/v1/attachments/' + id, { headers: { Authorization: 'Bearer ' + token } });
+      if (!resp.ok) throw new Error('preview failed (HTTP ' + resp.status + ')');
+      const text = await resp.text();
+      if (/\.(md|markdown)$/i.test(name || '')) {
+        box.innerHTML = renderMarkdown(text);
+        box.querySelectorAll('pre code').forEach((c) => {
+          try { hljs.highlightElement(c); } catch (e) { /* unknown language tag */ }
+        });
+        return;
+      }
+      const pre = document.createElement('pre');
+      pre.className = 'doc-plain';
+      pre.textContent = text;
+      box.appendChild(pre);
+    } catch (e) { box.textContent = e.message; }
+  };
+  const closeDoc = () => { $('doc-modal').classList.add('hidden'); $('doc-body').innerHTML = ''; };
+  $('doc-close').onclick = closeDoc;
+  $('doc-modal').onclick = (ev) => { if (ev.target === $('doc-modal')) closeDoc(); };
 
   const openLightbox = (id, name) => {
     blobURL(id).then((url) => { if (url) $('lightbox-img').src = url; });
@@ -2185,6 +2220,7 @@ import { emojify, searchEmoji, rememberEmoji, shortcodeOf } from './emoji.js';
 
   document.addEventListener('keydown', (ev) => {
     if (ev.key === 'Escape' && !$('lightbox').classList.contains('hidden')) $('lightbox').click();
+    if (ev.key === 'Escape' && !$('doc-modal').classList.contains('hidden')) closeDoc();
     if (ev.key === 'Escape' && !$('browse-modal').classList.contains('hidden')) closeBrowse();
   });
 

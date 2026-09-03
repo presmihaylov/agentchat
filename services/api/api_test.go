@@ -1337,6 +1337,8 @@ func TestSkillDoc(t *testing.T) {
 		"There is no \"working on\n  it\" marker any more",
 		"put 👀 on its message",
 		"put ✅ on it",
+		"Bodies render full GitHub markdown in the web UI",
+		"Do not flatten a document into emoji-led paragraphs",
 		"## Acknowledge receipt when you are tagged",
 		"Prefer to acknowledge receipt when you are directly tagged",
 		"Silence and\ndeafness look identical from outside",

@@ -220,31 +220,42 @@ button { cursor: pointer; }
 .msg .meta .author { font-weight: 700; color: var(--text); font-size: 13px; margin-right: 6px; }
 /* Slack-compact: 14px message text under the 15px chrome base (Maya settled
    the exact size); the em-based markdown scale follows it proportionally */
-.msg .content { overflow-wrap: break-word; font-size: 14px; }
+:is(.msg, #doc-modal) .content { overflow-wrap: break-word; font-size: 14px; }
 /* Markdown block spacing, shared by rendered messages and the composer preview
    so both read the same. A blank line in the source becomes a real gap between
    blocks (Slack-like), while first/last child trim keeps message edges tight. */
-.msg .content > :first-child, .composer-preview > :first-child { margin-top: 0; }
-.msg .content > :last-child, .composer-preview > :last-child { margin-bottom: 0; }
-.msg .content p, .composer-preview p { margin: 0 0 8px; }
-.msg .content h1, .msg .content h2, .msg .content h3, .msg .content h4, .msg .content h5, .msg .content h6,
+:is(.msg, #doc-modal) .content > :first-child, .composer-preview > :first-child { margin-top: 0; }
+:is(.msg, #doc-modal) .content > :last-child, .composer-preview > :last-child { margin-bottom: 0; }
+:is(.msg, #doc-modal) .content p, .composer-preview p { margin: 0 0 8px; }
+:is(.msg, #doc-modal) .content h1, :is(.msg, #doc-modal) .content h2, :is(.msg, #doc-modal) .content h3, :is(.msg, #doc-modal) .content h4, :is(.msg, #doc-modal) .content h5, :is(.msg, #doc-modal) .content h6,
 .composer-preview h1, .composer-preview h2, .composer-preview h3, .composer-preview h4, .composer-preview h5, .composer-preview h6 {
   margin: 14px 0 6px; font-weight: 700; line-height: 1.25; }
-.msg .content h1, .composer-preview h1 { font-size: 1.4em; }
-.msg .content h2, .composer-preview h2 { font-size: 1.25em; }
-.msg .content h3, .composer-preview h3 { font-size: 1.1em; }
-.msg .content h4, .msg .content h5, .msg .content h6,
+:is(.msg, #doc-modal) .content h1, .composer-preview h1 { font-size: 1.4em; }
+:is(.msg, #doc-modal) .content h2, .composer-preview h2 { font-size: 1.25em; }
+:is(.msg, #doc-modal) .content h3, .composer-preview h3 { font-size: 1.1em; }
+:is(.msg, #doc-modal) .content h4, :is(.msg, #doc-modal) .content h5, :is(.msg, #doc-modal) .content h6,
 .composer-preview h4, .composer-preview h5, .composer-preview h6 { font-size: 1em; color: var(--dim); }
-.msg .content ul, .msg .content ol, .composer-preview ul, .composer-preview ol { margin: 0 0 8px; padding-left: 22px; }
-.msg .content li, .composer-preview li { margin: 3px 0; }
-.msg .content li > ul, .msg .content li > ol, .composer-preview li > ul, .composer-preview li > ol { margin: 3px 0 0; }
-.msg .content blockquote, .composer-preview blockquote { margin: 0 0 8px; padding: 2px 0 2px 12px; border-left: 3px solid var(--border); color: var(--dim); }
-.msg .content hr, .composer-preview hr { border: 0; border-top: 1px solid var(--border); margin: 12px 0; }
-.msg .content pre, .composer-preview pre { margin: 0 0 8px; }
-.msg .content pre { background: var(--code-bg); padding: 8px; border-radius: 6px; overflow-x: auto; }
-.msg .content code { background: var(--code-bg); padding: 1px 4px; border-radius: 4px; font-size: .92em; }
-.msg .content a { color: var(--accent); }
+:is(.msg, #doc-modal) .content ul, :is(.msg, #doc-modal) .content ol, .composer-preview ul, .composer-preview ol { margin: 0 0 8px; padding-left: 22px; }
+:is(.msg, #doc-modal) .content li, .composer-preview li { margin: 3px 0; }
+:is(.msg, #doc-modal) .content li > ul, :is(.msg, #doc-modal) .content li > ol, .composer-preview li > ul, .composer-preview li > ol { margin: 3px 0 0; }
+:is(.msg, #doc-modal) .content blockquote, .composer-preview blockquote { margin: 0 0 8px; padding: 2px 0 2px 12px; border-left: 3px solid var(--border); color: var(--dim); }
+:is(.msg, #doc-modal) .content hr, .composer-preview hr { border: 0; border-top: 1px solid var(--border); margin: 12px 0; }
+:is(.msg, #doc-modal) .content pre, .composer-preview pre { margin: 0 0 8px; }
+:is(.msg, #doc-modal) .content pre { background: var(--code-bg); padding: 8px; border-radius: 6px; overflow-x: auto; }
+:is(.msg, #doc-modal) .content code { background: var(--code-bg); padding: 1px 4px; border-radius: 4px; font-size: .92em; }
+:is(.msg, #doc-modal) .content a { color: var(--accent); }
+:is(.msg, #doc-modal) .content table { border-collapse: collapse; margin: 0 0 8px; display: block; max-width: 100%; overflow-x: auto; }
+:is(.msg, #doc-modal) .content th, :is(.msg, #doc-modal) .content td { border: 1px solid var(--border); padding: 4px 8px; text-align: left; vertical-align: top; }
+:is(.msg, #doc-modal) .content th { background: var(--code-bg); }
 #channel-topic a, #profile-desc a { color: var(--accent); }
+/* Text and markdown attachments open in place, rendered like a message. */
+#doc-modal { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: flex; align-items: center; justify-content: center; z-index: 40; }
+#doc-modal .doc-box { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; width: min(920px, 94vw); max-height: 88vh; display: flex; flex-direction: column; }
+#doc-modal .doc-bar { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--border); font-size: 13px; }
+#doc-modal #doc-name { flex: 1; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#doc-modal #doc-dl, #doc-modal #doc-close { background: transparent; border: 1px solid var(--border); color: var(--accent); border-radius: 6px; padding: 4px 12px; font-size: 12px; }
+#doc-modal #doc-body { padding: 14px 18px; overflow: auto; font-size: 14px; overflow-wrap: break-word; }
+#doc-modal #doc-body > pre.doc-plain { white-space: pre-wrap; }
 /* Reactions: Slack-style pills under the message; yours gets the accent ring. */
 .msg-reactions { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0 2px; }
 .msg-reactions .reaction { display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px; font-size: 13px;
