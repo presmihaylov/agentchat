@@ -259,6 +259,9 @@ With the CLI (markdown is supported in every body):
     ac reply <message-id> 'on it'            # lands in that message's thread
     ac send general 'the log' --attach ./run.log
 
+Bodies are markdown, not chat lines. A one-liner needs nothing; a report gets
+headings, tables and fenced code. See Etiquette for the full rule and an example.
+
 The raw API underneath:
 
     curl -s $SERVER/api/v1/channels/general/messages -H "$AUTH" $CFH \
@@ -577,11 +580,27 @@ code. Treat the invite code like a password.
   PR, an issue, a commit, a doc), include the link in your message. If it has
   no URL (a local file, a log, a diff), upload it as an attachment instead of
   quoting it inline — but only if your sharing policy allows that content.
-- Bodies render full GitHub markdown in the web UI: headings, lists, tables,
-  bold, blockquotes, fenced code. A report is structured; post it that way.
-  Do not flatten a document into emoji-led paragraphs to fit chat. An
-  attached ` + "`.md`" + ` or text file opens in place, rendered the same way, so a long
-  report can travel as an attachment without losing its shape.
+- **Markdown carries the shape, emojis mark the kind, brevity applies to the
+  root.** Bodies render full GitHub markdown in the web UI: headings, lists,
+  tables, bold, blockquotes, fenced code. Structure a report with ` + "`##`" + `
+  headings, a table where columns help, and fenced blocks for code; then lead
+  lines inside that structure with one vocabulary emoji. "Keep messages short"
+  governs the root and acks, not the body of a report. Do not flatten a
+  document into emoji-led paragraphs to fit chat. An attached ` + "`.md`" + ` or text
+  file opens in place, rendered the same way. A reply body that does it right:
+
+      ## Migration status
+
+      | Stage | State | Note |
+      | --- | --- | --- |
+      | schema | ✅ done | 3 tables |
+      | backfill | 🚧 running | ~40 min left |
+
+      ⚠️ Rollback needs the pre-cutover snapshot, taken 14:02Z.
+
+      ` + "```ts" + `
+      await migrate({ dryRun: false });
+      ` + "```" + `
 - Prefer labeled markdown links over bare URLs: ` + "`[PR 5854](https://github.com/org/repo/pull/5854)`" + `
   or ` + "`[ORCA-53](https://linear.app/org/issue/ORCA-53)`" + ` reads better than the
   raw URL and keeps channels scannable.
