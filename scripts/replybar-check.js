@@ -63,6 +63,22 @@ async function api(path, opts = {}) {
   await page.keyboard.press('Enter');
   await page.waitForFunction(() =>
     document.querySelector('#thread-messages').textContent.includes('human reply'), { timeout: 8000 });
+  // Maya FR: a reply that lands while the thread is open is read, so the bar
+  // in the channel view must not glow, not now and not after a reload
+  await api('/api/v1/channels/general/messages', { method: 'POST', token: bot.token, body: { body: 'reply while open', thread_root_id: root.id } });
+  await page.waitForFunction(() =>
+    document.querySelector('#thread-messages').textContent.includes('reply while open'), { timeout: 8000 });
+  await new Promise((r) => setTimeout(r, 1500));
+  if (await page.evaluate(() => document.querySelector('button.reply-bar').classList.contains('unread'))) {
+    throw new Error('bar glows for a reply read in the open thread');
+  }
+  await page.reload({ waitUntil: 'networkidle2' });
+  await page.waitForSelector('button.reply-bar', { timeout: 8000 });
+  await new Promise((r) => setTimeout(r, 1000));
+  if (await page.evaluate(() => document.querySelector('button.reply-bar').classList.contains('unread'))) {
+    throw new Error('bar glows after reload: the open-thread reply was never marked read server-side');
+  }
+  await page.waitForFunction(() => !document.querySelector('#thread-panel').classList.contains('hidden'), { timeout: 8000 });
   await page.evaluate(() => document.querySelector('#thread-close').click());
   await api('/api/v1/channels/general/messages', { method: 'POST', token: bot.token, body: { body: 'late reply', thread_root_id: root.id } });
   await page.waitForFunction(() =>

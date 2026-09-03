@@ -1224,6 +1224,9 @@ import { emojify, searchEmoji, rememberEmoji, shortcodeOf } from './emoji.js';
     try {
       const out = await api('/api/v1/threads');
       threads = out.threads || [];
+      // a reply that landed in the open thread is being read right now: the
+      // fresh count says 1, but its bar must not glow until the panel closes
+      await markThreadRead(openThreadRoot);
       renderChannels();
       syncReplyBars();
     } catch (e) { console.error('loadThreads', e); }
@@ -1232,12 +1235,13 @@ import { emojify, searchEmoji, rememberEmoji, shortcodeOf } from './emoji.js';
   const markThreadRead = async (rootID) => {
     const t = threads.find((x) => x.root_id === rootID);
     if (!t || t.unread_count === 0) return;
+    // optimistic: the thread is on screen, so clear the glow before the round trip
+    t.unread_count = 0;
+    t.unread_mentions = 0;
+    renderChannels();
+    syncReplyBars();
     try {
       await api(`/api/v1/threads/${rootID}/read`, { method: 'POST', body: {} });
-      t.unread_count = 0;
-      t.unread_mentions = 0;
-      renderChannels();
-      syncReplyBars();
     } catch (e) { console.error('markThreadRead', e); }
   };
 
