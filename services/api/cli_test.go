@@ -785,3 +785,84 @@ func TestWatcherTemplateDropsBenignEvents(t *testing.T) {
 		}
 	}
 }
+
+// TestCLIRefusesUnfencedDiff: `-`/`+` at line start are list markers, so an
+// unfenced diff renders as bullets with code boxes inside. The CLI stops that
+// post before it leaves; --force says "I know", --code wraps it in a fence,
+// and an ordinary bullet list is never mistaken for a diff.
+func TestCLIRefusesUnfencedDiff(t *testing.T) {
+	srv, _ := newTestServer(t)
+	defer srv.Close()
+	_, alice, _ := setupRoom(t, srv.URL)
+	resp, err := http.Get(srv.URL + "/cli.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(resp.Body)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "cli.sh")
+	if err := os.WriteFile(path, raw, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	envFile := filepath.Join(dir, "room.env")
+	if err := os.WriteFile(envFile, []byte("SERVER="+srv.URL+"\nTOKEN="+alice.token+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	root := alice.must("POST", "/api/v1/channels/general/messages", map[string]any{"body": "paste here"}, 201)["id"].(string)
+	run := func(args ...string) (string, error) {
+		out, err := exec.Command("bash", append([]string{path, "--env", envFile}, args...)...).CombinedOutput()
+		return string(out), err
+	}
+	replies := func() []string {
+		out := alice.must("GET", "/api/v1/threads/"+root, nil, 200)
+		bodies := []string{}
+		for _, raw := range out["messages"].([]any) {
+			m := raw.(map[string]any)
+			if m["id"] != root {
+				bodies = append(bodies, m["body"].(string))
+			}
+		}
+		return bodies
+	}
+	diff := "-    const a = call(ctx, {\n-    if (a.isErr) {\n+        const a = call(ctx, {\n+        if (a.isErr) {"
+
+	out, err := run("reply", root, diff)
+	if err == nil || !strings.Contains(out, "unfenced") || !strings.Contains(out, "--force") || !strings.Contains(out, "--code") {
+		t.Fatalf("an unfenced diff was not refused: %v\n%s", err, out)
+	}
+	if got := replies(); len(got) != 0 {
+		t.Fatalf("the refused diff was posted anyway: %q", got)
+	}
+
+	// a fence, --force and --code each let it through; --code adds the fence
+	if out, err := run("reply", root, "```diff\n"+diff+"\n```"); err != nil {
+		t.Fatalf("a fenced diff was refused: %v\n%s", err, out)
+	}
+	if out, err := run("reply", root, diff, "--force"); err != nil || strings.Contains(out, "unfenced") {
+		t.Fatalf("--force did not post: %v\n%s", err, out)
+	}
+	if out, err := run("reply", root, diff, "--code=diff"); err != nil {
+		t.Fatalf("--code=diff did not post: %v\n%s", err, out)
+	}
+	if out, err := run("send", "general", "x = 1", "--code", "--new-topic"); err != nil {
+		t.Fatalf("bare --code did not post: %v\n%s", err, out)
+	}
+	got := replies()
+	if len(got) != 3 || got[0] != "```diff\n"+diff+"\n```" || got[1] != diff || got[2] != "```diff\n"+diff+"\n```" {
+		t.Fatalf("posted bodies: %q", got)
+	}
+	last := alice.must("GET", "/api/v1/channels/general/messages?limit=1", nil, 200)["messages"].([]any)[0].(map[string]any)
+	if last["body"] != "```\nx = 1\n```" {
+		t.Fatalf("bare --code body: %q", last["body"])
+	}
+
+	// an ordinary bullet list is markdown on purpose, not a diff
+	if out, err := run("reply", root, "- first point\n- second point\n- third"); err != nil || strings.Contains(out, "unfenced") {
+		t.Fatalf("a bullet list tripped the diff caution: %v\n%s", err, out)
+	}
+	// --help names the rule where send and reply are described
+	if out, _ := run("--help"); !strings.Contains(out, "fence") || !strings.Contains(out, "--code") {
+		t.Fatalf("--help does not mention fencing or --code:\n%s", out)
+	}
+}

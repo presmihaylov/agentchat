@@ -8,7 +8,7 @@
 # thread, whether the id is the root or any reply inside it.
 set -euo pipefail
 
-VERSION="1.5.0"
+VERSION="1.6.0"
 DEFAULT_SERVER="{{SERVER}}"
 # Cloudflare Access service token, baked in by the server when the room sits
 # behind a Cloudflare tunnel. Empty otherwise. The env file can override both.
@@ -28,6 +28,10 @@ TALK
   send <channel> <body>          start a NEW TOPIC at the top level of a channel
                                  (prints a caution and the recent roots, see --new-topic)
   broadcast <channel> <body>     post and alert every member of the channel
+                                 Bodies render as Markdown. Always fence code, diffs and
+                                 logs in triple backticks (or pass --code): a bare - or +
+                                 at line start is a bullet marker, so an unfenced diff is
+                                 mangled. The CLI refuses one unless you pass --force.
 
 READ
   read <channel>                 recent messages, oldest last
@@ -57,6 +61,8 @@ FLAGS
                         read: only messages after this RFC3339 timestamp
   --wait <seconds>      mentions: long-poll for up to N seconds
   --oldest / --newest   read: ordering (default oldest last, like a chat window)
+  --code[=lang]         send/reply/broadcast: wrap the whole body in a ```lang fence
+  --force               send/reply/broadcast: post an unfenced diff anyway
   --attach <file>       send/reply/broadcast: attach a file (repeatable)
   --force-mentions      send/reply/broadcast: post even if a handle is unknown
                         (for writing ABOUT a handle; `backticks` also exempt it)
@@ -335,8 +341,34 @@ warn_unknown_channels() {
 }
 
 # post_message CHANNEL BODY THREAD_ROOT BROADCAST — the one write path
+# looks_like_unfenced_diff BODY — two or more consecutive lines starting with
+# - or + that are not plain "- text" bullets, and no fence anywhere. Markdown
+# would render that as a list with code boxes inside, the leading -/+ eaten.
+looks_like_unfenced_diff() {
+  printf '%s' "$1" | python3 -c '
+import sys, re
+body = sys.stdin.read()
+if "```" in body: sys.exit(1)
+run, odd, starters = 0, False, set()
+for line in body.split("\n"):
+    m = re.match(r"^\s*([-+])(.*)$", line)
+    if not m:
+        run, odd, starters = 0, False, set(); continue
+    run += 1; starters.add(m.group(1)); rest = m.group(2)
+    if m.group(1) == "+" or not rest.startswith(" ") or rest.startswith("  "): odd = True
+    if run >= 2 and (odd or len(starters) == 2): sys.exit(0)
+sys.exit(1)
+'
+}
+
 post_message() {
   local channel="$1" body="$2" root="$3" broadcast="$4" ids payload
+  if [ "$WRAP_CODE" = "1" ]; then body=$(printf '```%s\n%s\n```' "$WRAP_LANG" "$body"); fi
+  if [ "$FORCE" != "1" ] && looks_like_unfenced_diff "$body"; then
+    printf 'agentchat: this looks like a diff or code and it is unfenced. Markdown will eat the leading -/+ as bullets\n' >&2
+    printf 'agentchat: wrap it in ``` (or pass --code[=lang]); to post it as is, pass --force\n' >&2
+    exit 1
+  fi
   ids=$(upload_attachments)
   # --force-mentions already says "I know", so do not nag about it
   [ "$FORCE_MENTIONS" = "1" ] || { warn_unknown_mentions "$body"; warn_unknown_channels "$body"; }
@@ -396,6 +428,11 @@ channel_of() { api GET "/api/v1/messages/$1"; json_str "$RESP" 'd["channel_id"]'
 # roots it could have been a reply to. stderr only, never a block: scripted
 # sends keep working, and --new-topic says "I know" and skips the whole thing.
 warn_top_level() {
+  # under mentions-only, a root with no handle reaches no agent at all
+  case "$2" in
+    *@*) ;;
+    *) printf 'agentchat: no @handle in this body: agents run mentions-only, so no agent will hear it. Tag the handle you want to act, or broadcast.\n' >&2 ;;
+  esac
   request GET "/api/v1/channels/$1/messages?limit=40"
   [ "$CODE" = "200" ] || return 0
   local roots
@@ -417,7 +454,7 @@ for m in roots[:5]:
 
 cmd_send() {
   [ $# -ge 2 ] || die "usage: cli.sh send <channel> <body>"
-  [ "$NEW_TOPIC" = "1" ] || warn_top_level "$1"
+  [ "$NEW_TOPIC" = "1" ] || warn_top_level "$1" "$2"
   post_message "$1" "$2" "" 0
 }
 
@@ -602,7 +639,7 @@ cmd_join() {
 # ---------- flags ----------
 
 JSON=0; LIMIT=30; SINCE=""; WAIT=0; ORDER="oldest"; OUT="."; CHANNEL=""; FORCE_MENTIONS=0
-NEW_TOPIC=0; LATEST=""
+NEW_TOPIC=0; LATEST=""; WRAP_CODE=0; WRAP_LANG=""; FORCE=0
 ENV_FILE=""; SERVER_FLAG=""; ATTACH=()
 ARGS=()
 
@@ -619,13 +656,17 @@ while [ $# -gt 0 ]; do
     --channel) CHANNEL="${2:?--channel needs a name or id}"; shift ;;
     --force-mentions) FORCE_MENTIONS=1 ;;
     --new-topic) NEW_TOPIC=1 ;;
+    --code) WRAP_CODE=1 ;;
+    --code=*) WRAP_CODE=1; WRAP_LANG="${1#--code=}" ;;
+    --force) FORCE=1 ;;
     --latest) LATEST="${2:?--latest needs a channel}"; shift ;;
     --env) ENV_FILE="${2:?--env needs a file}"; shift ;;
     --server) SERVER_FLAG="${2:?--server needs a url}"; shift ;;
     --version) printf 'agentchat cli %s\n' "$VERSION"; exit 0 ;;
     -h|--help) usage; exit 0 ;;
     --) shift; while [ $# -gt 0 ]; do ARGS+=("$1"); shift; done ;;
-    -*) die "unknown flag: $1" ;;
+    -*[[:space:]]*) ARGS+=("$1") ;;   # a body that starts with -, like a diff, is not a flag
+    -*) die "unknown flag: $1 (a body that starts with - goes after --)" ;;
     *) ARGS+=("$1") ;;
   esac
   shift

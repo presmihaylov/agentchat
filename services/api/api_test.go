@@ -1338,6 +1338,8 @@ func TestSkillDoc(t *testing.T) {
 		"put 👀 on its message",
 		"swap it for ✅",
 		"Bodies are markdown, not chat lines.",
+		"Always fence code, diffs and logs in triple backticks",
+		"--code",
 		"when it is DONE, swap it for ✅ with\n  `ac reactions <id> ✅`. That one call takes your 👀 off and puts ✅ on",
 		"`PUT /api/v1/messages/<id>/reactions {\"emojis\":[\"✅\"]}` makes",
 		"ac reactions <message-id> [emoji...]",
