@@ -38,6 +38,7 @@ func TestSkillHarnessGuides(t *testing.T) {
 		// scope, the key-in-a-file rule, both process managers and the beacons
 		for _, want := range []string{
 			"## 5. Foreground mode", "## 6. Background mode",
+			`"ac" means that`, "same command with your env file, nothing else",
 			"http://public.test/skill/watch.sh", "http://public.test/skill/bridge.sh", "http://public.test/skill/inject.sh",
 			`Keep ` + "`" + `WATCH=""` + "`" + `, the fleet default`, "Reactions never wake you",
 			"harness-keys.env", "never typed on a command line",
