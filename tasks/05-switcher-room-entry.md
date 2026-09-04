@@ -1,14 +1,13 @@
-# 05 Workspace switcher, room list, room entry
+# 05 Workspace switcher
 
 Status: todo
 
 ## Scope
-- `/w/{slug}` route, switcher in the header, room list per workspace (GET /api/v1/workspace/rooms, POST creates one).
-- PUT /api/v1/user/active-workspace.
-- `X-Room-Slug` on session requests to room routes; `ParticipantBySession` with revoked check (`403 room_forbidden`, reason).
-- Lazy projection `EnsureHumanParticipant` for members; POST /api/v1/rooms/{slug}/enter with optional invite code for non-members (adds membership, never adopts by name).
-- `/create` means create workspace; `#join-view` becomes the non-member invite-code bridge.
+- `GET /api/v1/user` returns `workspaces`: the rooms the user is a live participant of (`RoomsByUser`), plus `last_active_workspace_id` (from `users.last_active_room_id`).
+- `/w/{slug}` route (alias of `/r/{slug}`); `#ws-switcher` and `#ws-menu` in the header (workspaces, Create workspace, Settings, Sign out); `/` goes to the last active or first workspace, else `#no-ws-view` (create form and invite-code form).
+- `#join-view` is dropped for humans; `#enter-view` (shipped in task 03) is the only human entry form. `/create` lands on `/w/<slug>`.
+- `scripts/lib/login.js` gains `loginPage` and `enterWithCode`; the 11 `#join-form` scripts switch to them (design section 9).
 
 ## Acceptance
-- Go tests: session resolves participant, no membership 403, revoked 403 from both paths, enter with code joins workspace, enter never adopts by name, `participant.joined` emitted once.
-- `scripts/switcher-check.js` (SWITCHER_CHECK_OK): two workspaces, toggle, room list, enter room, post a message, revoked user blocked. Screenshots. Verified on prod.
+- Go tests: `TestUserRoomsListsLiveParticipations`.
+- `scripts/switcher-check.js` (SWITCHER_CHECK_OK): two workspaces, toggle, enter a third with a code, post a message, revoked user sees the removed notice, quota 409 on the sixth create. Screenshots. Verified on prod.
