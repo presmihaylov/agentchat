@@ -41,3 +41,24 @@ func TestAuthConfig(t *testing.T) {
 		t.Fatal("a bad registration flag must refuse to start")
 	}
 }
+
+func TestParseFlagsMigrateTo(t *testing.T) {
+	v, err := parseFlags(nil)
+	if err != nil || v != nil {
+		t.Fatalf("no flags: got %v %v, want the server path", v, err)
+	}
+	v, err = parseFlags([]string{"-migrate-to", "23"})
+	if err != nil || v == nil || *v != 23 {
+		t.Fatalf("-migrate-to 23: got %v %v", v, err)
+	}
+	// 0 is not a version golang-migrate can target; refuse rather than guess
+	if _, err := parseFlags([]string{"-migrate-to", "0"}); err == nil {
+		t.Fatal("-migrate-to 0 must be refused")
+	}
+	if _, err := parseFlags([]string{"-migrate-to", "soon"}); err == nil {
+		t.Fatal("a non-numeric version must be refused")
+	}
+	if _, err := parseFlags([]string{"-serve-please"}); err == nil {
+		t.Fatal("an unknown flag must be refused")
+	}
+}

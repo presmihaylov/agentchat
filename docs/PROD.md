@@ -21,6 +21,9 @@ and only moves when you run the deploy script.
   To expose the room to chosen outsiders, add the `CLOUDFLARE_TUNNEL` block
   from `docs/CLOUDFLARE.md`.
 - `~/agentchat-prod/logs/agentchatd.log` — app log.
+- `~/agentchat-prod/backups/agentchat-<utc stamp>-pre-<commit>.dump` — a
+  `pg_dump -Fc` the deploy script takes before every binary swap. The newest
+  10 are kept. Restore with `pg_restore --clean --if-exists -d <db url> <file>`.
 - `~/Library/LaunchAgents/com.agentchat.prod.plist` — `RunAtLoad` +
   `KeepAlive`: starts at login and restarts on crash. The mini auto-logs-in
   as `prodhost`, which is what makes this survive reboots; if auto-login is
@@ -43,8 +46,28 @@ The script first builds the web UI (`npm ci && npm run build` in `web/`, so
 node is a build-time dependency on the dev machine only; nothing new runs on
 the mini), then builds `darwin/arm64` from a clean checkout of that commit, ships
 it as `agentchatd-<commit>`, atomically repoints the symlink, kickstarts the
-service, and curls `/healthz`. Roll back by re-running it with the previous
-commit (old binaries stay in `bin/`).
+service, and curls `/healthz`. Before the binary swap it takes a `pg_dump` on
+the mini (see `backups/` above) and aborts if the dump fails.
+
+## Rollback
+
+Migrations only move forward on startup, and an old binary refuses to open a
+database whose version is above the migrations it embeds. So a rollback that
+crosses a migration is two steps, run with the currently deployed binary first:
+
+```sh
+# on the mini, with the env file loaded
+set -a && source ~/agentchat-prod/env && set +a
+~/agentchat-prod/bin/agentchatd -migrate-to <version embedded in the target commit>
+# then, from the dev machine
+scripts/deploy-prod.sh <target commit>
+```
+
+`-migrate-to` runs the down files above the target, prints the resulting
+version and exits without serving. Rolling back across a migration deletes the
+data those tables held (for example 24 to 23 deletes every user account and
+session). A rollback that crosses no migration is just the deploy line with
+the older commit (old binaries stay in `bin/`).
 
 ## Ops crib sheet (on the mini)
 

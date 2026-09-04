@@ -46,14 +46,7 @@ func Open(ctx context.Context, dbURL string) (*Store, error) {
 func (s *Store) Close() { s.pool.Close() }
 
 func runMigrations(dbURL string) error {
-	src, err := iofs.New(migrations.FS, ".")
-	if err != nil {
-		return err
-	}
-	// golang-migrate's pgx/v5 driver registers the pgx5:// scheme.
-	url := strings.Replace(dbURL, "postgresql://", "postgres://", 1)
-	url = strings.Replace(url, "postgres://", "pgx5://", 1)
-	m, err := migrate.NewWithSourceInstance("iofs", src, url)
+	m, err := newMigrator(dbURL)
 	if err != nil {
 		return err
 	}
@@ -62,6 +55,41 @@ func runMigrations(dbURL string) error {
 		return err
 	}
 	return nil
+}
+
+// MigrateTo moves the schema to exactly version, down or up, and returns the
+// version the database ends at. It is the rollback step before deploying an
+// older binary: an old binary refuses to open a database whose version is
+// above the migrations it embeds. ctx is accepted for symmetry with Open;
+// golang-migrate has no context API.
+func MigrateTo(ctx context.Context, dbURL string, version uint) (uint, error) {
+	m, err := newMigrator(dbURL)
+	if err != nil {
+		return 0, err
+	}
+	defer m.Close()
+	if err := m.Migrate(version); err != nil && !errors.Is(err, migrate.ErrNoChange) {
+		return 0, err
+	}
+	got, dirty, err := m.Version()
+	if err != nil {
+		return 0, err
+	}
+	if dirty {
+		return got, fmt.Errorf("migration %d left the database dirty", got)
+	}
+	return got, nil
+}
+
+func newMigrator(dbURL string) (*migrate.Migrate, error) {
+	src, err := iofs.New(migrations.FS, ".")
+	if err != nil {
+		return nil, err
+	}
+	// golang-migrate's pgx/v5 driver registers the pgx5:// scheme.
+	url := strings.Replace(dbURL, "postgresql://", "postgres://", 1)
+	url = strings.Replace(url, "postgres://", "pgx5://", 1)
+	return migrate.NewWithSourceInstance("iofs", src, url)
 }
 
 func isUniqueViolation(err error) bool {

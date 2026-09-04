@@ -4,6 +4,7 @@ package main
 import (
 	"context"
 	"errors"
+	"flag"
 	"fmt"
 	"log/slog"
 	"net"
@@ -61,10 +62,42 @@ func authConfig(getenv func(string) string) (registration bool, ttl time.Duratio
 	return registration, ttl, nil
 }
 
+// parseFlags reads the command line. migrateTo is nil unless -migrate-to was
+// given; version 0 is not a valid target, so a plain zero cannot stand in for
+// "absent".
+func parseFlags(args []string) (migrateTo *uint, err error) {
+	fs := flag.NewFlagSet("agentchatd", flag.ContinueOnError)
+	v := fs.Uint("migrate-to", 0, "move the schema to this migration version and exit without serving (rollback step, see docs/PROD.md)")
+	if err := fs.Parse(args); err != nil {
+		return nil, err
+	}
+	var set bool
+	fs.Visit(func(f *flag.Flag) { set = set || f.Name == "migrate-to" })
+	if !set {
+		return nil, nil
+	}
+	if *v == 0 {
+		return nil, errors.New("-migrate-to needs a version of 1 or more")
+	}
+	return v, nil
+}
+
 func run() error {
+	migrateTo, err := parseFlags(os.Args[1:])
+	if err != nil {
+		return err
+	}
 	dbURL := os.Getenv("AGENTCHAT_DB_URL")
 	if dbURL == "" {
 		return errors.New("AGENTCHAT_DB_URL is required")
+	}
+	if migrateTo != nil {
+		got, err := models.MigrateTo(context.Background(), dbURL, *migrateTo)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("schema at version %d\n", got)
+		return nil
 	}
 	port := os.Getenv("AGENTCHAT_PORT")
 	if port == "" {

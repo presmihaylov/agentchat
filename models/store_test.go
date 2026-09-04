@@ -4,9 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"testing"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 
 	"github.com/presmihaylov/agentchat/pkg/secrets"
 )
@@ -375,5 +378,91 @@ func TestSetPasswordHashRevokesSessions(t *testing.T) {
 	}
 	if _, err := s.SetPasswordHash(ctx, "00000000-0000-0000-0000-000000000000", []byte("x"), nil); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("unknown user: %v", err)
+	}
+}
+
+// scratchDB creates a throwaway database next to the test one and returns its
+// URL. Schema-level tests need it: the suite runs packages in parallel against
+// one dev database, so down-migrating that one would break services/api tests
+// mid-run.
+func scratchDB(t *testing.T) string {
+	t.Helper()
+	base := os.Getenv("AGENTCHAT_TEST_DB_URL")
+	if base == "" {
+		base = "postgres://agentchat:agentchat@localhost:5477/agentchat?sslmode=disable"
+	}
+	ctx := context.Background()
+	admin, err := pgx.Connect(ctx, base)
+	if err != nil {
+		t.Skipf("db unavailable: %v", err)
+	}
+	t.Cleanup(func() { admin.Close(ctx) })
+	name := fmt.Sprintf("agentchat_scratch_%d", time.Now().UnixNano())
+	if _, err := admin.Exec(ctx, "CREATE DATABASE "+name); err != nil {
+		t.Fatalf("create scratch db: %v", err)
+	}
+	t.Cleanup(func() {
+		if _, err := admin.Exec(ctx, "DROP DATABASE IF EXISTS "+name+" WITH (FORCE)"); err != nil {
+			t.Errorf("drop scratch db %s: %v", name, err)
+		}
+	})
+	u, err := url.Parse(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	u.Path = "/" + name
+	return u.String()
+}
+
+func TestMigrateTo(t *testing.T) {
+	ctx := context.Background()
+	dbURL := scratchDB(t)
+	const latest = 24
+
+	usersTable := func() *string {
+		conn, err := pgx.Connect(ctx, dbURL)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer conn.Close(ctx)
+		var reg *string
+		if err := conn.QueryRow(ctx, "SELECT to_regclass('users')::text").Scan(&reg); err != nil {
+			t.Fatal(err)
+		}
+		return reg
+	}
+
+	s, err := Open(ctx, dbURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.Close()
+	if usersTable() == nil {
+		t.Fatal("fresh Open must migrate up to users")
+	}
+
+	got, err := MigrateTo(ctx, dbURL, latest-1)
+	if err != nil || got != latest-1 {
+		t.Fatalf("MigrateTo %d: got %d %v", latest-1, got, err)
+	}
+	if reg := usersTable(); reg != nil {
+		t.Fatalf("users must be gone at version %d, to_regclass = %q", latest-1, *reg)
+	}
+	// already there: ErrNoChange is success, not a failed rollback
+	if got, err := MigrateTo(ctx, dbURL, latest-1); err != nil || got != latest-1 {
+		t.Fatalf("MigrateTo repeat: got %d %v", got, err)
+	}
+
+	s, err = Open(ctx, dbURL)
+	if err != nil {
+		t.Fatalf("Open after rollback: %v", err)
+	}
+	defer s.Close()
+	if usersTable() == nil {
+		t.Fatal("Open must bring users back")
+	}
+	var version int
+	if err := s.pool.QueryRow(ctx, "SELECT version FROM schema_migrations").Scan(&version); err != nil || version != latest {
+		t.Fatalf("version after re-open: %d %v", version, err)
 	}
 }
