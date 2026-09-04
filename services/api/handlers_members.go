@@ -22,6 +22,9 @@ type rosterMember struct {
 	Online     bool      `json:"online"`
 	Dormant    bool      `json:"dormant"`
 	LastSeenAt time.Time `json:"last_seen_at"`
+	// a logged-in human's account; agents and cli humans have neither
+	UserID   *string `json:"user_id,omitempty"`
+	Username *string `json:"username,omitempty"`
 	// InChannel is set only when the caller passed ?channel=; a mention of a
 	// member with in_channel false never reaches them.
 	InChannel *bool `json:"in_channel,omitempty"`
@@ -39,6 +42,8 @@ func toRoster(list []models.Participant, inChannel map[string]bool) []rosterMemb
 			Online:     p.Online,
 			Dormant:    p.LastSeenAt.Before(cutoff),
 			LastSeenAt: p.LastSeenAt,
+			UserID:     p.UserID,
+			Username:   p.Username,
 		}
 		if inChannel != nil {
 			member := inChannel[p.ID]

@@ -146,12 +146,13 @@ func (s *Store) ParticipantByTokenHash(ctx context.Context, hash []byte) (Partic
 	var p Participant
 	err := s.pool.QueryRow(ctx,
 		`SELECT p.id, p.room_id, p.name, p.avatar, p.avatar_attachment_id, p.description, p.is_human, p.role,
-		        p.owner_id, o.name, p.user_id, p.last_seen_at, p.created_at,
+		        p.owner_id, o.name, p.user_id, u.username, p.last_seen_at, p.created_at,
 		        p.last_seen_at > now() - $2::interval AS online
 		 FROM participants p LEFT JOIN participants o ON o.id = p.owner_id
+		 LEFT JOIN users u ON u.id = p.user_id
 		 WHERE p.token_hash = $1 AND NOT p.revoked`,
 		hash, OnlineWindow.String(),
-	).Scan(&p.ID, &p.RoomID, &p.Name, &p.Avatar, &p.AvatarAttachmentID, &p.Description, &p.IsHuman, &p.Role, &p.OwnerID, &p.OwnerName, &p.UserID, &p.LastSeenAt, &p.CreatedAt, &p.Online)
+	).Scan(&p.ID, &p.RoomID, &p.Name, &p.Avatar, &p.AvatarAttachmentID, &p.Description, &p.IsHuman, &p.Role, &p.OwnerID, &p.OwnerName, &p.UserID, &p.Username, &p.LastSeenAt, &p.CreatedAt, &p.Online)
 	return p, mapRowErr(err)
 }
 
@@ -193,7 +194,7 @@ func (s *Store) listParticipants(ctx context.Context, roomID string, id, name, c
 	roster := id == nil && name == nil
 	rows, err := s.pool.Query(ctx,
 		`SELECT p.id, p.room_id, p.name, p.avatar, p.avatar_attachment_id, p.description, p.is_human, p.role,
-		        p.owner_id, o.name AS owner_name, p.user_id,
+		        p.owner_id, o.name AS owner_name, p.user_id, u.username,
 		        p.last_seen_at, p.created_at,
 		        p.last_seen_at > now() - $2::interval AS online,
 		        COALESCE(
@@ -204,6 +205,7 @@ func (s *Store) listParticipants(ctx context.Context, roomID string, id, name, c
 		            '[]'::json) AS tags
 		 FROM participants p
 		 LEFT JOIN participants o ON o.id = p.owner_id
+		 LEFT JOIN users u ON u.id = p.user_id
 		 WHERE p.room_id = $1 AND NOT p.revoked
 		   AND ($3::uuid IS NULL OR p.id = $3)
 		   AND ($4::text IS NULL OR p.name = $4)
@@ -222,7 +224,7 @@ func (s *Store) listParticipants(ctx context.Context, roomID string, id, name, c
 		var p Participant
 		var tagsJSON []byte
 		if err := rows.Scan(&p.ID, &p.RoomID, &p.Name, &p.Avatar, &p.AvatarAttachmentID, &p.Description, &p.IsHuman, &p.Role,
-			&p.OwnerID, &p.OwnerName, &p.UserID,
+			&p.OwnerID, &p.OwnerName, &p.UserID, &p.Username,
 			&p.LastSeenAt, &p.CreatedAt, &p.Online, &tagsJSON); err != nil {
 			return nil, err
 		}

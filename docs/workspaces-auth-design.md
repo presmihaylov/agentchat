@@ -945,3 +945,38 @@ with `is_human: true`) stay unlinked rows.
   with the attachment sweep.
 - A room created before deploy N with no live human admin keeps `created_by_user_id NULL`
   and counts against nobody's quota. Acceptable.
+
+## 15 Divergences recorded at task 07 (2026-09-04)
+
+The completeness critic compared this document with the shipped code. Where the
+code is right and the text above is stale, the difference is recorded here
+rather than rewritten in place; the sections above stay as the plan of record.
+
+- **Backfill merges into a pre-linked account** (sections 2, 7, decision 1 say "never").
+  000026 links an unlinked legacy row to a registered user that already holds at least one
+  participant link, unless that user already has a row in the same room. Only a zero-link
+  registered username is a squatter and gets the `-2` collision. This is how the operator
+  hand-linked three real humans before deploy N (task 04, `docs/PROD.md` pre-linked
+  report, `models/backfill_test.go`).
+- **Backfill verification is opt-in** (section 7 says the deploy script always runs it).
+  `scripts/deploy-prod.sh` runs the four counts only with
+  `AGENTCHAT_DEPLOY_VERIFY_BACKFILL=1`, because a human who enters with a code later is
+  unlinked by design and a database rolled back to 25 has no tracking table. The DO block
+  at the end of 000026 is the unconditional check.
+- **000026 down deletes only what it created** (sections 7 and 14 say all users).
+  `users_backfill_000026` tracks the accounts the migration made; pre-linked and
+  registered users survive a rollback to 25. The section 14 rollback risk is gone.
+- **000025 down uses a random placeholder** (section 5 names a derivable `retired:<id>`
+  hash). A derivable hash would be a guessable `act_` bearer, so the down file writes
+  `sha256(gen_random_bytes(32))`.
+- **`agentchat-passwd` reads the password from a prompt or stdin** and has `-create`;
+  section 10 shows it on argv, which would leak into shell history.
+- **No `clerk_publishable_key` yet** (sections 9 and 10 put it in task 07). Task 07 ships
+  only the compiling stub behind `CLERK_SECRET_KEY`; the key lands with section 11 steps
+  1-3, when the SPA has a consumer for it.
+- **The Clerk stub answers 501 `provider_not_implemented`** on every login with a
+  non-empty token (section 9 lists 401/404/429 only). An empty token is 401.
+
+Fixed in the same pass, not divergences: `GET /api/v1/participants` and `/members` now
+carry `user_id` and `username` for linked humans, and `/me` carries `username` over a
+legacy `act_` token too (section 10).

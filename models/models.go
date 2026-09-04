@@ -36,6 +36,7 @@ type Participant struct {
 	OwnerName *string `json:"owner_name,omitempty"`
 	// UserID links a human's row to their account; agents and cli humans have none.
 	UserID     *string   `json:"user_id,omitempty"`
+	Username   *string   `json:"username,omitempty"`
 	Revoked    bool      `json:"revoked,omitempty"`
 	Online     bool      `json:"online"`
 	LastSeenAt time.Time `json:"last_seen_at"`

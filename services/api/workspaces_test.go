@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/presmihaylov/agentchat/models"
+	"github.com/presmihaylov/agentchat/pkg/secrets"
 )
 
 // sessionRoom registers a user and creates a room with the session; the
@@ -487,5 +488,50 @@ func TestUserRouteRequiresSession(t *testing.T) {
 	anon := &testClient{t: t, base: srv.URL}
 	if st, out := anon.do("GET", "/api/v1/user", nil); st != 401 || out["code"] != "session_required" {
 		t.Fatalf("anon on /user: %d %v", st, out)
+	}
+}
+
+// Design section 10: a linked human shows user_id and username on every
+// listing an agent reads, and on /me even over a legacy act_ token.
+func TestLinkedHumanCarriesUsernameOnLists(t *testing.T) {
+	srv, _ := newTestServer(t)
+	creator, user, room := sessionRoom(t, srv.URL, "linked")
+	me := creator.must("GET", "/api/v1/me", nil, 200)
+
+	agent := &testClient{t: t, base: srv.URL}
+	joined := agent.must("POST", "/api/v1/rooms/join", map[string]any{"invite_code": room["invite_code"], "name": "worker"}, 201)
+	agent.token = joined["token"].(string)
+
+	find := func(list []any, id any) map[string]any {
+		for _, it := range list {
+			m := it.(map[string]any)
+			if m["id"] == id {
+				return m
+			}
+		}
+		t.Fatalf("participant %v not listed in %v", id, list)
+		return nil
+	}
+	human := find(agent.must("GET", "/api/v1/participants", nil, 200)["participants"].([]any), me["id"])
+	if human["user_id"] != user["id"] || human["username"] != user["username"] {
+		t.Fatalf("/participants linked human: %v", human)
+	}
+	worker := find(agent.must("GET", "/api/v1/participants", nil, 200)["participants"].([]any), joined["participant"].(map[string]any)["id"])
+	if _, has := worker["username"]; has {
+		t.Fatalf("agent row must not carry username: %v", worker)
+	}
+	member := find(agent.must("GET", "/api/v1/members", nil, 200)["members"].([]any), me["id"])
+	if member["user_id"] != user["id"] || member["username"] != user["username"] {
+		t.Fatalf("/members linked human: %v", member)
+	}
+
+	// the same human over a legacy act_ token (valid until task 08)
+	tok, hash := secrets.NewToken()
+	if _, err := testDB(t).Exec(context.Background(), `UPDATE participants SET token_hash = $1 WHERE id = $2`, hash, me["id"]); err != nil {
+		t.Fatal(err)
+	}
+	legacy := &testClient{t: t, base: srv.URL, token: tok}
+	if got := legacy.must("GET", "/api/v1/me", nil, 200); got["user_id"] != user["id"] || got["username"] != user["username"] {
+		t.Fatalf("/me over act_: %v", got)
 	}
 }
