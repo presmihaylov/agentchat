@@ -18,5 +18,5 @@ has run its backfill and verification queries.
 | 04 | User migration (humans to users, default password developer) | done |
 | 05 | Workspace switcher | done |
 | 06 | Skill (humans section), harness guides, cli.sh proof, fleet and prod docs | done |
-| 07 | Final e2e pass, Clerk stub, completeness critic | todo |
+| 07 | Final e2e pass, Clerk stub, completeness critic | done (9535abf) |
 | 08 | Deploy N+1: retire legacy human tokens | todo |
