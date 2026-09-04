@@ -1,6 +1,6 @@
 # 06 Skill (humans section), harness guides, cli.sh proof, fleet and prod docs
 
-Status: todo
+Status: done (PENDING_COMMIT, 2026-09-04)
 
 The "Creating a new room" rewrite of `/skill`, `TestSkillDoc` and `TestSkillHarnessGuides` belong to task 03 (decision 2: same change as the removal). This task adds what is new for agents to read, and the docs.
 

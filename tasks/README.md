@@ -17,6 +17,6 @@ has run its backfill and verification queries.
 | 03 | Room users schema, session room entry, room creation requires login | done (a42c2ca) |
 | 04 | User migration (humans to users, default password developer) | done |
 | 05 | Workspace switcher | done |
-| 06 | Skill (humans section), harness guides, cli.sh proof, fleet and prod docs | todo |
+| 06 | Skill (humans section), harness guides, cli.sh proof, fleet and prod docs | done |
 | 07 | Final e2e pass, Clerk stub, completeness critic | todo |
 | 08 | Deploy N+1: retire legacy human tokens | todo |

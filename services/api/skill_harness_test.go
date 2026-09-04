@@ -44,6 +44,7 @@ func TestSkillHarnessGuides(t *testing.T) {
 			`Keep ` + "`" + `WATCH=""` + "`" + `, the fleet default`, "Reactions never wake you",
 			"harness-keys.env", "never typed on a command line",
 			"curl -s \"$SERVER/api/v1/me\"", "byte for byte",
+			"http://public.test/skill#humans-and-workspaces", "nothing changes for you",
 			"launchd", "systemd", "enable-linger",
 			"## 7. Self-test beacons", "WATCHER-SELFTEST-OK", "BRIDGE-UP", "INJECT-UP",
 			"## 8. Troubleshooting",

@@ -6,7 +6,7 @@ and only moves when you run the deploy script.
 
 | | dev (this machine) | prod (`prodhost`) |
 |---|---|---|
-| URL | http://localhost:8090 | http://agentchat.local:8100 (LAN, mDNS); http://192.168.1.33:8100 fallback |
+| URL | http://localhost:8090 | https://chat.example.com (Cloudflare Tunnel + Access, `docs/CLOUDFLARE.md`); http://agentchat.local:8100 on the LAN |
 | App | docker compose, every commit | pinned binary, manual deploys |
 | Postgres | container, port 5477 | brew `postgresql@17` + pgvector, port 5432 (localhost only) |
 | Data | docker volume | `/opt/homebrew/var/postgresql@17` |
@@ -20,6 +20,10 @@ and only moves when you run the deploy script.
   `OPENAI_API_KEY` here to enable semantic search (currently disabled).
   To expose the room to chosen outsiders, add the `CLOUDFLARE_TUNNEL` block
   from `docs/CLOUDFLARE.md`.
+  Human login knobs, both optional: `AGENTCHAT_REGISTRATION_ENABLED`
+  (default `true`; `false` returns 403 on `/register`, logins still work) and
+  `AGENTCHAT_SESSION_TTL` (a Go duration, default `720h`; the sliding session
+  lifetime, capped at 90 days absolute). A bad value refuses to start.
 - `~/agentchat-prod/logs/agentchatd.log` — app log.
 - `~/agentchat-prod/backups/agentchat-<utc stamp>-pre-<commit>.dump` — a
   `pg_dump -Fc` the deploy script takes before every binary swap. The newest
@@ -46,8 +50,13 @@ The script first builds the web UI (`npm ci && npm run build` in `web/`, so
 node is a build-time dependency on the dev machine only; nothing new runs on
 the mini), then builds `darwin/arm64` from a clean checkout of that commit, ships
 it as `agentchatd-<commit>`, atomically repoints the symlink, kickstarts the
-service, and curls `/healthz`. Before the binary swap it takes a `pg_dump` on
-the mini (see `backups/` above) and aborts if the dump fails.
+service, and curls `/healthz`.
+
+Before the binary swap it takes a `pg_dump -Fc` on the mini
+(`backups/agentchat-<utc stamp>-pre-<commit>.dump`) and aborts if the dump
+fails. That dump is the safety net for every rollback below: a down migration
+deletes data, the dump does not. A deploy that crosses a migration therefore
+always has a restore point from just before it.
 
 ## Rollback
 
@@ -69,12 +78,39 @@ data those tables held (for example 24 to 23 deletes every user account and
 session). A rollback that crosses no migration is just the deploy line with
 the older commit (old binaries stay in `bin/`).
 
+Rollback targets per deploy of the workspaces-and-login work (design section 7).
+Each row rolls back to the previous row's commit; find the commit with
+`git log --oneline -- migrations/`.
+
+| Deploy | Schema after | `-migrate-to` target | What the down file deletes |
+|---|---|---|---|
+| task 01 (`000024_users`) | 24 | 23 | every user account and session |
+| task 02 (no migration) | 24 | 24 | nothing; plain redeploy |
+| task 03 (`000025_room_users`) | 25 | 24 | `participants.user_id`, `rooms.created_by_user_id`, the FK on `users.last_active_room_id` (column and values stay); session-created humans get a random placeholder `token_hash` |
+| task 04 (`000026_backfill_users`) | 26 | 25 | the accounts the backfill created (`users_backfill_000026`) and their links |
+| task 05 and later UI-only deploys | 26 | 26 | nothing; plain redeploy |
+| task 08 (`000027_null_human_tokens`) | 27 | none | point of no return: legacy human `act_` tokens are gone |
+
+`000024` needs the `pgcrypto` extension. Check it exists before the first
+deploy that crosses 23 on a fresh Postgres:
+
+```sh
+/opt/homebrew/opt/postgresql@17/bin/psql -h localhost agentchat \
+  -c "select name, installed_version from pg_available_extensions where name = 'pgcrypto'"
+```
+
+An empty result means the extension is not installable and the deploy will
+fail on startup; there is no fallback.
+
 ## Task 04 deploy: the user backfill (migration 000026)
 
-Migration 000026 turns every legacy human participant into a user account
-(design: `docs/workspaces-auth-design.md` section 7). Default password
-`developer`, `must_change_password` set, so everyone sees the banner on first
-login. Agents are untouched.
+Ran on prod 2026-09-04 (commit e369f67); kept here for a fresh install or a
+restore. Migration 000026 turns every legacy human participant into a user
+account (design: `docs/workspaces-auth-design.md` section 7). Every migrated
+human gets the default password `developer` with `must_change_password` set,
+so they see the banner on first login until they change it at `/settings`.
+Tell them the default out of band; it is never posted in a room. Agents are
+untouched.
 
 1. Preview, read-only, on the mini with the current (schema 25) binary:
    ```sh
