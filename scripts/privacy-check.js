@@ -3,6 +3,7 @@
 // admin/creator gate and disappears once the channel is private.
 // Run: NODE_PATH=<dir with puppeteer-core> node scripts/privacy-check.js
 const puppeteer = require('puppeteer-core');
+const { newRoom } = require('./lib/login.js');
 const SERVER = process.env.SERVER || 'http://localhost:8095';
 
 async function api(path, opts = {}) {
@@ -20,7 +21,7 @@ async function api(path, opts = {}) {
 const assert = (cond, msg) => { if (!cond) throw new Error(msg); };
 
 (async () => {
-  const created = await api('/api/v1/rooms', { method: 'POST', body: { name: 'privacy check' } });
+  const created = await newRoom(SERVER, 'privacy check');
   const slug = created.room.slug;
   const viewer = await api('/api/v1/rooms/join', { method: 'POST', body: { invite_code: created.invite_code, name: 'viewer', avatar: '🧑', is_human: true } });
   const bot = await api('/api/v1/rooms/join', { method: 'POST', body: { invite_code: created.invite_code, name: 'privbot', description: 't' } });

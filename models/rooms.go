@@ -3,7 +3,18 @@ package models
 import (
 	"context"
 	"encoding/json"
+	"errors"
 )
+
+const roomColumns = `id, slug, secret, name, created_by_user_id, created_at`
+
+// RoomQuota is how many rooms one user may create.
+const RoomQuota = 5
+
+var ErrRoomQuota = errors.New("you already created the maximum number of workspaces")
+
+// ErrInviteInvalid: the code does not open the workspace it was presented to.
+var ErrInviteInvalid = errors.New("that invite code does not open this workspace")
 
 func (s *Store) CreateRoom(ctx context.Context, name, slug, secret string) (Room, error) {
 	var r Room
@@ -15,9 +26,9 @@ func (s *Store) CreateRoom(ctx context.Context, name, slug, secret string) (Room
 
 	err = tx.QueryRow(ctx,
 		`INSERT INTO rooms (name, slug, secret) VALUES ($1, $2, $3)
-		 RETURNING id, slug, secret, name, created_at`,
+		 RETURNING `+roomColumns,
 		name, slug, secret,
-	).Scan(&r.ID, &r.Slug, &r.Secret, &r.Name, &r.CreatedAt)
+	).Scan(&r.ID, &r.Slug, &r.Secret, &r.Name, &r.CreatedByUserID, &r.CreatedAt)
 	if err != nil {
 		if isUniqueViolation(err) {
 			return r, ErrConflict
@@ -43,8 +54,8 @@ func (s *Store) CreateRoom(ctx context.Context, name, slug, secret string) (Room
 func (s *Store) RoomBySecret(ctx context.Context, secret string) (Room, error) {
 	var r Room
 	err := s.pool.QueryRow(ctx,
-		`SELECT id, slug, secret, name, created_at FROM rooms WHERE secret = $1`, secret,
-	).Scan(&r.ID, &r.Slug, &r.Secret, &r.Name, &r.CreatedAt)
+		`SELECT `+roomColumns+` FROM rooms WHERE secret = $1`, secret,
+	).Scan(&r.ID, &r.Slug, &r.Secret, &r.Name, &r.CreatedByUserID, &r.CreatedAt)
 	return r, mapRowErr(err)
 }
 
@@ -52,8 +63,8 @@ func (s *Store) RoomBySecret(ctx context.Context, secret string) (Room, error) {
 func (s *Store) RoomBySlug(ctx context.Context, slug string) (Room, error) {
 	var r Room
 	err := s.pool.QueryRow(ctx,
-		`SELECT id, slug, secret, name, created_at FROM rooms WHERE slug = $1`, slug,
-	).Scan(&r.ID, &r.Slug, &r.Secret, &r.Name, &r.CreatedAt)
+		`SELECT `+roomColumns+` FROM rooms WHERE slug = $1`, slug,
+	).Scan(&r.ID, &r.Slug, &r.Secret, &r.Name, &r.CreatedByUserID, &r.CreatedAt)
 	return r, mapRowErr(err)
 }
 
@@ -75,9 +86,9 @@ func (s *Store) RotateSecret(ctx context.Context, roomID, newSecret string) (Roo
 	}
 	err = tx.QueryRow(ctx,
 		`UPDATE rooms SET secret = $2 WHERE id = $1
-		 RETURNING id, slug, secret, name, created_at`,
+		 RETURNING `+roomColumns,
 		roomID, newSecret,
-	).Scan(&r.ID, &r.Slug, &r.Secret, &r.Name, &r.CreatedAt)
+	).Scan(&r.ID, &r.Slug, &r.Secret, &r.Name, &r.CreatedByUserID, &r.CreatedAt)
 	if err != nil {
 		return r, mapRowErr(err)
 	}
@@ -107,9 +118,9 @@ func (s *Store) RenameRoom(ctx context.Context, roomID, name string) (Room, erro
 	}
 	err = tx.QueryRow(ctx,
 		`UPDATE rooms SET name = $2 WHERE id = $1
-		 RETURNING id, slug, secret, name, created_at`,
+		 RETURNING `+roomColumns,
 		roomID, name,
-	).Scan(&r.ID, &r.Slug, &r.Secret, &r.Name, &r.CreatedAt)
+	).Scan(&r.ID, &r.Slug, &r.Secret, &r.Name, &r.CreatedByUserID, &r.CreatedAt)
 	if err != nil {
 		return r, mapRowErr(err)
 	}
@@ -123,7 +134,7 @@ func (s *Store) RenameRoom(ctx context.Context, roomID, name string) (Room, erro
 func (s *Store) RoomByID(ctx context.Context, id string) (Room, error) {
 	var r Room
 	err := s.pool.QueryRow(ctx,
-		`SELECT id, slug, secret, name, created_at FROM rooms WHERE id = $1`, id,
-	).Scan(&r.ID, &r.Slug, &r.Secret, &r.Name, &r.CreatedAt)
+		`SELECT `+roomColumns+` FROM rooms WHERE id = $1`, id,
+	).Scan(&r.ID, &r.Slug, &r.Secret, &r.Name, &r.CreatedByUserID, &r.CreatedAt)
 	return r, mapRowErr(err)
 }

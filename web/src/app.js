@@ -46,15 +46,45 @@ import { sessionToken, isAccountPage, showSignInBanner, loginURL, onSessionInval
     ? { pend: $('thread-attach-pending'), input: $('thread-attach-input') }
     : { pend: $('attach-pending'), input: $('attach-input') });
 
-  // One header builder for every fetch. A room's act_ token always wins; the
-  // login session only rides on the account pages, because a session on a
-  // room route still answers 403 no_room until task 03.
+  // One header builder for every fetch. The boot picks the identity: a legacy
+  // per-slug act_ token only when there is no login session; a session names
+  // its workspace through X-Workspace-Slug on room pages.
   const authHeaders = (extra) => {
     const headers = Object.assign({}, extra);
     if (token) { headers['Authorization'] = 'Bearer ' + token; return headers; }
-    const ses = isAccountPage ? sessionToken() : null;
-    if (ses) headers['Authorization'] = 'Bearer ' + ses;
+    const ses = sessionToken();
+    if (!ses) return headers;
+    headers['Authorization'] = 'Bearer ' + ses;
+    if (slug) headers['X-Workspace-Slug'] = slug;
     return headers;
+  };
+
+  // One verdict on an auth failure, shared by api(), the event loop and the
+  // boot. True means the failure is handled: the page is leaving, or a view
+  // took over. Later calls are no-ops so the callers can simply stop.
+  let authHandled = false;
+  const routeAuthError = (e) => {
+    if (authHandled) return true;
+    if (e.status === 401 && e.code === 'session_invalid') {
+      authHandled = true;
+      onSessionInvalid();
+      if (!isAccountPage) location.replace(loginURL());
+      return true;
+    }
+    if (e.status === 403 && e.code === 'workspace_forbidden') {
+      authHandled = true;
+      if (e.reason === 'revoked') { showRemoved(); return true; }
+      showEnter();
+      return true;
+    }
+    // a legacy act_ token the server no longer knows: forget it and start over
+    if (e.status === 401 && token) {
+      authHandled = true;
+      localStorage.removeItem(storeKey);
+      location.reload();
+      return true;
+    }
+    return false;
   };
 
   const api = async (path, opts = {}) => {
@@ -70,7 +100,8 @@ import { sessionToken, isAccountPage, showSignInBanner, loginURL, onSessionInval
       const err = new Error((data && data.error) || ('HTTP ' + resp.status));
       err.status = resp.status;
       err.code = data && data.code;
-      if (resp.status === 401 && err.code === 'session_invalid') onSessionInvalid();
+      err.reason = data && data.reason;
+      routeAuthError(err);
       throw err;
     }
     return data;
@@ -1674,7 +1705,7 @@ import { sessionToken, isAccountPage, showSignInBanner, loginURL, onSessionInval
         try { await applyEvent(ev); } catch (e) { console.error('applyEvent', ev.type, e); }
       }
     } catch (e) {
-      if (e.status === 401) { localStorage.removeItem(storeKey); location.reload(); return; }
+      if (routeAuthError(e)) return;
       await new Promise((r) => setTimeout(r, 3000));
     }
     eventLoop();
@@ -1693,6 +1724,43 @@ import { sessionToken, isAccountPage, showSignInBanner, loginURL, onSessionInval
       $('join-form').querySelector('button[type=submit]').disabled = true;
     }
   };
+
+  // the workspace entry for a signed-in non-member: the account supplies the
+  // name, only the invite code is asked for
+  const showEnter = async () => {
+    $('chat-view').classList.add('hidden');
+    $('enter-view').classList.remove('hidden');
+    try {
+      const peek = await api('/api/v1/rooms/peek?slug=' + encodeURIComponent(slug));
+      $('enter-room-name').textContent = '“' + peek.name + '”';
+    } catch (e) {
+      $('enter-error').textContent = e.status === 404 ? 'This link does not point to a workspace.' : e.message;
+      $('enter-error').classList.remove('hidden');
+      $('enter-form').querySelector('button[type=submit]').disabled = true;
+    }
+  };
+
+  const showRemoved = () => {
+    $('chat-view').classList.add('hidden');
+    $('removed-view').classList.remove('hidden');
+  };
+
+  $('enter-form').addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    $('enter-error').classList.add('hidden');
+    const btn = $('enter-form').querySelector('button[type=submit]');
+    btn.disabled = true;
+    try {
+      await api('/api/v1/workspaces/' + encodeURIComponent(slug) + '/enter', {
+        method: 'POST', body: { invite_code: $('enter-code').value.trim() },
+      });
+      location.reload();
+    } catch (e) {
+      btn.disabled = false;
+      $('enter-error').textContent = e.message;
+      $('enter-error').classList.remove('hidden');
+    }
+  });
 
   const enterChat = async () => {
     me = await api('/api/v1/me');
@@ -2470,8 +2538,7 @@ import { sessionToken, isAccountPage, showSignInBanner, loginURL, onSessionInval
   // ---------- create workspace (onboarding at /create) ----------
 
   if (isCreatePage) {
-    // creating a workspace needs an account; the create + join calls
-    // themselves stay unauthenticated until task 03
+    // the creator lands in the workspace as its admin; no join needed
     if (!sessionToken()) { location.replace(loginURL('/create')); return; }
     $('create-back').href = backTarget();
     $('create-view').classList.remove('hidden');
@@ -2483,15 +2550,6 @@ import { sessionToken, isAccountPage, showSignInBanner, loginURL, onSessionInval
         const created = await api('/api/v1/rooms', {
           method: 'POST', body: { name: $('create-room-name').value.trim() },
         });
-        const joined = await api('/api/v1/rooms/join', {
-          method: 'POST',
-          body: {
-            invite_code: created.invite_code,
-            name: $('create-user-name').value.trim(),
-            is_human: true,
-          },
-        });
-        localStorage.setItem('agentchat:' + created.room.slug, JSON.stringify({ token: joined.token }));
         location.href = '/r/' + created.room.slug;
       } catch (e) {
         btn.disabled = false;
@@ -2506,6 +2564,19 @@ import { sessionToken, isAccountPage, showSignInBanner, loginURL, onSessionInval
   if (isAccountPage) return;
   (async () => {
     if (!slug) { document.body.textContent = 'Missing room link.'; return; }
+    if (sessionToken()) {
+      // a signed-in visit: the session is the identity, whatever per-slug
+      // token an earlier join left behind
+      for (;;) {
+        try { await enterChat(); localStorage.removeItem(storeKey); return; }
+        catch (e) {
+          if (routeAuthError(e)) return;
+          if (e.status === 404) { showEnter(); return; }
+          console.error('boot', e);
+          await new Promise((r) => setTimeout(r, 3000));
+        }
+      }
+    }
     let saved = null;
     try { saved = JSON.parse(localStorage.getItem(storeKey) || 'null'); } catch (e) { /* corrupt entry */ }
     if (saved && saved.token) {
@@ -2515,7 +2586,8 @@ import { sessionToken, isAccountPage, showSignInBanner, loginURL, onSessionInval
       for (;;) {
         try { await enterChat(); showSignInBanner(me); return; }
         catch (e) {
-          if (e.status === 401 || e.status === 404) { token = null; localStorage.removeItem(storeKey); break; }
+          if (e.status === 404) { token = null; localStorage.removeItem(storeKey); break; }
+          if (routeAuthError(e)) return;
           console.error('boot', e);
           await new Promise((r) => setTimeout(r, 3000));
         }

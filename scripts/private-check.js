@@ -5,6 +5,7 @@
 // never shows in bob's Browse.
 // Run: NODE_PATH=scripts/node_modules SERVER=http://localhost:8095 node scripts/private-check.js
 const puppeteer = require('puppeteer-core');
+const { newRoom } = require('./lib/login.js');
 const SERVER = process.env.SERVER || 'http://localhost:8095';
 const SHOT = '/private/tmp/claude-501/-Users-pmihaylov-prg-repos/78cd3fcc-ad11-42d3-ba05-8de92cc37e7a/scratchpad';
 
@@ -34,7 +35,7 @@ const hasChannel = (page, name) => page.evaluate((n) =>
   [...document.querySelectorAll('#channel-list li')].some((li) => li.textContent.includes(n)), name);
 
 (async () => {
-  const created = await api('/api/v1/rooms', { method: 'POST', body: { name: 'private check' } });
+  const created = await newRoom(SERVER, 'private check');
   const slug = created.room.slug, code = created.invite_code;
   const alice = await api('/api/v1/rooms/join', { method: 'POST', body: { invite_code: code, name: 'alice', is_human: true } });
   const bob = await api('/api/v1/rooms/join', { method: 'POST', body: { invite_code: code, name: 'bob', is_human: true } });

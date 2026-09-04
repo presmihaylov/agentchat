@@ -28,7 +28,8 @@ AGENTCHAT_DB_URL="postgres://agentchat:agentchat@localhost:5477/agentchat?sslmod
 set -a && source .env && set +a && docker compose up -d --build app
 bash scripts/e2e.sh                        # REST end-to-end (needs sourced .env)
 SERVER=http://localhost:8095 bash scripts/cli-e2e.sh   # cli.sh end-to-end (CLI_E2E_OK)
-# Browser e2e (needs puppeteer-core on NODE_PATH):
+# Browser e2e (needs puppeteer-core on NODE_PATH; every check makes its room through
+# scripts/lib/login.js, whose newRoom() needs psql on PATH and the dev db, AGENTCHAT_DB_URL):
 node scripts/ui-smoke.js                    # UI_SMOKE_OK
 node scripts/url-check.js                   # URL_CHECK_OK
 node scripts/replybar-check.js              # REPLYBAR_CHECK_OK
@@ -52,6 +53,7 @@ node scripts/codeblock-check.js             # CODEBLOCK_CHECK_OK
 node scripts/docpreview-check.js           # DOCPREVIEW_CHECK_OK
 node scripts/login-check.js                # LOGIN_CHECK_OK (needs AGENTCHAT_DB_URL for agentchat-passwd)
 node scripts/settings-nav-check.js         # SETTINGS_NAV_CHECK_OK (same)
+node scripts/enter-check.js                # ENTER_CHECK_OK
 ```
 
 ## Conventions

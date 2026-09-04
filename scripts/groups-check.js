@@ -6,6 +6,7 @@
 // Sections are personal, so bob never sees alice's "Work".
 // Run: NODE_PATH=scripts/node_modules SERVER=http://localhost:8095 node scripts/groups-check.js
 const puppeteer = require('puppeteer-core');
+const { newRoom } = require('./lib/login.js');
 const SERVER = process.env.SERVER || 'http://localhost:8095';
 const SHOT = '/private/tmp/claude-501/-Users-pmihaylov-prg-repos/78cd3fcc-ad11-42d3-ba05-8de92cc37e7a/scratchpad';
 
@@ -47,7 +48,7 @@ const sectionHeader = (page, name) => page.evaluate((n) =>
   [...document.querySelectorAll('#channel-list li.section-header')].some((h) => h.textContent.includes(n)), name);
 
 (async () => {
-  const created = await api('/api/v1/rooms', { method: 'POST', body: { name: 'groups check' } });
+  const created = await newRoom(SERVER, 'groups check');
   const slug = created.room.slug, code = created.invite_code;
   const alice = await api('/api/v1/rooms/join', { method: 'POST', body: { invite_code: code, name: 'alice', is_human: true } });
   const bob = await api('/api/v1/rooms/join', { method: 'POST', body: { invite_code: code, name: 'bob', is_human: true } });

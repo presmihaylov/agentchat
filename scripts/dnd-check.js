@@ -3,6 +3,7 @@
 // accepts a drop on its header, and the strip drops a channel out of sections.
 // Run: NODE_PATH=<dir with puppeteer-core> node scripts/dnd-check.js
 const puppeteer = require('puppeteer-core');
+const { newRoom } = require('./lib/login.js');
 const SERVER = process.env.SERVER || 'http://localhost:8095';
 
 async function api(path, opts = {}) {
@@ -19,7 +20,7 @@ async function api(path, opts = {}) {
 const assert = (cond, msg) => { if (!cond) throw new Error(msg); };
 
 (async () => {
-  const created = await api('/api/v1/rooms', { method: 'POST', body: { name: 'dnd check' } });
+  const created = await newRoom(SERVER, 'dnd check');
   const slug = created.room.slug;
   const me = await api('/api/v1/rooms/join', { method: 'POST', body: { invite_code: created.invite_code, name: 'viewer', is_human: true } });
   const T = { token: me.token };

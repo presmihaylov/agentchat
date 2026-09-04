@@ -3,6 +3,7 @@
 // and that the 504px default holds until a drag.
 // Run: NODE_PATH=<dir with puppeteer-core> node scripts/threadresize-check.js
 const puppeteer = require('puppeteer-core');
+const { newRoom } = require('./lib/login.js');
 const SERVER = process.env.SERVER || 'http://localhost:8095';
 
 async function api(path, opts = {}) {
@@ -18,7 +19,7 @@ async function api(path, opts = {}) {
 const widthOf = (page) => page.$eval('#thread-panel', (el) => el.getBoundingClientRect().width);
 
 (async () => {
-  const created = await api('/api/v1/rooms', { method: 'POST', body: { name: 'threadresize check' } });
+  const created = await newRoom(SERVER, 'threadresize check');
   const code = created.invite_code, slug = created.room.slug;
   const viewer = await api('/api/v1/rooms/join', { method: 'POST', body: { invite_code: code, name: 'viewer', avatar: '🧑', is_human: true } });
   const sender = await api('/api/v1/rooms/join', { method: 'POST', body: { invite_code: code, name: 'sender', avatar: '🤖' } });

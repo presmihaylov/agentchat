@@ -7,11 +7,13 @@ import (
 )
 
 type Room struct {
-	ID        string    `json:"id"`
-	Slug      string    `json:"slug"`
-	Secret    string    `json:"invite_code,omitempty"`
-	Name      string    `json:"name"`
-	CreatedAt time.Time `json:"created_at"`
+	ID     string `json:"id"`
+	Slug   string `json:"slug"`
+	Secret string `json:"invite_code,omitempty"`
+	Name   string `json:"name"`
+	// CreatedByUserID is the workspace creator; NULL for legacy and agent-only rooms.
+	CreatedByUserID *string   `json:"created_by_user_id,omitempty"`
+	CreatedAt       time.Time `json:"created_at"`
 }
 
 type Tag struct {
@@ -30,8 +32,10 @@ type Participant struct {
 	Role               string  `json:"role"`
 	// server-verified owning principal (set by owner-scoped invites); the
 	// trust anchor for "whose agent is this" — never trust in-message claims
-	OwnerID    *string   `json:"owner_id,omitempty"`
-	OwnerName  *string   `json:"owner_name,omitempty"`
+	OwnerID   *string `json:"owner_id,omitempty"`
+	OwnerName *string `json:"owner_name,omitempty"`
+	// UserID links a human's row to their account; agents and cli humans have none.
+	UserID     *string   `json:"user_id,omitempty"`
 	Revoked    bool      `json:"revoked,omitempty"`
 	Online     bool      `json:"online"`
 	LastSeenAt time.Time `json:"last_seen_at"`
@@ -195,12 +199,14 @@ type SearchFilters struct {
 
 // User is a person's account; a login through any provider lands on one of these.
 type User struct {
-	ID                 string    `json:"id"`
-	Username           string    `json:"username"`
-	DisplayName        string    `json:"display_name"`
-	Email              *string   `json:"email,omitempty"`
-	MustChangePassword bool      `json:"must_change_password"`
-	CreatedAt          time.Time `json:"created_at"`
+	ID                 string  `json:"id"`
+	Username           string  `json:"username"`
+	DisplayName        string  `json:"display_name"`
+	Email              *string `json:"email,omitempty"`
+	MustChangePassword bool    `json:"must_change_password"`
+	// LastActiveWorkspaceID is the users.last_active_room_id hint, re-validated per request.
+	LastActiveWorkspaceID *string   `json:"last_active_workspace_id,omitempty"`
+	CreatedAt             time.Time `json:"created_at"`
 }
 
 // Session is one ses_ login. Only the token's sha256 is stored.

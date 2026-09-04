@@ -4,6 +4,7 @@
 // picker search finds :tada:, and the same pills show on the thread-panel copy.
 // Run: NODE_PATH=<puppeteer dir> SERVER=http://localhost:8095 node scripts/reactions-check.js
 const puppeteer = require('puppeteer-core');
+const { newRoom } = require('./lib/login.js');
 const SERVER = process.env.SERVER || 'http://localhost:8095';
 const assert = (ok, msg) => { if (!ok) throw new Error(msg); };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -20,7 +21,7 @@ async function api(path, opts = {}) {
 }
 
 (async () => {
-  const created = await api('/api/v1/rooms', { method: 'POST', body: { name: 'reactions check' } });
+  const created = await newRoom(SERVER, 'reactions check');
   const slug = created.room.slug, code = created.invite_code;
   const alice = await api('/api/v1/rooms/join', { method: 'POST', body: { invite_code: code, name: 'alice', is_human: true } });
   const bob = await api('/api/v1/rooms/join', { method: 'POST', body: { invite_code: code, name: 'bob', description: 'bot' } });

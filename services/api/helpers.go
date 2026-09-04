@@ -51,6 +51,10 @@ func writeStoreErr(w http.ResponseWriter, err error) {
 		writeErr(w, http.StatusConflict, err.Error())
 	case errors.Is(err, models.ErrQuota):
 		writeErr(w, http.StatusRequestEntityTooLarge, err.Error())
+	case errors.Is(err, models.ErrRoomQuota):
+		writeErrCode(w, http.StatusConflict, "workspace_quota", err.Error())
+	case errors.Is(err, models.ErrInviteInvalid):
+		writeErrCode(w, http.StatusBadRequest, "invite_invalid", err.Error())
 	default:
 		slog.Error("internal error", "err", err)
 		writeErr(w, http.StatusInternalServerError, "internal error")
@@ -108,12 +112,9 @@ func isReservedName(name string) bool { return reservedNames[strings.ToLower(nam
 func validName(name string) bool { return nameRe.MatchString(name) }
 
 // participant names allow upper case and inner spaces (2-32 chars, no
-// leading/trailing space, no double spaces)
-var participantNameRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]*( [A-Za-z0-9_-]+)*$`)
-
-func validParticipantName(name string) bool {
-	return len(name) >= 2 && len(name) <= 32 && participantNameRe.MatchString(name)
-}
+// leading/trailing space, no double spaces); the store shares the rule so a
+// login-derived name obeys the same shape as a join
+func validParticipantName(name string) bool { return models.ValidParticipantName(name) }
 
 var uuidRe = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
 

@@ -1,12 +1,14 @@
 // Headless check of the account pages: register, sign out, sign in, wrong
 // password, lockout, the must_change_password banner, changing the password
-// on /settings (clears the banner, signs the other tab out) and a room page
-// that still boots on a legacy act_ token when a session is also present.
+// on /settings (clears the banner, signs the other tab out), a room page that
+// boots on the session (and forgets the legacy per-slug act_ token) and one
+// that still boots on the legacy act_ token when there is no session.
 // Needs Postgres for agentchat-passwd (AGENTCHAT_DB_URL, default the dev db).
 const puppeteer = require('puppeteer-core');
 const { execFileSync } = require('child_process');
 const path = require('path');
 const fs = require('fs');
+const { createRoom } = require('./lib/login.js');
 
 const SERVER = process.env.SERVER || 'http://localhost:8095';
 const DB_URL = process.env.AGENTCHAT_DB_URL || 'postgres://agentchat:agentchat@localhost:5477/agentchat?sslmode=disable';
@@ -199,20 +201,22 @@ const userStatus = (page, tok) => page.evaluate(async (t) => {
   await page.waitForFunction(() => location.pathname === '/settings', { timeout: 8000 });
   await visible(page, '#settings-view');
 
-  // a room joined on a legacy act_ token, for the room-page checks below
-  const created = await api('/api/v1/rooms', { method: 'POST', body: { name: 'login check' } });
-  if (created.status !== 201) throw new Error('create room: ' + JSON.stringify(created));
-  const slug = created.data.room.slug;
-  const joined = await api('/api/v1/rooms/join', { method: 'POST', body: { invite_code: created.data.invite_code, name: 'Login Tester', is_human: true } });
+  // the user's own workspace, plus a legacy act_ join in it under another
+  // name (the creator's row is linked to the account and cannot be reclaimed)
+  const created = await createRoom(SERVER, await session(page), 'login check');
+  const slug = created.room.slug;
+  const joined = await api('/api/v1/rooms/join', { method: 'POST', body: { invite_code: created.invite_code, name: 'Legacy Tester', is_human: true } });
   if (!joined.data.token) throw new Error('join room: ' + JSON.stringify(joined));
-  await page.evaluate((k, t) => localStorage.setItem(k, JSON.stringify({ token: t })), 'agentchat:' + slug, joined.data.token);
+  const seedLegacy = () => page.evaluate((k, t) => localStorage.setItem(k, JSON.stringify({ token: t })), 'agentchat:' + slug, joined.data.token);
+  const legacyKey = () => page.evaluate((k) => localStorage.getItem(k), 'agentchat:' + slug);
+  await seedLegacy();
   const openRoom = async () => {
     statuses.length = 0;
     await page.goto(SERVER + '/r/' + slug, { waitUntil: 'networkidle2' });
     await visible(page, '#chat-view');
     await page.waitForFunction(() => document.querySelector('#room-name').textContent === 'login check', { timeout: 8000 });
     if (statuses.some(([, s]) => s === 403)) throw new Error('403 on the room page: ' + JSON.stringify(statuses.filter(([, s]) => s === 403)));
-    if (!statuses.some(([u, s]) => u.includes('/api/v1/me') && s === 200)) throw new Error('room did not load with the act_ token');
+    if (!statuses.some(([u, s]) => u.includes('/api/v1/me') && s === 200)) throw new Error('room did not load');
   };
 
   // an operator reset flags the account: the banner shows on every page
@@ -240,10 +244,14 @@ const userStatus = (page, tok) => page.evaluate(async (t) => {
   await page.goto(SERVER + '/register', { waitUntil: 'networkidle2' });
   await page.waitForFunction(() => location.pathname === '/create', { timeout: 8000 });
   await visible(page, '#pw-banner');
-  // ...and on a room page, where the act_ token drives the room and the session only the banner
+  // ...and on a room page, where the session drives the room as the creator
+  // and the legacy per-slug token is forgotten
   await openRoom();
   await visible(page, '#pw-banner');
   if (!await hiddenNow(page, '#signin-banner')) throw new Error('sign-in banner shown while a session exists');
+  if (await legacyKey() !== null) throw new Error('legacy per-slug token kept after the session worked');
+  const meName = await page.evaluate(async () => (await (await fetch('/api/v1/me', { headers: { Authorization: 'Bearer ' + localStorage.getItem('agentchat:session'), 'X-Workspace-Slug': location.pathname.split('/')[2] } })).json()).name);
+  if (meName !== 'Login Tester') throw new Error('room identity: ' + meName);
   await shot(page, 'room-pw-banner.png');
 
   // a second tab in its own browser context (own localStorage) holding a second session
@@ -278,18 +286,19 @@ const userStatus = (page, tok) => page.evaluate(async (t) => {
   const after = await api('/api/v1/auth/password/login', { method: 'POST', body: { username: user, password: pw } });
   if (after.status !== 200) throw new Error('new password rejected: ' + JSON.stringify(after));
 
-  // the room page again: session + legacy act_ token -> the act_ token wins, no 403, banner gone
+  // the room page again on the new session: no 403, banner gone
   await openRoom();
   if (!await hiddenNow(page, '#pw-banner')) throw new Error('pw-banner still shown on the room page after the change');
   if (!await hiddenNow(page, '#signin-banner')) throw new Error('sign-in banner shown while a session exists');
 
   // the same room with no session: boots on the act_ token, one-line sign-in banner
   await page.evaluate(() => localStorage.removeItem('agentchat:session'));
+  await seedLegacy();
   await page.reload({ waitUntil: 'networkidle2' });
   await visible(page, '#chat-view');
   await visible(page, '#signin-banner');
   const bannerText = await page.$eval('#signin-banner', (el) => el.textContent);
-  if (!bannerText.includes('(login-tester)')) throw new Error('derived username: ' + bannerText);
+  if (!bannerText.includes('(legacy-tester)')) throw new Error('derived username: ' + bannerText);
   const href = await page.$eval('#signin-banner a', (el) => el.getAttribute('href'));
   if (!href.startsWith('/login?next=%2Fr%2F' + slug)) throw new Error('banner link: ' + href);
   await shot(page, 'room-signin-banner.png');

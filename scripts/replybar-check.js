@@ -2,6 +2,7 @@
 // last-reply time, click-to-open (with /t/ URL), unread glow.
 // Run: NODE_PATH=<dir with puppeteer-core> node scripts/replybar-check.js
 const puppeteer = require('puppeteer-core');
+const { newRoom } = require('./lib/login.js');
 const SERVER = process.env.SERVER || 'http://localhost:8095';
 
 async function api(path, opts = {}) {
@@ -17,7 +18,7 @@ async function api(path, opts = {}) {
 }
 
 (async () => {
-  const created = await api('/api/v1/rooms', { method: 'POST', body: { name: 'replybar check' } });
+  const created = await newRoom(SERVER, 'replybar check');
   const slug = created.room.slug;
   const bot = await api('/api/v1/rooms/join', { method: 'POST', body: { invite_code: created.invite_code, name: 'barbot', description: 't', avatar: '🤖' } });
   const root = await api('/api/v1/channels/general/messages', { method: 'POST', token: bot.token, body: { body: 'root message' } });

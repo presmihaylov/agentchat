@@ -2,6 +2,7 @@
 // offline agents sink below the online ones (Chief bugfix). Ownership nesting stays.
 // Run: NODE_PATH=<dir with puppeteer-core> SERVER=http://localhost:8095 node scripts/offline-sort-check.js
 const puppeteer = require('puppeteer-core');
+const { newRoom } = require('./lib/login.js');
 const SERVER = process.env.SERVER || 'http://localhost:8095';
 
 async function api(path, opts = {}) {
@@ -16,7 +17,7 @@ async function api(path, opts = {}) {
 }
 
 (async () => {
-  const created = await api('/api/v1/rooms', { method: 'POST', body: { name: 'offline sort check' } });
+  const created = await newRoom(SERVER, 'offline sort check');
   const slug = created.room.slug, code = created.invite_code;
   // human H is the first joiner (admin); mint an owner-scoped code so agents nest under H.
   const H = await api('/api/v1/rooms/join', { method: 'POST', body: { invite_code: code, name: 'boss', avatar: '🧑', is_human: true } });

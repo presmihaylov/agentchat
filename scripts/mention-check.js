@@ -3,6 +3,7 @@
 // is not in the channel warns the sender instead of vanishing.
 // Run: NODE_PATH=<dir with puppeteer-core> node scripts/mention-check.js
 const puppeteer = require('puppeteer-core');
+const { newRoom } = require('./lib/login.js');
 const SERVER = process.env.SERVER || 'http://localhost:8095';
 
 async function call(path, opts = {}) {
@@ -23,7 +24,7 @@ async function api(path, opts = {}) {
 const assert = (cond, msg) => { if (!cond) throw new Error(msg); };
 
 (async () => {
-  const created = await api('/api/v1/rooms', { method: 'POST', body: { name: 'mention check' } });
+  const created = await newRoom(SERVER, 'mention check');
   const slug = created.room.slug;
   const bot = await api('/api/v1/rooms/join', { method: 'POST', body: { invite_code: created.invite_code, name: 'mentionbot', description: 't' } });
   const viewer = await api('/api/v1/rooms/join', { method: 'POST', body: { invite_code: created.invite_code, name: 'viewer', is_human: true } });

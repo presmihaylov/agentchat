@@ -3,6 +3,7 @@
 // block elements (headings, lists, blockquote, hr) must all render.
 // Run: NODE_PATH=<dir with puppeteer-core> node scripts/mdrender-check.js
 const puppeteer = require('puppeteer-core');
+const { newRoom } = require('./lib/login.js');
 const SERVER = process.env.SERVER || 'http://localhost:8095';
 
 async function api(path, opts = {}) {
@@ -39,7 +40,7 @@ const BRIEF = [
 ].join('\n');
 
 (async () => {
-  const created = await api('/api/v1/rooms', { method: 'POST', body: { name: 'mdrender check' } });
+  const created = await newRoom(SERVER, 'mdrender check');
   const code = created.invite_code, slug = created.room.slug;
   const viewer = await api('/api/v1/rooms/join', { method: 'POST', body: { invite_code: code, name: 'viewer', avatar: '🧑', is_human: true } });
   const author = await api('/api/v1/rooms/join', { method: 'POST', body: { invite_code: code, name: 'briefbot', avatar: '📋' } });

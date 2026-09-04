@@ -54,6 +54,11 @@ func TestSkillHarnessGuides(t *testing.T) {
 				t.Fatalf("/skill/%s missing %q", slug, want)
 			}
 		}
+		for _, gone := range skillCreateRecipeGone {
+			if strings.Contains(doc, gone) {
+				t.Fatalf("/skill/%s still carries the unauthenticated create recipe %q", slug, gone)
+			}
+		}
 	}
 }
 

@@ -9,6 +9,7 @@ const puppeteer = require('puppeteer-core');
 const { execFileSync } = require('child_process');
 const path = require('path');
 const fs = require('fs');
+const { createRoom } = require('./lib/login.js');
 
 const SERVER = process.env.SERVER || 'http://localhost:8095';
 const DB_URL = process.env.AGENTCHAT_DB_URL || 'postgres://agentchat:agentchat@localhost:5477/agentchat?sslmode=disable';
@@ -87,18 +88,16 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     throw new Error('rate limited for good on ' + apiFrag);
   };
 
-  // an account, and a room joined on a legacy act_ token so the room page boots
+  // an account that owns a room, so the room page boots on the session
   const user = uniq('nav');
   const pw = 'correct horse battery';
   const reg = await api('/api/v1/auth/password/register', { method: 'POST', body: { username: user, password: pw, display_name: 'Nav Tester' } });
-  const created = await api('/api/v1/rooms', { method: 'POST', body: { name: 'nav check' } });
+  const created = await createRoom(SERVER, reg.token, 'nav check');
   const slug = created.room.slug;
   const roomPath = '/r/' + slug;
   const roomNext = '?next=' + encodeURIComponent(roomPath);
-  const joined = await api('/api/v1/rooms/join', { method: 'POST', body: { invite_code: created.invite_code, name: 'Nav Tester', is_human: true } });
   await page.goto(SERVER + '/login', { waitUntil: 'networkidle2' });
   await setSession(page, reg.token);
-  await page.evaluate((k, t) => localStorage.setItem(k, JSON.stringify({ token: t })), 'agentchat:' + slug, joined.token);
 
   // /settings with a room next: header with username + sign out, Back points at the room
   await page.goto(SERVER + '/settings' + roomNext, { waitUntil: 'networkidle2' });
@@ -193,7 +192,10 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   // the banner on an account page keeps the same way back
   assert(await page.$eval('#pw-banner a', (el) => el.getAttribute('href')) === bannerHref, 'pw-banner link on settings');
   // the sign-in banner on the room page (no session) also carries the room
+  // a legacy act_ human, seeded only now: a session boot deletes the per-slug key
+  const legacy = await api('/api/v1/rooms/join', { method: 'POST', body: { invite_code: created.invite_code, name: 'Legacy Nav', is_human: true } });
   await page.evaluate(() => localStorage.removeItem('agentchat:session'));
+  await page.evaluate((k, t) => localStorage.setItem(k, JSON.stringify({ token: t })), 'agentchat:' + slug, legacy.token);
   await page.goto(SERVER + roomPath, { waitUntil: 'networkidle2' });
   await visible(page, '#signin-banner');
   const signinHref = await page.$eval('#signin-banner a', (el) => el.getAttribute('href'));

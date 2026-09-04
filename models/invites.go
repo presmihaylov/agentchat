@@ -24,14 +24,14 @@ func (s *Store) RoomByAnySecret(ctx context.Context, secret string) (Room, *stri
 	var r Room
 	var owner string
 	err = s.pool.QueryRow(ctx,
-		`SELECT r.id, r.slug, r.secret, r.name, r.created_at,
+		`SELECT r.id, r.slug, r.secret, r.name, r.created_by_user_id, r.created_at,
 		        CASE WHEN i.is_human THEN i.id ELSE COALESCE(i.owner_id, i.id) END
 		 FROM invites v
 		 JOIN rooms r ON r.id = v.room_id
 		 JOIN participants i ON i.id = v.issuer_id
 		 WHERE v.secret = $1 AND NOT i.revoked`,
 		secret,
-	).Scan(&r.ID, &r.Slug, &r.Secret, &r.Name, &r.CreatedAt, &owner)
+	).Scan(&r.ID, &r.Slug, &r.Secret, &r.Name, &r.CreatedByUserID, &r.CreatedAt, &owner)
 	if err != nil {
 		return r, nil, mapRowErr(err)
 	}

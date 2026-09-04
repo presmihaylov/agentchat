@@ -3,6 +3,7 @@ package api
 
 import (
 	"context"
+	"errors"
 	"io/fs"
 	"net/http"
 	"strings"
@@ -118,7 +119,7 @@ func (s *Server) routes() {
 		m.HandleFunc("GET /skill/"+g.slug, s.handleSkillHarness(g))
 	}
 	m.HandleFunc("GET /cli.sh", s.handleCLI)
-	m.HandleFunc("POST /api/v1/rooms", s.handleCreateRoom)
+	m.HandleFunc("POST /api/v1/rooms", s.withSession(s.handleCreateRoom))
 	m.HandleFunc("POST /api/v1/rooms/join", s.handleJoinRoom)
 	m.HandleFunc("GET /api/v1/rooms/peek", s.handlePeekRoom)
 
@@ -129,6 +130,7 @@ func (s *Server) routes() {
 	m.HandleFunc("POST /api/v1/auth/logout", s.withSession(s.handleLogout))
 	m.HandleFunc("POST /api/v1/auth/password/change", s.withSession(s.handleChangePassword))
 	m.HandleFunc("GET /api/v1/user", s.withSession(s.handleGetUser))
+	m.HandleFunc("POST /api/v1/workspaces/{slug}/enter", s.withSession(s.handleEnterWorkspace))
 
 	// authenticated (bearer participant token)
 	m.HandleFunc("GET /api/v1/room", s.authed(s.handleGetRoom))
@@ -211,13 +213,12 @@ func (s *Server) authed(h authedHandler) http.HandlerFunc {
 			return
 		}
 		if strings.HasPrefix(token, "ses_") {
-			// A session is a person, not a participant. Task 05 resolves the
-			// participant from X-Room-Slug here; until then a session on a
-			// room route is refused, and the act_ path below is untouched.
-			if _, _, ok := s.sessionFromToken(w, r, token); !ok {
+			p, r, ok := s.participantForSession(w, r, token) // writes its own error
+			if !ok {
 				return
 			}
-			writeErrCode(w, http.StatusForbidden, "no_room", "session tokens cannot use room routes yet")
+			_ = s.store.TouchPresence(r.Context(), p.RoomID, p.ID)
+			h(w, r, p)
 			return
 		}
 		p, err := s.store.ParticipantByTokenHash(r.Context(), secrets.HashToken(token))
@@ -229,6 +230,41 @@ func (s *Server) authed(h authedHandler) http.HandlerFunc {
 		_ = s.store.TouchPresence(r.Context(), p.RoomID, p.ID)
 		h(w, r, p)
 	}
+}
+
+// participantForSession resolves a session on a room route: the workspace
+// comes from X-Workspace-Slug and the membership is the participant row. The
+// user rides on the returned request's context for handleGetMe.
+func (s *Server) participantForSession(w http.ResponseWriter, r *http.Request, token string) (models.Participant, *http.Request, bool) {
+	slug := strings.TrimSpace(r.Header.Get("X-Workspace-Slug"))
+	sc, err := s.store.SessionScope(r.Context(), secrets.HashToken(token), slug, s.cfg.SessionTTL)
+	if errors.Is(err, models.ErrNotFound) {
+		writeErrCode(w, http.StatusUnauthorized, "session_invalid", "session expired")
+		return models.Participant{}, r, false
+	}
+	if err != nil {
+		writeStoreErr(w, err)
+		return models.Participant{}, r, false
+	}
+	if slug == "" {
+		writeErrCode(w, http.StatusBadRequest, "workspace_required", "X-Workspace-Slug header is required")
+		return models.Participant{}, r, false
+	}
+	if sc.RoomID == nil {
+		writeErr(w, http.StatusNotFound, "not found")
+		return models.Participant{}, r, false
+	}
+	if sc.Participant == nil {
+		writeWorkspaceForbidden(w, "not_member")
+		return models.Participant{}, r, false
+	}
+	if sc.Participant.Revoked {
+		writeWorkspaceForbidden(w, "revoked")
+		return models.Participant{}, r, false
+	}
+	ctx := context.WithValue(r.Context(), ctxKeyUser, sc.User)
+	ctx = context.WithValue(ctx, ctxKeySession, sc.Session)
+	return *sc.Participant, r.WithContext(ctx), true
 }
 
 type sessionHandler func(w http.ResponseWriter, r *http.Request, u models.User)

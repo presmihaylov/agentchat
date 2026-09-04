@@ -15,7 +15,15 @@ func (s *Server) handleGetMe(w http.ResponseWriter, r *http.Request, p models.Pa
 		writeStoreErr(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, me)
+	// a linked human also learns their account; agents see today's shape
+	out := struct {
+		models.Participant
+		Username string `json:"username,omitempty"`
+	}{Participant: me}
+	if u, ok := UserFromContext(r.Context()); ok {
+		out.Username = u.Username
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 type updateMeReq struct {

@@ -5,11 +5,11 @@ import (
 	"fmt"
 )
 
-const userColumns = `u.id, u.username, u.display_name, u.email, u.must_change_password, u.created_at`
+const userColumns = `u.id, u.username, u.display_name, u.email, u.must_change_password, u.last_active_room_id, u.created_at`
 
 func scanUser(row interface{ Scan(...any) error }) (User, error) {
 	var u User
-	err := row.Scan(&u.ID, &u.Username, &u.DisplayName, &u.Email, &u.MustChangePassword, &u.CreatedAt)
+	err := row.Scan(&u.ID, &u.Username, &u.DisplayName, &u.Email, &u.MustChangePassword, &u.LastActiveWorkspaceID, &u.CreatedAt)
 	return u, mapRowErr(err)
 }
 

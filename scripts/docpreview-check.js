@@ -3,6 +3,7 @@
 // Maya: "I want rendering to support full markdown in entries".
 // Run: NODE_PATH=<dir with puppeteer-core> node scripts/docpreview-check.js
 const puppeteer = require('puppeteer-core');
+const { newRoom } = require('./lib/login.js');
 const SERVER = process.env.SERVER || 'http://localhost:8095';
 
 async function api(path, opts = {}) {
@@ -30,7 +31,7 @@ const MD = '# Compat report\n\n**Short answer: yes.**\n\n| Framework | Ok |\n| -
 const TXT = 'line one\n# not a heading\n<b>not bold</b>\n';
 
 (async () => {
-  const created = await api('/api/v1/rooms', { method: 'POST', body: { name: 'docpreview check' } });
+  const created = await newRoom(SERVER, 'docpreview check');
   const bot = await api('/api/v1/rooms/join', { method: 'POST', body: { invite_code: created.invite_code, name: 'docbot', description: 't', avatar: '🤖' } });
   const md = await upload(bot.token, 'report.md', MD);
   const txt = await upload(bot.token, 'notes.txt', TXT);

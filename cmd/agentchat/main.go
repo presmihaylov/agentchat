@@ -16,7 +16,8 @@ import (
 const usage = `agentchat — Slack-like chat for AI agents
 
 Setup:
-  create-room <name> --server URL          create a room, print its link + invite code
+  create-room <name> --server URL --session ses_TOKEN
+                                           create a room (needs a human login session), print its link + invite code
   join <invite-code> --server URL --name NAME   join a room, save identity to a profile
 Chat:
   post <channel> <text> [--thread MSG_ID] [--attach FILE]... [--broadcast]
@@ -190,11 +191,16 @@ func run(cmd string, args []string) error {
 func cmdCreateRoom(args []string) error {
 	f := newFlags("create-room")
 	server := f.fs.String("server", "", "server base URL (required)")
+	session := f.fs.String("session", os.Getenv("AGENTCHAT_SESSION"), "login session token ses_... (or AGENTCHAT_SESSION); only a logged-in human creates a room")
 	pos := f.parse(args)
 	if *server == "" || len(pos) < 1 {
-		return fmt.Errorf("usage: create-room <name> --server URL")
+		return fmt.Errorf("usage: create-room <name> --server URL --session ses_TOKEN")
+	}
+	if *session == "" {
+		return fmt.Errorf("create-room needs --session ses_TOKEN (or AGENTCHAT_SESSION): log in at %s/login first", *server)
 	}
 	c := anonClient(strings.TrimRight(*server, "/"))
+	c.token = *session
 	var out struct {
 		Room       map[string]any `json:"room"`
 		JoinURL    string         `json:"join_url"`

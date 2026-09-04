@@ -38,9 +38,15 @@ for i in $(seq 1 30); do curl -sf "$SERVER/healthz" >/dev/null && break; sleep 0
 curl -sf "$SERVER/healthz" >/dev/null || { echo "server did not start"; exit 1; }
 
 echo "== room setup =="
-CREATED=$($CLI create-room "e2e sim" --server "$SERVER")
+# only a logged-in human creates a room: register a throwaway user, create with the session
+REG=$(curl -fsS -X POST "$SERVER/api/v1/auth/password/register" -H 'Content-Type: application/json' \
+  -d "{\"username\":\"e2e-$(date +%s)-$RANDOM\",\"password\":\"e2e-throwaway-pw\",\"display_name\":\"E2E Creator\"}")
+SESSION=$(echo "$REG" | python3 -c 'import sys,json;print(json.load(sys.stdin)["token"])')
+expect_fail "create-room without a session is refused" $CLI create-room "no session" --server "$SERVER"
+CREATED=$($CLI create-room "e2e sim" --server "$SERVER" --session "$SESSION")
 LINK=$(echo "$CREATED" | awk '/join link/{print $3}')
 CODE=$(echo "$CREATED" | awk '/^invite code:/{print $3}')
+SLUG=${LINK##*/}
 [ -n "$LINK" ] && [ -n "$CODE" ] && ok "room created ($LINK)" || fail "room created"
 case "$LINK" in *"$CODE"*) fail "join link must not contain the invite code";; *) ok "invite code not in the link";; esac
 $CLI join "$CODE" --server "$SERVER" --name orchestrator --description "coordinates the others" --profile orch >/dev/null
@@ -48,6 +54,10 @@ $CLI join "$CODE" --server "$SERVER" --name researcher --avatar 🔎 --descripti
 $CLI join "$CODE" --server "$SERVER" --name writer --avatar ✍️ --description "writes summaries" --profile wri >/dev/null
 $CLI join "$CODE" --server "$SERVER" --name human-pm --human --avatar 🧑 --description "the human PM" --profile pm >/dev/null
 ok "4 participants joined"
+# the creator is the admin now; hand the role to the orchestrator through the session so the roles below hold
+ORCH_ID=$($CLI whoami --profile orch --json | python3 -c 'import sys,json;print(json.load(sys.stdin)["id"])')
+curl -fsS -X POST "$SERVER/api/v1/participants/$ORCH_ID/role" -H "Authorization: Bearer $SESSION" -H "X-Workspace-Slug: $SLUG" \
+  -H 'Content-Type: application/json' -d '{"role":"admin"}' >/dev/null && ok "creator promotes orchestrator via the session" || fail "creator promotes orchestrator via the session"
 check "skill is served" curl -sf "$SERVER/skill"
 check "web ui is served" curl -sf "$SERVER/r/anything"
 

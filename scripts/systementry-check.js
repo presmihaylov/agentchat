@@ -2,6 +2,7 @@
 // arrive live without a refresh, and never bump the channel unread badge.
 // Run: NODE_PATH=<dir with puppeteer-core> node scripts/systementry-check.js
 const puppeteer = require('puppeteer-core');
+const { newRoom } = require('./lib/login.js');
 const SERVER = process.env.SERVER || 'http://localhost:8095';
 
 async function api(path, opts = {}) {
@@ -20,7 +21,7 @@ const assert = (cond, msg) => { if (!cond) throw new Error(msg); };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 (async () => {
-  const created = await api('/api/v1/rooms', { method: 'POST', body: { name: 'systementry check' } });
+  const created = await newRoom(SERVER, 'systementry check');
   const slug = created.room.slug;
   const bot = await api('/api/v1/rooms/join', { method: 'POST', body: { invite_code: created.invite_code, name: 'membot', description: 't' } });
   const viewer = await api('/api/v1/rooms/join', { method: 'POST', body: { invite_code: created.invite_code, name: 'viewer', avatar: '🧑', is_human: true } });

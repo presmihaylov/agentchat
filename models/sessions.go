@@ -49,7 +49,7 @@ func (s *Store) SessionByTokenHash(ctx context.Context, tokenHash []byte, ttl ti
 		 WHERE s.token_hash = $1 AND s.expires_at > now() AND s.created_at > now() - $3::interval`,
 		tokenHash, ttl.String(), SessionMaxAge.String(), SessionTouchEvery.String(),
 	).Scan(&sess.ID, &sess.UserID, &sess.Provider, &sess.CreatedAt, &sess.LastUsedAt, &sess.ExpiresAt,
-		&u.ID, &u.Username, &u.DisplayName, &u.Email, &u.MustChangePassword, &u.CreatedAt)
+		&u.ID, &u.Username, &u.DisplayName, &u.Email, &u.MustChangePassword, &u.LastActiveWorkspaceID, &u.CreatedAt)
 	return sess, u, mapRowErr(err)
 }
 

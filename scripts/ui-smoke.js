@@ -1,6 +1,7 @@
 // Headless UI smoke test: create room via API, join as human in the browser,
 // post a message, verify an agent-posted mention renders live + title badge.
 const puppeteer = require('puppeteer-core');
+const { newRoom } = require('./lib/login.js');
 
 const SERVER = process.env.SERVER || 'http://localhost:8095';
 
@@ -17,7 +18,7 @@ async function api(path, opts = {}) {
 }
 
 (async () => {
-  const created = await api('/api/v1/rooms', { method: 'POST', body: { name: 'ui smoke' } });
+  const created = await newRoom(SERVER, 'ui smoke');
   const inviteCode = created.invite_code;
   const slug = created.room.slug;
   if (created.join_url.includes(inviteCode)) throw new Error('join_url leaks the invite code');
@@ -98,7 +99,6 @@ async function api(path, opts = {}) {
   await page.goto(SERVER + '/create', { waitUntil: 'networkidle2' });
   await page.waitForSelector('#create-view:not(.hidden)', { timeout: 5000 });
   await page.type('#create-room-name', 'smoke onboarding');
-  await page.type('#create-user-name', 'founder');
   await page.click('#create-form button[type=submit]');
   await page.waitForSelector('#chat-view:not(.hidden)', { timeout: 8000 });
   // refreshRoom fills the header async after the view unhides

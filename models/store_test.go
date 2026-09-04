@@ -44,7 +44,7 @@ func mkRoom(t *testing.T, s *Store) Room {
 func mkParticipant(t *testing.T, s *Store, roomID, name string) (Participant, string) {
 	t.Helper()
 	token, hash := secrets.NewToken()
-	p, err := s.CreateParticipant(context.Background(), roomID, name, "🤖", "test agent", false, hash, nil)
+	p, err := s.CreateParticipant(context.Background(), roomID, name, "🤖", "test agent", false, hash, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,7 +89,7 @@ func TestParticipantsAuthPresenceTags(t *testing.T) {
 
 	if _, _, err := func() (Participant, string, error) {
 		_, hash := secrets.NewToken()
-		p, err := s.CreateParticipant(ctx, r.ID, "alice", "x", "", false, hash, nil)
+		p, err := s.CreateParticipant(ctx, r.ID, "alice", "x", "", false, hash, nil, nil)
 		return p, "", err
 	}(); err == nil {
 		t.Fatal("expected duplicate-name conflict")
@@ -417,7 +417,9 @@ func scratchDB(t *testing.T) string {
 func TestMigrateTo(t *testing.T) {
 	ctx := context.Background()
 	dbURL := scratchDB(t)
-	const latest = 24
+	const latest = 25
+	// 000024 created users; rolling to the version before it drops the table
+	const beforeUsers = 23
 
 	usersTable := func() *string {
 		conn, err := pgx.Connect(ctx, dbURL)
@@ -441,15 +443,15 @@ func TestMigrateTo(t *testing.T) {
 		t.Fatal("fresh Open must migrate up to users")
 	}
 
-	got, err := MigrateTo(ctx, dbURL, latest-1)
-	if err != nil || got != latest-1 {
-		t.Fatalf("MigrateTo %d: got %d %v", latest-1, got, err)
+	got, err := MigrateTo(ctx, dbURL, beforeUsers)
+	if err != nil || got != beforeUsers {
+		t.Fatalf("MigrateTo %d: got %d %v", beforeUsers, got, err)
 	}
 	if reg := usersTable(); reg != nil {
-		t.Fatalf("users must be gone at version %d, to_regclass = %q", latest-1, *reg)
+		t.Fatalf("users must be gone at version %d, to_regclass = %q", beforeUsers, *reg)
 	}
 	// already there: ErrNoChange is success, not a failed rollback
-	if got, err := MigrateTo(ctx, dbURL, latest-1); err != nil || got != latest-1 {
+	if got, err := MigrateTo(ctx, dbURL, beforeUsers); err != nil || got != beforeUsers {
 		t.Fatalf("MigrateTo repeat: got %d %v", got, err)
 	}
 

@@ -3,6 +3,7 @@
 // an inline error, and the raw "/command" text is never posted as a message.
 // Run: NODE_PATH=<dir with puppeteer-core> SERVER=http://localhost:8095 node scripts/slashcmd-check.js
 const puppeteer = require('puppeteer-core');
+const { newRoom } = require('./lib/login.js');
 const SERVER = process.env.SERVER || 'http://localhost:8095';
 
 async function api(path, opts = {}) {
@@ -17,7 +18,7 @@ async function api(path, opts = {}) {
 }
 
 (async () => {
-  const created = await api('/api/v1/rooms', { method: 'POST', body: { name: 'slash cmd check' } });
+  const created = await newRoom(SERVER, 'slash cmd check');
   const slug = created.room.slug, code = created.invite_code;
   const H = await api('/api/v1/rooms/join', { method: 'POST', body: { invite_code: code, name: 'slasher', avatar: '🧑', is_human: true } });
   const A = await api('/api/v1/rooms/join', { method: 'POST', body: { invite_code: code, name: 'invitee', avatar: '🤖' } });

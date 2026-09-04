@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -96,9 +97,9 @@ func TestAuthRegisterLoginLogout(t *testing.T) {
 		t.Fatal("login reused a token")
 	}
 
-	// a session is not a participant: room routes refuse it for now
-	if st, out := me.do("GET", "/api/v1/room", nil); st != 403 || out["code"] != "no_room" {
-		t.Fatalf("session on room route: %d %v", st, out)
+	// a session is a person: a room route needs to know which workspace
+	if st, out := me.do("GET", "/api/v1/room", nil); st != 400 || out["code"] != "workspace_required" {
+		t.Fatalf("session on room route without a slug: %d %v", st, out)
 	}
 	bogus := &testClient{t: t, base: srv.URL, token: "ses_" + strings.Repeat("x", 32)}
 	if st, out := bogus.do("GET", "/api/v1/room", nil); st != 401 || out["code"] != "session_invalid" {
@@ -422,15 +423,26 @@ func TestActTokenIgnoresRoomHeader(t *testing.T) {
 		t.Fatal(err)
 	}
 	req.Header.Set("Authorization", "Bearer "+alice.token)
-	req.Header.Set("X-Room-Slug", "ses_not-a-room")
+	req.Header.Set("X-Workspace-Slug", "bogus-room-that-does-not-exist")
 	req.Header.Set("X-Session", "ses_"+strings.Repeat("x", 32))
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatal(err)
 	}
+	var me map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&me); err != nil {
+		t.Fatal(err)
+	}
 	resp.Body.Close()
-	if resp.StatusCode != 200 {
-		t.Fatalf("act_ with stray session headers: %d", resp.StatusCode)
+	if resp.StatusCode != 200 || me["name"] != "alice" {
+		t.Fatalf("act_ with stray session headers: %d %v", resp.StatusCode, me)
+	}
+	// the act_ path never reads the header and an agent carries no account fields
+	if _, has := me["user_id"]; has {
+		t.Fatalf("agent must not carry user_id: %v", me)
+	}
+	if _, has := me["username"]; has {
+		t.Fatalf("agent must not carry username: %v", me)
 	}
 
 	// an agent token has no user behind it

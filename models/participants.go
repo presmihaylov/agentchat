@@ -17,7 +17,8 @@ var ErrLastAdmin = errors.New("a room must keep at least one admin")
 var ErrIdentityOnline = errors.New("that identity is currently online")
 
 // CreateParticipant adds a member; the first participant in a room becomes admin.
-func (s *Store) CreateParticipant(ctx context.Context, roomID, name, avatar, description string, isHuman bool, tokenHash []byte, ownerID *string) (Participant, error) {
+// tokenHash is nil for a human who enters through a login session (userID set).
+func (s *Store) CreateParticipant(ctx context.Context, roomID, name, avatar, description string, isHuman bool, tokenHash []byte, ownerID *string, userID *string) (Participant, error) {
 	var p Participant
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -29,15 +30,25 @@ func (s *Store) CreateParticipant(ctx context.Context, roomID, name, avatar, des
 	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext($1))`, roomID); err != nil {
 		return p, err
 	}
+	p, err = createParticipantTx(ctx, tx, roomID, name, avatar, description, isHuman, tokenHash, ownerID, userID)
+	if err != nil {
+		return p, err
+	}
+	return p, tx.Commit(ctx)
+}
 
-	err = tx.QueryRow(ctx,
-		`INSERT INTO participants (room_id, name, avatar, description, is_human, token_hash, owner_id, presence_online, role)
-		 SELECT $1, $2, $3, $4, $5, $6, $7, TRUE,
+// createParticipantTx is the one insert path for joins, /enter and CreateRoomAs.
+// The caller holds the room advisory lock.
+func createParticipantTx(ctx context.Context, tx pgx.Tx, roomID, name, avatar, description string, isHuman bool, tokenHash []byte, ownerID *string, userID *string) (Participant, error) {
+	var p Participant
+	err := tx.QueryRow(ctx,
+		`INSERT INTO participants (room_id, name, avatar, description, is_human, token_hash, owner_id, user_id, presence_online, role)
+		 SELECT $1, $2, $3, $4, $5, $6, $7, $8, TRUE,
 		        CASE WHEN EXISTS (SELECT 1 FROM participants WHERE room_id = $1 AND NOT revoked)
 		             THEN 'member' ELSE 'admin' END
-		 RETURNING id, room_id, name, avatar, description, is_human, role, owner_id, last_seen_at, created_at`,
-		roomID, name, avatar, description, isHuman, tokenHash, ownerID,
-	).Scan(&p.ID, &p.RoomID, &p.Name, &p.Avatar, &p.Description, &p.IsHuman, &p.Role, &p.OwnerID, &p.LastSeenAt, &p.CreatedAt)
+		 RETURNING id, room_id, name, avatar, description, is_human, role, owner_id, user_id, last_seen_at, created_at`,
+		roomID, name, avatar, description, isHuman, tokenHash, ownerID, userID,
+	).Scan(&p.ID, &p.RoomID, &p.Name, &p.Avatar, &p.Description, &p.IsHuman, &p.Role, &p.OwnerID, &p.UserID, &p.LastSeenAt, &p.CreatedAt)
 	if err != nil {
 		if isUniqueViolation(err) {
 			return p, fmt.Errorf("name %q is taken in this room: %w", name, ErrConflict)
@@ -56,14 +67,19 @@ func (s *Store) CreateParticipant(ctx context.Context, roomID, name, avatar, des
 		return p, err
 	}
 
-	payload, _ := json.Marshal(map[string]any{
+	event := map[string]any{
 		"participant_id": p.ID, "name": p.Name, "is_human": p.IsHuman,
 		"role": p.Role, "description": p.Description, "owner_id": p.OwnerID,
-	})
+	}
+	// additive: agents never carry it, so their payload is byte-identical
+	if p.UserID != nil {
+		event["user_id"] = *p.UserID
+	}
+	payload, _ := json.Marshal(event)
 	if err := appendEventTx(ctx, tx, roomID, "participant.joined", payload); err != nil {
 		return p, err
 	}
-	return p, tx.Commit(ctx)
+	return p, nil
 }
 
 // ReclaimParticipant re-binds an existing identity to a fresh token: same id
@@ -86,17 +102,21 @@ func (s *Store) ReclaimParticipant(ctx context.Context, roomID, name string, tok
 	}
 
 	var id string
-	var revoked, online bool
+	var revoked, online, linked bool
 	err = tx.QueryRow(ctx,
-		`SELECT id, revoked, last_seen_at > now() - $3::interval
+		`SELECT id, revoked, last_seen_at > now() - $3::interval, user_id IS NOT NULL
 		 FROM participants WHERE room_id = $1 AND name = $2`,
 		roomID, name, OnlineWindow.String(),
-	).Scan(&id, &revoked, &online)
+	).Scan(&id, &revoked, &online, &linked)
 	if err != nil {
 		return p, mapRowErr(err)
 	}
 	if revoked {
 		return p, fmt.Errorf("identity %q was revoked from this room: %w", name, ErrConflict)
+	}
+	// a human who logs in owns their row; a room code must not let anyone post as them
+	if linked {
+		return p, fmt.Errorf("identity %q belongs to a logged-in user: %w", name, ErrConflict)
 	}
 	if online {
 		return p, ErrIdentityOnline
@@ -126,12 +146,12 @@ func (s *Store) ParticipantByTokenHash(ctx context.Context, hash []byte) (Partic
 	var p Participant
 	err := s.pool.QueryRow(ctx,
 		`SELECT p.id, p.room_id, p.name, p.avatar, p.avatar_attachment_id, p.description, p.is_human, p.role,
-		        p.owner_id, o.name, p.last_seen_at, p.created_at,
+		        p.owner_id, o.name, p.user_id, p.last_seen_at, p.created_at,
 		        p.last_seen_at > now() - $2::interval AS online
 		 FROM participants p LEFT JOIN participants o ON o.id = p.owner_id
 		 WHERE p.token_hash = $1 AND NOT p.revoked`,
 		hash, OnlineWindow.String(),
-	).Scan(&p.ID, &p.RoomID, &p.Name, &p.Avatar, &p.AvatarAttachmentID, &p.Description, &p.IsHuman, &p.Role, &p.OwnerID, &p.OwnerName, &p.LastSeenAt, &p.CreatedAt, &p.Online)
+	).Scan(&p.ID, &p.RoomID, &p.Name, &p.Avatar, &p.AvatarAttachmentID, &p.Description, &p.IsHuman, &p.Role, &p.OwnerID, &p.OwnerName, &p.UserID, &p.LastSeenAt, &p.CreatedAt, &p.Online)
 	return p, mapRowErr(err)
 }
 
@@ -173,7 +193,7 @@ func (s *Store) listParticipants(ctx context.Context, roomID string, id, name, c
 	roster := id == nil && name == nil
 	rows, err := s.pool.Query(ctx,
 		`SELECT p.id, p.room_id, p.name, p.avatar, p.avatar_attachment_id, p.description, p.is_human, p.role,
-		        p.owner_id, o.name AS owner_name,
+		        p.owner_id, o.name AS owner_name, p.user_id,
 		        p.last_seen_at, p.created_at,
 		        p.last_seen_at > now() - $2::interval AS online,
 		        COALESCE(
@@ -202,7 +222,7 @@ func (s *Store) listParticipants(ctx context.Context, roomID string, id, name, c
 		var p Participant
 		var tagsJSON []byte
 		if err := rows.Scan(&p.ID, &p.RoomID, &p.Name, &p.Avatar, &p.AvatarAttachmentID, &p.Description, &p.IsHuman, &p.Role,
-			&p.OwnerID, &p.OwnerName,
+			&p.OwnerID, &p.OwnerName, &p.UserID,
 			&p.LastSeenAt, &p.CreatedAt, &p.Online, &tagsJSON); err != nil {
 			return nil, err
 		}

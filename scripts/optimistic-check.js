@@ -4,6 +4,7 @@
 // POST the placeholder rolls back and the draft returns to the input.
 // Run: NODE_PATH=<dir with puppeteer-core> SERVER=http://localhost:8095 node scripts/optimistic-check.js
 const puppeteer = require('puppeteer-core');
+const { newRoom } = require('./lib/login.js');
 const SERVER = process.env.SERVER || 'http://localhost:8095';
 
 async function api(path, opts = {}) {
@@ -27,7 +28,7 @@ const countWith = (page, text) => page.evaluate((t) => {
 }, text);
 
 (async () => {
-  const created = await api('/api/v1/rooms', { method: 'POST', body: { name: 'optimistic check' } });
+  const created = await newRoom(SERVER, 'optimistic check');
   const slug = created.room.slug;
   const human = await api('/api/v1/rooms/join', { method: 'POST', body: { invite_code: created.invite_code, name: 'humantester', avatar: '🧑', is_human: true } });
 

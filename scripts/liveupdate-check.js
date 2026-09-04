@@ -4,6 +4,7 @@
 // channel it is viewing (sidebar drops it, view bounces to #general).
 // Run: NODE_PATH=<dir with puppeteer-core> node scripts/liveupdate-check.js
 const puppeteer = require('puppeteer-core');
+const { newRoom } = require('./lib/login.js');
 const SERVER = process.env.SERVER || 'http://localhost:8095';
 
 async function api(path, opts = {}) {
@@ -44,7 +45,7 @@ const dotState = (name) => `(() => {
 })()`;
 
 (async () => {
-  const created = await api('/api/v1/rooms', { method: 'POST', body: { name: 'liveupdate check' } });
+  const created = await newRoom(SERVER, 'liveupdate check');
   const slug = created.room.slug;
   // bot joins first, so it is the admin
   const bot = await api('/api/v1/rooms/join', { method: 'POST', body: { invite_code: created.invite_code, name: 'livebot', description: 't', avatar: '🤖' } });

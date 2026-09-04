@@ -4,6 +4,7 @@
 // re-creates every node and wipes the expando, so its survival is the signal.
 // Run: NODE_PATH=<dir with puppeteer-core> node scripts/msgsync-check.js
 const puppeteer = require('puppeteer-core');
+const { newRoom } = require('./lib/login.js');
 const SERVER = process.env.SERVER || 'http://localhost:8095';
 
 async function api(path, opts = {}) {
@@ -19,7 +20,7 @@ async function api(path, opts = {}) {
 }
 
 (async () => {
-  const created = await api('/api/v1/rooms', { method: 'POST', body: { name: 'msgsync check' } });
+  const created = await newRoom(SERVER, 'msgsync check');
   const slug = created.room.slug;
   const bot = await api('/api/v1/rooms/join', { method: 'POST', body: { invite_code: created.invite_code, name: 'syncbot', description: 't', avatar: '🤖' } });
   const A = await api('/api/v1/channels/general/messages', { method: 'POST', token: bot.token, body: { body: 'alpha original' } });

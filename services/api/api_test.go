@@ -14,6 +14,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
+
 	"github.com/presmihaylov/agentchat/models"
 	"github.com/presmihaylov/agentchat/services/auth"
 )
@@ -31,6 +33,8 @@ type testClient struct {
 	t     *testing.T
 	base  string
 	token string
+	// slug, when set, rides as X-Workspace-Slug: how a session names its room
+	slug string
 }
 
 func newTestServer(t *testing.T) (*httptest.Server, *models.Store) {
@@ -69,6 +73,9 @@ func (c *testClient) do(method, path string, body any) (int, map[string]any) {
 	if c.token != "" {
 		req.Header.Set("Authorization", "Bearer "+c.token)
 	}
+	if c.slug != "" {
+		req.Header.Set("X-Workspace-Slug", c.slug)
+	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		c.t.Fatal(err)
@@ -93,10 +100,40 @@ func (c *testClient) must(method, path string, body any, wantStatus int) map[str
 	return out
 }
 
+// testDB opens a raw connection to the test database for fixtures that the
+// API deliberately has no route for.
+func testDB(t *testing.T) *pgx.Conn {
+	t.Helper()
+	url := os.Getenv("AGENTCHAT_TEST_DB_URL")
+	if url == "" {
+		url = "postgres://agentchat:agentchat@localhost:5477/agentchat?sslmode=disable"
+	}
+	conn, err := pgx.Connect(context.Background(), url)
+	if err != nil {
+		t.Skipf("db unavailable: %v", err)
+	}
+	t.Cleanup(func() { conn.Close(context.Background()) })
+	return conn
+}
+
+// createRoom registers a throwaway user and creates a room with the session.
+// The creator's own row is then removed so the legacy fixture holds for every
+// test below: the first /join is admin and the roster starts empty.
+func createRoom(t *testing.T, base, name string) map[string]any {
+	t.Helper()
+	creator, _ := register(t, base, uniqUser(), "correct horse")
+	out := creator.must("POST", "/api/v1/rooms", map[string]any{"name": name}, 201)
+	roomID := out["room"].(map[string]any)["id"].(string)
+	if _, err := testDB(t).Exec(context.Background(),
+		`DELETE FROM participants WHERE room_id = $1 AND user_id IS NOT NULL`, roomID); err != nil {
+		t.Fatal(err)
+	}
+	return out
+}
+
 func setupRoom(t *testing.T, base string) (secret string, alice, bob *testClient) {
 	t.Helper()
-	c := &testClient{t: t, base: base}
-	out := c.must("POST", "/api/v1/rooms", map[string]any{"name": "test room"}, 201)
+	out := createRoom(t, base, "test room")
 	secret = out["invite_code"].(string)
 	if !strings.HasPrefix(out["join_url"].(string), "http://public.test/r/") {
 		t.Fatalf("bad join_url: %v", out["join_url"])
@@ -1003,9 +1040,7 @@ func TestReclaimIdentity(t *testing.T) {
 func TestOwnership(t *testing.T) {
 	srv, _ := newTestServer(t)
 
-	c := &testClient{t: t, base: srv.URL}
-	out := c.must("POST", "/api/v1/rooms", map[string]any{"name": "owned room"}, 201)
-	roomCode := out["invite_code"].(string)
+	roomCode := createRoom(t, srv.URL, "owned room")["invite_code"].(string)
 
 	join := func(code, name string, human bool) (*testClient, map[string]any) {
 		cc := &testClient{t: t, base: srv.URL}
@@ -1164,8 +1199,7 @@ func TestInviteDiesOnRevoke(t *testing.T) {
 func TestReclaimRebindsOwner(t *testing.T) {
 	srv, store := newTestServer(t)
 
-	c := &testClient{t: t, base: srv.URL}
-	roomCode := c.must("POST", "/api/v1/rooms", map[string]any{"name": "owned"}, 201)["invite_code"].(string)
+	roomCode := createRoom(t, srv.URL, "owned")["invite_code"].(string)
 
 	join := func(code, name string, human bool, want int) (*testClient, map[string]any) {
 		cc := &testClient{t: t, base: srv.URL}
@@ -1250,8 +1284,7 @@ func TestArchiveEmitsEvent(t *testing.T) {
 func TestReclaimDropsToMember(t *testing.T) {
 	srv, store := newTestServer(t)
 
-	c := &testClient{t: t, base: srv.URL}
-	roomCode := c.must("POST", "/api/v1/rooms", map[string]any{"name": "takeover"}, 201)["invite_code"].(string)
+	roomCode := createRoom(t, srv.URL, "takeover")["invite_code"].(string)
 
 	join := func(code, name string, want int) (*testClient, map[string]any) {
 		cc := &testClient{t: t, base: srv.URL}
@@ -1308,6 +1341,10 @@ func TestArchivedChannelReadOnly(t *testing.T) {
 	alice.must("PATCH", "/api/v1/messages/"+msgID, map[string]any{"body": "edited now"}, 200)
 	alice.must("DELETE", "/api/v1/messages/"+msgID, nil, 200)
 }
+
+// skillCreateRecipeGone: the pre-task-03 unauthenticated create recipe, which
+// no served skill text may carry any more.
+var skillCreateRecipeGone = []string{"Anyone (agents included) can create", "$SERVER/api/v1/rooms $CFH", "the first joiner becomes admin"}
 
 func TestSkillDoc(t *testing.T) {
 	srv, _ := newTestServer(t)
@@ -1379,9 +1416,20 @@ func TestSkillDoc(t *testing.T) {
 		"Watch the channels you own",
 		"unread_count",
 		"Drain the whole batch",
+		// task 03: room creation needs a login; agents ask their human
+		"## Creating a new room",
+		"Agents cannot create rooms.",
+		"an agent token gets 401 `session_required`",
+		"Ask your human to create a workspace in the web UI",
+		"cannot reclaim it (409)",
 	} {
 		if !strings.Contains(doc, want) {
 			t.Fatalf("skill doc missing %q", want)
+		}
+	}
+	for _, gone := range skillCreateRecipeGone {
+		if strings.Contains(doc, gone) {
+			t.Fatalf("skill doc still carries the unauthenticated create recipe %q", gone)
 		}
 	}
 

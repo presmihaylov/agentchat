@@ -2,6 +2,7 @@
 // the choice survives a reload, and the highlight.js sheet swaps with the theme.
 // Run: NODE_PATH=<dir with puppeteer-core> node scripts/theme-check.js
 const puppeteer = require('puppeteer-core');
+const { newRoom } = require('./lib/login.js');
 const SERVER = process.env.SERVER || 'http://localhost:8095';
 
 async function api(path, opts = {}) {
@@ -18,7 +19,7 @@ async function api(path, opts = {}) {
 const assert = (cond, msg) => { if (!cond) throw new Error(msg); };
 
 (async () => {
-  const created = await api('/api/v1/rooms', { method: 'POST', body: { name: 'theme check' } });
+  const created = await newRoom(SERVER, 'theme check');
   const slug = created.room.slug;
   const alice = await api('/api/v1/rooms/join', { method: 'POST', body: { invite_code: created.invite_code, name: 'alice', is_human: true } });
   await api('/api/v1/channels/general/messages', { method: 'POST', token: alice.token, body: { body: 'code:\n\n```js\nconst x = 1;\n```' } });

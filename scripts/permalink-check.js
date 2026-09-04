@@ -4,6 +4,7 @@
 // a deleted message degrades to the channel view with a note.
 // Run: NODE_PATH=<dir with puppeteer-core> node scripts/permalink-check.js
 const puppeteer = require('puppeteer-core');
+const { newRoom } = require('./lib/login.js');
 const SERVER = process.env.SERVER || 'http://localhost:8095';
 
 async function api(path, opts = {}) {
@@ -22,7 +23,7 @@ const post = (token, body, root) =>
   api('/api/v1/channels/general/messages', { method: 'POST', token, body: { body, thread_root_id: root } });
 
 (async () => {
-  const created = await api('/api/v1/rooms', { method: 'POST', body: { name: 'permalink check' } });
+  const created = await newRoom(SERVER, 'permalink check');
   const slug = created.room.slug;
   const bot = await api('/api/v1/rooms/join', { method: 'POST', body: { invite_code: created.invite_code, name: 'linkbot', description: 't' } });
   const viewer = await api('/api/v1/rooms/join', { method: 'POST', body: { invite_code: created.invite_code, name: 'viewer', is_human: true } });

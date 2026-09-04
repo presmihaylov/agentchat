@@ -5,6 +5,7 @@
 // hidden agent is online, so no presence signal is lost.
 // Run: NODE_PATH=<dir with puppeteer-core> SERVER=http://localhost:8095 node scripts/roster-check.js
 const puppeteer = require('puppeteer-core');
+const { newRoom } = require('./lib/login.js');
 const SERVER = process.env.SERVER || 'http://localhost:8095';
 
 async function api(path, opts = {}) {
@@ -45,7 +46,7 @@ const clickToggle = (page) => page.evaluate(() => {
 });
 
 (async () => {
-  const created = await api('/api/v1/rooms', { method: 'POST', body: { name: 'roster check' } });
+  const created = await newRoom(SERVER, 'roster check');
   const slug = created.room.slug;
   const maya = await api('/api/v1/rooms/join', { method: 'POST', body: { invite_code: created.invite_code, name: 'Maya', avatar: '🧑', is_human: true } });
   const inv = await api('/api/v1/invites', { method: 'POST', token: maya.token });

@@ -60,18 +60,19 @@ body.has-header .auth-view, body.has-header #create-view { height: calc(100vh - 
 /* one-line notices above whichever view is showing; the view gives up the height */
 .banner { height: 34px; line-height: 34px; padding: 0 16px; font-size: 13px; background: var(--mention); border-bottom: 1px solid var(--border); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .banner a { color: var(--accent); }
-body.has-banner #chat-view, body.has-banner #join-view, body.has-banner #create-view, body.has-banner .auth-view { height: calc(100vh - 34px); }
+body.has-banner #chat-view, body.has-banner #join-view, body.has-banner #enter-view, body.has-banner #removed-view, body.has-banner #create-view, body.has-banner .auth-view { height: calc(100vh - 34px); }
 body.has-banner.has-header .auth-view, body.has-banner.has-header #create-view { height: calc(100vh - 78px); }
 
 /* join */
-#join-view, #create-view { display: flex; align-items: center; justify-content: center; height: 100vh; }
-#join-form, #create-form { background: var(--panel); padding: 32px; border-radius: 12px; width: 360px; display: flex; flex-direction: column; gap: 14px; border: 1px solid var(--border); }
-#join-form h1, #create-form h1 { margin: 0 0 6px; font-size: 20px; }
-#join-form label, #create-form label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--dim); }
-#join-form input, #create-form input { background: var(--panel2); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; color: var(--text); font-size: 15px; }
-#join-form button, #create-form button { background: var(--accent); border: 0; border-radius: 6px; padding: 10px; color: var(--on-accent); font-size: 15px; font-weight: 600; }
+#join-view, #enter-view, #removed-view, #create-view { display: flex; align-items: center; justify-content: center; height: 100vh; }
+#join-form, #enter-form, #removed-card, #create-form { background: var(--panel); padding: 32px; border-radius: 12px; width: 360px; display: flex; flex-direction: column; gap: 14px; border: 1px solid var(--border); }
+#join-form h1, #enter-form h1, #removed-card h1, #create-form h1 { margin: 0 0 6px; font-size: 20px; }
+#join-form label, #enter-form label, #create-form label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--dim); }
+#join-form input, #enter-form input, #create-form input { background: var(--panel2); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; color: var(--text); font-size: 15px; }
+#join-form button, #enter-form button, #create-form button, #removed-card .button-link { background: var(--accent); border: 0; border-radius: 6px; padding: 10px; color: var(--on-accent); font-size: 15px; font-weight: 600; }
 .hint { font-size: 12px; color: var(--dim); margin: 0; }
 .hint a { color: var(--accent); }
+#removed-card .button-link { text-align: center; text-decoration: none; }
 
 /* layout */
 #chat-view { display: flex; height: 100vh; }

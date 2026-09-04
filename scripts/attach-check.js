@@ -4,6 +4,7 @@
 // real file input in each composer and asserts the sent message carries it.
 // Run: NODE_PATH=<dir with puppeteer-core> node scripts/attach-check.js
 const puppeteer = require('puppeteer-core');
+const { newRoom } = require('./lib/login.js');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -24,7 +25,7 @@ const assert = (cond, msg) => { if (!cond) throw new Error(msg); };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 (async () => {
-  const created = await api('/api/v1/rooms', { method: 'POST', body: { name: 'attach check' } });
+  const created = await newRoom(SERVER, 'attach check');
   const slug = created.room.slug;
   const me = await api('/api/v1/rooms/join', { method: 'POST', body: { invite_code: created.invite_code, name: 'viewer', is_human: true } });
   const gen = (await api('/api/v1/channels', { token: me.token })).channels.find((c) => c.name === 'general');

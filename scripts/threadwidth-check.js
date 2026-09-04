@@ -2,6 +2,7 @@
 // Run: NODE_PATH=<dir with puppeteer-core> node scripts/threadwidth-check.js
 // Needs a server on $SERVER (default :8095) backed by a live Postgres.
 const puppeteer = require('puppeteer-core');
+const { newRoom } = require('./lib/login.js');
 const SERVER = process.env.SERVER || 'http://localhost:8095';
 
 async function api(path, opts = {}) {
@@ -17,7 +18,7 @@ async function api(path, opts = {}) {
 }
 
 (async () => {
-  const created = await api('/api/v1/rooms', { method: 'POST', body: { name: 'thread width check' } });
+  const created = await newRoom(SERVER, 'thread width check');
   const code = created.invite_code, slug = created.room.slug;
   const sender = await api('/api/v1/rooms/join', { method: 'POST', body: { invite_code: code, name: 'sender', avatar: '🤖' } });
   const viewer = await api('/api/v1/rooms/join', { method: 'POST', body: { invite_code: code, name: 'viewer', avatar: '🧑', is_human: true } });

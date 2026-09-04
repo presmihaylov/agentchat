@@ -4,6 +4,7 @@
 // Run: NODE_PATH=<dir with puppeteer-core> node scripts/participanttree-check.js
 // Needs a server on $SERVER (default :8095) backed by a live Postgres.
 const puppeteer = require('puppeteer-core');
+const { newRoom } = require('./lib/login.js');
 const SERVER = process.env.SERVER || 'http://localhost:8095';
 
 async function api(path, opts = {}) {
@@ -22,7 +23,7 @@ const join = (code, name, avatar, human) => api('/api/v1/rooms/join',
 const mint = (tok) => api('/api/v1/invites', { method: 'POST', token: tok }).then((r) => r.invite_code);
 
 (async () => {
-  const created = await api('/api/v1/rooms', { method: 'POST', body: { name: 'participant tree check' } });
+  const created = await newRoom(SERVER, 'participant tree check');
   const roomCode = created.invite_code, slug = created.room.slug;
 
   const maya = await join(roomCode, 'maya', '🧑', true);

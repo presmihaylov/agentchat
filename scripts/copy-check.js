@@ -6,6 +6,7 @@
 // headless browser's real clipboard, which is unreliable.
 // Run: NODE_PATH=<dir with puppeteer-core> node scripts/copy-check.js
 const puppeteer = require('puppeteer-core');
+const { newRoom } = require('./lib/login.js');
 const SERVER = process.env.SERVER || 'http://localhost:8095';
 
 async function api(path, opts = {}) {
@@ -21,7 +22,7 @@ async function api(path, opts = {}) {
 }
 
 (async () => {
-  const created = await api('/api/v1/rooms', { method: 'POST', body: { name: 'copy check' } });
+  const created = await newRoom(SERVER, 'copy check');
   const slug = created.room.slug;
 
   const browser = await puppeteer.launch({

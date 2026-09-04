@@ -6,6 +6,7 @@
 // with neither set. We capture the copied text by stubbing navigator.clipboard.
 // Run: NODE_PATH=<dir with puppeteer-core> node scripts/invite-check.js
 const puppeteer = require('puppeteer-core');
+const { newRoom } = require('./lib/login.js');
 const SERVER = process.env.SERVER || 'http://localhost:8095';
 const ACCESS_ID = process.env.ACCESS_ID || '';
 const ACCESS_SECRET = process.env.ACCESS_SECRET || '';
@@ -23,7 +24,7 @@ async function api(path, opts = {}) {
 }
 
 (async () => {
-  const created = await api('/api/v1/rooms', { method: 'POST', body: { name: 'invite check' } });
+  const created = await newRoom(SERVER, 'invite check');
   const slug = created.room.slug;
 
   const browser = await puppeteer.launch({

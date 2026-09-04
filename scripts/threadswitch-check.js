@@ -3,6 +3,7 @@
 // to open the panel while the previous channel stayed in the main column.
 // Run: NODE_PATH=<dir with puppeteer-core> node scripts/threadswitch-check.js
 const puppeteer = require('puppeteer-core');
+const { newRoom } = require('./lib/login.js');
 const SERVER = process.env.SERVER || 'http://localhost:8095';
 
 async function api(path, opts = {}) {
@@ -20,7 +21,7 @@ async function api(path, opts = {}) {
 const assert = (cond, msg) => { if (!cond) throw new Error(msg); };
 
 (async () => {
-  const created = await api('/api/v1/rooms', { method: 'POST', body: { name: 'threadswitch check' } });
+  const created = await newRoom(SERVER, 'threadswitch check');
   const slug = created.room.slug;
   const agent = await api('/api/v1/rooms/join', { method: 'POST', body: { invite_code: created.invite_code, name: 'switchbot', description: 't' } });
   const viewer = await api('/api/v1/rooms/join', { method: 'POST', body: { invite_code: created.invite_code, name: 'viewer', avatar: '🧑', is_human: true } });

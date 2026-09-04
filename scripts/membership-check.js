@@ -4,6 +4,7 @@
 // context menu (back out of the sidebar). #general has no Leave option.
 // Run: NODE_PATH=<puppeteer dir> SERVER=http://localhost:8095 node scripts/membership-check.js
 const puppeteer = require('puppeteer-core');
+const { newRoom } = require('./lib/login.js');
 const SERVER = process.env.SERVER || 'http://localhost:8095';
 
 async function api(path, opts = {}) {
@@ -21,7 +22,7 @@ const chanNames = (page) => page.$$eval('#channel-list li', (lis) =>
   lis.map((li) => li.textContent.replace(/^#\s*/, '').split(' ')[0]));
 
 (async () => {
-  const created = await api('/api/v1/rooms', { method: 'POST', body: { name: 'membership check' } });
+  const created = await newRoom(SERVER, 'membership check');
   const slug = created.room.slug, code = created.invite_code;
   const alice = await api('/api/v1/rooms/join', { method: 'POST', body: { invite_code: code, name: 'alice', is_human: true } });
   const bob = await api('/api/v1/rooms/join', { method: 'POST', body: { invite_code: code, name: 'bob', is_human: true } });

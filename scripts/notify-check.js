@@ -4,6 +4,7 @@
 // participant across a reload.
 // Run: NODE_PATH=<dir with puppeteer-core> node scripts/notify-check.js
 const puppeteer = require('puppeteer-core');
+const { newRoom } = require('./lib/login.js');
 const SERVER = process.env.SERVER || 'http://localhost:8095';
 
 async function api(path, opts = {}) {
@@ -21,7 +22,7 @@ const assert = (cond, msg) => { if (!cond) throw new Error(msg); };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 (async () => {
-  const created = await api('/api/v1/rooms', { method: 'POST', body: { name: 'notify check' } });
+  const created = await newRoom(SERVER, 'notify check');
   const slug = created.room.slug;
   const alice = await api('/api/v1/rooms/join', { method: 'POST', body: { invite_code: created.invite_code, name: 'alice', is_human: true } });
   const bob = await api('/api/v1/rooms/join', { method: 'POST', body: { invite_code: created.invite_code, name: 'bob', description: 'bot' } });

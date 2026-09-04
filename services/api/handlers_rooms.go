@@ -13,11 +13,9 @@ type createRoomReq struct {
 	Name string `json:"name"`
 }
 
-func (s *Server) handleCreateRoom(w http.ResponseWriter, r *http.Request) {
-	if !s.joinLimit.Allow(s.clientIP(r)) {
-		writeErr(w, http.StatusTooManyRequests, "slow down")
-		return
-	}
+// handleCreateRoom: only a logged-in human creates a workspace; the creator
+// lands in it as admin. The per-creator quota replaces the per-IP limit.
+func (s *Server) handleCreateRoom(w http.ResponseWriter, r *http.Request, u models.User) {
 	var req createRoomReq
 	if !readJSON(w, r, &req) {
 		return
@@ -28,7 +26,7 @@ func (s *Server) handleCreateRoom(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	room, err := s.store.CreateRoom(r.Context(), req.Name, secrets.RoomSlug(), secrets.InviteCode())
+	room, _, err := s.store.CreateRoomAs(r.Context(), req.Name, secrets.RoomSlug(), secrets.InviteCode(), u)
 	if err != nil {
 		writeStoreErr(w, err)
 		return
@@ -38,6 +36,64 @@ func (s *Server) handleCreateRoom(w http.ResponseWriter, r *http.Request) {
 		"join_url":    s.cfg.PublicURL + "/r/" + room.Slug,
 		"invite_code": room.Secret,
 	})
+}
+
+type enterWorkspaceReq struct {
+	InviteCode string `json:"invite_code"`
+}
+
+// handleEnterWorkspace makes a logged-in user a member of the room behind
+// {slug}. A live member is idempotent, a revoked one stays out, and a
+// newcomer needs a code that opens this very room. Never adopts a row by name.
+func (s *Server) handleEnterWorkspace(w http.ResponseWriter, r *http.Request, u models.User) {
+	var req enterWorkspaceReq
+	if !readJSON(w, r, &req) {
+		return
+	}
+	room, err := s.store.RoomBySlug(r.Context(), r.PathValue("slug"))
+	if err != nil {
+		writeStoreErr(w, err)
+		return
+	}
+	room.Secret = ""
+
+	p, err := s.store.ParticipantForUser(r.Context(), room.ID, u.ID)
+	if err == nil && p.Revoked {
+		writeWorkspaceForbidden(w, "revoked")
+		return
+	}
+	if err == nil {
+		writeJSON(w, http.StatusOK, map[string]any{"participant": p, "room": room})
+		return
+	}
+	if !errors.Is(err, models.ErrNotFound) {
+		writeStoreErr(w, err)
+		return
+	}
+
+	target, _, err := s.store.RoomByAnySecret(r.Context(), normalizeCode(req.InviteCode))
+	if errors.Is(err, models.ErrNotFound) || (err == nil && target.ID != room.ID) {
+		writeStoreErr(w, models.ErrInviteInvalid)
+		return
+	}
+	if err != nil {
+		writeStoreErr(w, err)
+		return
+	}
+	p, err = s.store.EnterRoom(r.Context(), room.ID, u)
+	if err != nil {
+		writeStoreErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"participant": p, "room": room})
+}
+
+func writeWorkspaceForbidden(w http.ResponseWriter, reason string) {
+	msg := "you are not a member of this workspace"
+	if reason == "revoked" {
+		msg = "you were removed from this workspace"
+	}
+	writeJSON(w, http.StatusForbidden, map[string]string{"error": msg, "code": "workspace_forbidden", "reason": reason})
 }
 
 type joinRoomReq struct {
@@ -93,7 +149,7 @@ func (s *Server) handleJoinRoom(w http.ResponseWriter, r *http.Request) {
 	}
 
 	token, hash := secrets.NewToken()
-	p, err := s.store.CreateParticipant(r.Context(), room.ID, req.Name, req.Avatar, req.Description, req.IsHuman, hash, ownerID)
+	p, err := s.store.CreateParticipant(r.Context(), room.ID, req.Name, req.Avatar, req.Description, req.IsHuman, hash, ownerID, nil)
 	if errors.Is(err, models.ErrConflict) {
 		// same name = same identity: re-claim it with a fresh token so a
 		// restarted agent does not pile up orphan duplicates

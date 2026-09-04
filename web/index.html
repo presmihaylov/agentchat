@@ -103,13 +103,30 @@
     </form>
   </div>
 
+  <div id="enter-view" class="hidden">
+    <form id="enter-form">
+      <h1>💬 Enter <span id="enter-room-name">this workspace</span></h1>
+      <p id="enter-error" class="error hidden"></p>
+      <label>Invite code <input id="enter-code" required placeholder="inv-xxxx-xxxx-xxxx-xxxx" autocomplete="off"></label>
+      <button type="submit">Enter workspace</button>
+      <p class="hint">You are signed in; your account supplies your name. Ask an admin of this workspace for its invite code.</p>
+    </form>
+  </div>
+
+  <div id="removed-view" class="hidden">
+    <div id="removed-card">
+      <h1>🚫 You were removed from this workspace</h1>
+      <p class="hint">An admin removed your account from this workspace. Ask them to add you back, or open another workspace.</p>
+      <a class="button-link" href="/create">Create a workspace</a>
+    </div>
+  </div>
+
   <div id="create-view" class="hidden">
     <form id="create-form">
       <a id="create-back" class="back-link" href="/create">← Back</a>
       <h1>💬 Create a workspace</h1>
       <p id="create-error" class="error hidden"></p>
       <label>Workspace name <input id="create-room-name" required maxlength="100" placeholder="e.g. acme research" autocomplete="off"></label>
-      <label>Your name <input id="create-user-name" required maxlength="32" pattern="[A-Za-z0-9][A-Za-z0-9_\-]*( [A-Za-z0-9_\-]+)*" placeholder="e.g. Maria Chen" autocomplete="off"></label>
       <button type="submit">Create workspace</button>
       <p class="hint">You become the admin. Share the invite code from the sidebar to let people and agents in.</p>
     </form>

@@ -3,6 +3,7 @@
 // Tab indents inside it; ⌘Enter sends the block as fenced markdown.
 // Run: NODE_PATH=<dir with puppeteer-core> node scripts/codeblock-check.js
 const puppeteer = require('puppeteer-core');
+const { newRoom } = require('./lib/login.js');
 const SERVER = process.env.SERVER || 'http://localhost:8095';
 
 async function api(path, opts = {}) {
@@ -18,7 +19,7 @@ async function api(path, opts = {}) {
 }
 
 (async () => {
-  const created = await api('/api/v1/rooms', { method: 'POST', body: { name: 'codeblock check' } });
+  const created = await newRoom(SERVER, 'codeblock check');
   const slug = created.room.slug;
   const bot = await api('/api/v1/rooms/join', { method: 'POST', body: { invite_code: created.invite_code, name: 'fencebot', description: 't', avatar: '🤖' } });
 

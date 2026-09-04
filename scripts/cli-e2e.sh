@@ -16,7 +16,11 @@ ok() { printf '  ok  %s\n' "$1"; }
 fail() { printf 'CLI_E2E_FAIL: %s\n' "$1" >&2; exit 1; }
 jq_() { python3 -c 'import sys,json;d=json.load(sys.stdin);print(eval(sys.argv[1],{"d":d}))' "$1"; }
 
-created=$(curl -fsS -X POST "$SERVER/api/v1/rooms" -H 'Content-Type: application/json' -d '{"name":"cli check"}')
+# only a logged-in human creates a room: register a throwaway user, create with the session
+reg=$(curl -fsS -X POST "$SERVER/api/v1/auth/password/register" -H 'Content-Type: application/json' \
+  -d "{\"username\":\"cli-$(date +%s)-$RANDOM\",\"password\":\"cli-throwaway-pw\"}")
+session=$(printf '%s' "$reg" | jq_ 'd["token"]')
+created=$(curl -fsS -X POST "$SERVER/api/v1/rooms" -H "Authorization: Bearer $session" -H 'Content-Type: application/json' -d '{"name":"cli check"}')
 invite=$(printf '%s' "$created" | jq_ 'd["invite_code"]')
 join() {
   curl -fsS -X POST "$SERVER/api/v1/rooms/join" -H 'Content-Type: application/json' \

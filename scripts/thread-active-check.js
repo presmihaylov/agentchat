@@ -4,6 +4,7 @@
 // it. The active leaf also suppresses its unread glow (no double emphasis).
 // Run: NODE_PATH=<dir with puppeteer-core> SERVER=http://localhost:8095 node scripts/thread-active-check.js
 const puppeteer = require('puppeteer-core');
+const { newRoom } = require('./lib/login.js');
 const SERVER = process.env.SERVER || 'http://localhost:8095';
 
 async function api(path, opts = {}) {
@@ -37,7 +38,7 @@ const isAccent = (bg) => {
 };
 
 (async () => {
-  const created = await api('/api/v1/rooms', { method: 'POST', body: { name: 'thread active check' } });
+  const created = await newRoom(SERVER, 'thread active check');
   const slug = created.room.slug;
   const bot = await api('/api/v1/rooms/join', { method: 'POST', body: { invite_code: created.invite_code, name: 'threadbot', avatar: '🤖' } });
   // two distinct threads, so we can prove the highlight MOVES between leaves
