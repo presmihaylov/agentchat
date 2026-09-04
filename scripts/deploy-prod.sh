@@ -35,3 +35,28 @@ ssh "$HOST" "ln -sf agentchatd-$COMMIT ~/agentchat-prod/bin/agentchatd \
 sleep 3
 curl -sf --max-time 5 http://agentchat.local:8100/healthz
 echo " deployed $COMMIT"
+
+# post-migrate verification (000026 user backfill, docs/PROD.md): the four
+# counts must all be 0. Opt-in, for the one deploy that carries the backfill:
+# humans who join with an invite code later are unlinked by design, and a
+# database rolled back to 25 has no users_backfill_000026 table.
+if [ "${AGENTCHAT_DEPLOY_VERIFY_BACKFILL:-0}" != "1" ]; then
+  exit 0
+fi
+echo "verifying user backfill on $HOST..."
+VERIFY_SQL="SELECT 'unlinked_live_humans', count(*) FROM participants WHERE is_human AND NOT revoked AND user_id IS NULL
+UNION ALL SELECT 'backfilled_users_without_identity', count(*) FROM users_backfill_000026 b LEFT JOIN user_identities i ON i.user_id = b.user_id WHERE i.user_id IS NULL
+UNION ALL SELECT 'duplicate_usernames', count(*) FROM (SELECT username FROM users GROUP BY username HAVING count(*) > 1) d
+UNION ALL SELECT 'links_to_missing_user', count(*) FROM participants p WHERE p.user_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM users u WHERE u.id = p.user_id)"
+COUNTS=$(ssh "$HOST" "set -euo pipefail
+  set -a && source ~/agentchat-prod/env && set +a
+  /opt/homebrew/opt/postgresql@17/bin/psql \"\$AGENTCHAT_DB_URL\" -At -F ' ' -c \"$VERIFY_SQL\"") || {
+  echo "VERIFY FAILED: could not run the verification queries on $HOST" >&2
+  exit 1
+}
+echo "$COUNTS"
+if [ "$(echo "$COUNTS" | wc -l | tr -d ' ')" != "4" ] || echo "$COUNTS" | awk '$2 != 0 { bad = 1 } END { exit !bad }'; then
+  echo "VERIFY FAILED: a backfill count is not 0; see docs/PROD.md (rollback target 25)" >&2
+  exit 1
+fi
+echo "verification passed: all four counts are 0"

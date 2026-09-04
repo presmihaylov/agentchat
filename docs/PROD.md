@@ -69,6 +69,39 @@ data those tables held (for example 24 to 23 deletes every user account and
 session). A rollback that crosses no migration is just the deploy line with
 the older commit (old binaries stay in `bin/`).
 
+## Task 04 deploy: the user backfill (migration 000026)
+
+Migration 000026 turns every legacy human participant into a user account
+(design: `docs/workspaces-auth-design.md` section 7). Default password
+`developer`, `must_change_password` set, so everyone sees the banner on first
+login. Agents are untouched.
+
+1. Preview, read-only, on the mini with the current (schema 25) binary:
+   ```sh
+   set -a && source ~/agentchat-prod/env && set +a
+   /opt/homebrew/opt/postgresql@17/bin/psql "$AGENTCHAT_DB_URL" -f users-migration-preview.sql
+   ```
+   (`scp scripts/users-migration-preview.sql prodhost:` first.) Review the
+   merge report (one username, several rows), the collision report (a derived
+   username that a registered account with zero links already holds: the
+   legacy row gets `-2` and a fresh account) and the pre-linked report (users
+   the operator linked by hand, e.g. `maya`; their unlinked rows in other rooms
+   merge into them). Fix a wrong merge by renaming the participant before the
+   deploy.
+2. `AGENTCHAT_DEPLOY_VERIFY_BACKFILL=1 scripts/deploy-prod.sh <commit>`. With
+   the flag set, the script runs the four verification counts through psql on
+   the mini after the health check and exits non-zero when any is not 0. Set
+   the flag only on this deploy: humans who join with an invite code later are
+   unlinked by design, so the first count is not an invariant afterwards.
+3. Reopen registration: remove the `AGENTCHAT_REGISTRATION_ENABLED=false` line
+   from `~/agentchat-prod/env` (the default is true) and
+   `launchctl kickstart -k gui/$(id -u)/com.agentchat.prod`.
+
+Rollback target is 25: `agentchatd -migrate-to 25` removes exactly the
+accounts 000026 created (tracked in `users_backfill_000026`) and their links;
+pre-linked and registered users stay. Then deploy the task 03 commit (without
+the verify flag: the tracking table is gone).
+
 ## Ops crib sheet (on the mini)
 
 ```sh

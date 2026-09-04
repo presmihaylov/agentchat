@@ -13,7 +13,9 @@ import (
 func TestRoomUsersMigrationRoundTrip(t *testing.T) {
 	ctx := context.Background()
 	dbURL := scratchDB(t)
-	const latest = 25
+	const latest = 26
+	// the version before 000025, where the room-users columns do not exist
+	const beforeRoomUsers = 24
 
 	s, err := Open(ctx, dbURL)
 	if err != nil {
@@ -51,8 +53,8 @@ func TestRoomUsersMigrationRoundTrip(t *testing.T) {
 		t.Fatal("schema at 25 lacks the room-users columns")
 	}
 
-	if got, err := MigrateTo(ctx, dbURL, latest-1); err != nil || got != latest-1 {
-		t.Fatalf("MigrateTo %d: got %d %v", latest-1, got, err)
+	if got, err := MigrateTo(ctx, dbURL, beforeRoomUsers); err != nil || got != beforeRoomUsers {
+		t.Fatalf("MigrateTo %d: got %d %v", beforeRoomUsers, got, err)
 	}
 	if nullable() != "NO" {
 		t.Fatal("down must restore token_hash NOT NULL")
@@ -93,11 +95,16 @@ func TestRoomUsersMigrationRoundTrip(t *testing.T) {
 	if err := conn.QueryRow(ctx, "SELECT version FROM schema_migrations").Scan(&version); err != nil || version != latest {
 		t.Fatalf("version after re-open: %d %v", version, err)
 	}
-	// the row survives the round trip; the link is gone (user_id was dropped),
-	// the placeholder hash is no token anyone holds
+	// the row survives the round trip. Its link was dropped at 24, so the
+	// 000026 backfill sees an unlinked human whose derived username belongs
+	// to a user with zero links (a squatter, from the row's point of view):
+	// the row gets a fresh -2 account, never the original user
 	got, err := s.ParticipantByID(ctx, room.ID, p.ID)
-	if err != nil || got.UserID != nil {
+	if err != nil || got.UserID == nil || *got.UserID == u.ID {
 		t.Fatalf("participant after round trip: %+v %v", got, err)
+	}
+	if relinked, err := s.UserByID(ctx, *got.UserID); err != nil || relinked.Username != u.Username+"-2" {
+		t.Fatalf("relinked user: %+v %v", relinked, err)
 	}
 	sc, err := s.SessionScope(ctx, mkSession(t, s, u.ID), room.Slug, SessionMaxAge)
 	if err != nil || sc.RoomID == nil || sc.Participant != nil {
