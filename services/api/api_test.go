@@ -1472,6 +1472,9 @@ func TestSkillDoc(t *testing.T) {
 		if !strings.Contains(ref, want) {
 			t.Fatalf("%s missing %q", path, want)
 		}
+		if !strings.Contains(ref, "http://public.test/skill#humans-and-workspaces") {
+			t.Fatalf("%s does not point at the humans-and-workspaces section", path)
+		}
 	}
 
 	// the Hermes reference keeps its load-bearing constraints.
