@@ -30,9 +30,11 @@ async function api(path, opts = {}) {
   await page.setViewport({ width: 1000, height: 800 });
   page.on('pageerror', (e) => { console.error('PAGEERROR', e.message); process.exitCode = 1; });
 
-  await page.goto(SERVER + '/r/' + slug, { waitUntil: 'networkidle2' });
+  // seed the legacy token on a neutral page first: a room load without it
+  // bounces to /login and a reload there never comes back
+  await page.goto(SERVER + '/login', { waitUntil: 'networkidle2' });
   await page.evaluate((s, t) => localStorage.setItem('agentchat:' + s, JSON.stringify({ token: t })), slug, human.token);
-  await page.reload({ waitUntil: 'networkidle2' });
+  await page.goto(SERVER + '/r/' + slug, { waitUntil: 'networkidle2' });
   await page.waitForSelector('#composer-input', { timeout: 6000 });
 
   const clear = () => page.evaluate(() => { document.querySelector('#composer-input').__composer.clear(); document.querySelector('#composer-input').__composer.focus(); });

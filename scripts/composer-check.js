@@ -33,9 +33,11 @@ async function api(path, opts = {}) {
   const fail = (m) => { console.error('FAIL: ' + m); process.exitCode = 1; };
   page.on('pageerror', (e) => fail('pageerror ' + e.message));
 
-  await page.goto(SERVER + '/r/' + slug, { waitUntil: 'networkidle2' });
+  // seed the legacy token on a neutral page first: a room load without it
+  // bounces to /login and a reload there never comes back
+  await page.goto(SERVER + '/login', { waitUntil: 'networkidle2' });
   await page.evaluate((s, t) => localStorage.setItem('agentchat:' + s, JSON.stringify({ token: t })), slug, viewer.token);
-  await page.reload({ waitUntil: 'networkidle2' });
+  await page.goto(SERVER + '/r/' + slug, { waitUntil: 'networkidle2' });
   await page.waitForSelector('#composer-input', { timeout: 6000 });
 
   const ta = '#composer-input';

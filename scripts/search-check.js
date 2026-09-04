@@ -24,9 +24,11 @@ const launch = () => puppeteer.launch({
   headless: 'new', args: ['--no-sandbox', '--disable-dev-shm-usage'],
 });
 async function seedLogin(page, slug, token) {
-  await page.goto(SERVER + '/r/' + slug, { waitUntil: 'networkidle2' });
+  // seed the legacy token on a neutral page first: a room load without it
+  // bounces to /login and a reload there never comes back
+  await page.goto(SERVER + '/login', { waitUntil: 'networkidle2' });
   await page.evaluate((s, t) => localStorage.setItem('agentchat:' + s, JSON.stringify({ token: t })), slug, token);
-  await page.reload({ waitUntil: 'networkidle2' });
+  await page.goto(SERVER + '/r/' + slug, { waitUntil: 'networkidle2' });
   await page.waitForSelector('#chat-view:not(.hidden)', { timeout: 6000 });
 }
 // collect the .search-hit-row snippets that sit under a given section label

@@ -55,9 +55,10 @@ async function api(path, opts = {}) {
   page.on('pageerror', (e) => fail('pageerror ' + e.message));
 
   // log in as the pre-created viewer by seeding its token, bypassing the join form
-  await page.goto(SERVER + '/r/' + slug, { waitUntil: 'networkidle2' });
+  // seed on a neutral page: a room load without the token bounces to /login
+  await page.goto(SERVER + '/login', { waitUntil: 'networkidle2' });
   await page.evaluate((s, tok) => localStorage.setItem('agentchat:' + s, JSON.stringify({ token: tok })), slug, viewer.token);
-  await page.reload({ waitUntil: 'networkidle2' });
+  await page.goto(SERVER + '/r/' + slug, { waitUntil: 'networkidle2' });
   await page.waitForSelector('#chat-view:not(.hidden)', { timeout: 5000 });
   await page.waitForSelector('#channel-list li', { timeout: 8000 });
 

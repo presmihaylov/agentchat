@@ -34,7 +34,8 @@ async function api(path, opts = {}) {
   const fail = (m) => { console.error('FAIL: ' + m); process.exitCode = 1; };
   page.on('pageerror', (e) => fail('pageerror ' + e.message));
 
-  await page.goto(SERVER + '/r/' + slug, { waitUntil: 'networkidle2' });
+  // seed the legacy token on a neutral page: a room load without it bounces to /login
+  await page.goto(SERVER + '/login', { waitUntil: 'networkidle2' });
   await page.evaluate((s, t) => localStorage.setItem('agentchat:' + s, JSON.stringify({ token: t })), slug, viewer.token);
   // the /t/<id> route auto-opens the thread panel on load
   await page.goto(SERVER + '/r/' + slug + '/c/general/t/' + root.id, { waitUntil: 'networkidle2' });

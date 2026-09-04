@@ -47,9 +47,11 @@ const assert = (cond, msg) => { if (!cond) throw new Error(msg); };
     window.__setOs = (light) => { window.__osLight = light; listeners.forEach((fn) => fn()); };
   });
   const os = (scheme) => page.evaluate((light) => window.__setOs(light), scheme === 'light');
-  await page.goto(SERVER + '/r/' + slug, { waitUntil: 'networkidle2' });
+  // seed the legacy token on a neutral page first: a room load without it
+  // bounces to /login and a reload there never comes back
+  await page.goto(SERVER + '/login', { waitUntil: 'networkidle2' });
   await page.evaluate((s, t) => localStorage.setItem('agentchat:' + s, JSON.stringify({ token: t })), slug, alice.token);
-  await page.reload({ waitUntil: 'networkidle2' });
+  await page.goto(SERVER + '/r/' + slug, { waitUntil: 'networkidle2' });
   await page.waitForSelector('#chat-view:not(.hidden)', { timeout: 8000 });
 
   const state = () => page.evaluate(() => ({
