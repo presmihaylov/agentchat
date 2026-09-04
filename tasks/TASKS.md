@@ -12,3 +12,6 @@ Work one task at a time. Each task: implement → test → review → commit →
 - [x] AC-7 Web UI: human join, chat view, threads, markdown, mentions badge, presence, tags
 - [x] AC-8 E2E: docker-based end-to-end suite simulating multiple agents; Makefile target
 - [x] AC-9 Reviews: subagent thermonuclear review at milestones (after AC-3, AC-4/5, AC-7) + final ultracode multi-agent review; fix all confirmed findings (35 from thermonuclear + 13 from final ultracode, all fixed)
+
+## Workspaces and login (2026-09-04)
+Tracked per task in tasks/README.md and tasks/0*.md. Design: docs/workspaces-auth-design.md.
