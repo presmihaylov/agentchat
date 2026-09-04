@@ -1,0 +1,167 @@
+package api
+
+import (
+	"encoding/json"
+	"errors"
+	"io"
+	"net/http"
+	"strings"
+
+	"github.com/presmihaylov/agentchat/models"
+	"github.com/presmihaylov/agentchat/pkg/secrets"
+	"github.com/presmihaylov/agentchat/services/auth"
+)
+
+func (s *Server) handleAuthProviders(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]any{
+		"providers":            s.cfg.Providers.Names(),
+		"registration_enabled": s.cfg.RegistrationEnabled,
+	})
+}
+
+// readRawBody hands the provider its own body to decode; the provider owns the
+// credential shape, so the handler only enforces the size cap.
+func readRawBody(w http.ResponseWriter, r *http.Request) (json.RawMessage, bool) {
+	raw, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxBodyBytes))
+	if err != nil {
+		writeErrCode(w, http.StatusBadRequest, "bad_request", "invalid body: "+err.Error())
+		return nil, false
+	}
+	return raw, true
+}
+
+// writeAuthErr maps provider errors onto statuses. Bad JSON from the provider
+// is any error it did not name, short of a store failure.
+func writeAuthErr(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, auth.ErrRegistrationDisabled):
+		writeErrCode(w, http.StatusForbidden, "registration_disabled", err.Error())
+	case errors.Is(err, auth.ErrUsernameTaken):
+		writeErrCode(w, http.StatusConflict, "username_taken", err.Error())
+	case errors.Is(err, auth.ErrWeakPassword):
+		writeErrCode(w, http.StatusBadRequest, "weak_password", err.Error())
+	case errors.Is(err, auth.ErrPasswordTooLong):
+		writeErrCode(w, http.StatusBadRequest, "password_too_long", err.Error())
+	case errors.Is(err, auth.ErrBadUsername):
+		writeErrCode(w, http.StatusBadRequest, "bad_username", err.Error())
+	case errors.Is(err, auth.ErrBadCredentials):
+		writeErrCode(w, http.StatusUnauthorized, "invalid_credentials", err.Error())
+	case errors.Is(err, auth.ErrLockedOut):
+		writeErrCode(w, http.StatusTooManyRequests, "locked_out", err.Error())
+	case strings.HasPrefix(err.Error(), "invalid JSON body"):
+		writeErrCode(w, http.StatusBadRequest, "bad_request", err.Error())
+	default:
+		writeStoreErr(w, err)
+	}
+}
+
+// issueSession turns a verified identity into a ses_ token. The plaintext
+// token appears exactly once, in this response.
+func (s *Server) issueSession(w http.ResponseWriter, r *http.Request, status int, id auth.Identity) {
+	u, err := s.store.UserByIdentity(r.Context(), id.Provider, id.Subject)
+	if errors.Is(err, models.ErrNotFound) {
+		// the password provider creates its identity in Register, so a miss
+		// here means the credential no longer maps to an account
+		writeErrCode(w, http.StatusUnauthorized, "invalid_credentials", auth.ErrBadCredentials.Error())
+		return
+	}
+	if err != nil {
+		writeStoreErr(w, err)
+		return
+	}
+	tok, hash := secrets.NewSessionToken()
+	sess, err := s.store.CreateSession(r.Context(), u.ID, id.Provider, hash, s.cfg.SessionTTL)
+	if err != nil {
+		writeStoreErr(w, err)
+		return
+	}
+	writeJSON(w, status, map[string]any{"token": tok, "expires_at": sess.ExpiresAt, "user": u})
+}
+
+func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
+	if !s.joinLimit.Allow(s.clientIP(r)) {
+		writeErrCode(w, http.StatusTooManyRequests, "rate_limited", "slow down")
+		return
+	}
+	prov, _ := s.cfg.Providers.Get(auth.ProviderPassword)
+	reg, ok := prov.(auth.Registrar)
+	if !ok {
+		writeErrCode(w, http.StatusNotFound, "unknown_provider", "password login is not enabled")
+		return
+	}
+	body, ok := readRawBody(w, r)
+	if !ok {
+		return
+	}
+	id, err := reg.Register(r.Context(), body)
+	if err != nil {
+		writeAuthErr(w, err)
+		return
+	}
+	s.issueSession(w, r, http.StatusCreated, id)
+}
+
+func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
+	if !s.joinLimit.Allow(s.clientIP(r)) {
+		writeErrCode(w, http.StatusTooManyRequests, "rate_limited", "slow down")
+		return
+	}
+	prov, ok := s.cfg.Providers.Get(r.PathValue("provider"))
+	if !ok {
+		writeErrCode(w, http.StatusNotFound, "unknown_provider", "unknown auth provider")
+		return
+	}
+	body, ok := readRawBody(w, r)
+	if !ok {
+		return
+	}
+	id, err := prov.Authenticate(r.Context(), body)
+	if err != nil {
+		writeAuthErr(w, err)
+		return
+	}
+	s.issueSession(w, r, http.StatusOK, id)
+}
+
+func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request, _ models.User) {
+	if err := s.store.DeleteSession(r.Context(), secrets.HashToken(bearerToken(r))); err != nil {
+		writeStoreErr(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+type changePasswordReq struct {
+	CurrentPassword string `json:"current_password"`
+	NewPassword     string `json:"new_password"`
+}
+
+func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request, u models.User) {
+	// same per-IP guard as login: the current-password check is a bcrypt oracle
+	if !s.joinLimit.Allow(s.clientIP(r)) {
+		writeErrCode(w, http.StatusTooManyRequests, "rate_limited", "slow down")
+		return
+	}
+	prov, _ := s.cfg.Providers.Get(auth.ProviderPassword)
+	pw, ok := prov.(*auth.PasswordProvider)
+	if !ok {
+		writeErrCode(w, http.StatusNotFound, "unknown_provider", "password login is not enabled")
+		return
+	}
+	var req changePasswordReq
+	if !readJSON(w, r, &req) {
+		return
+	}
+	// every other device must log in again with the new password; the
+	// revocation rides in the same transaction as the new hash
+	if err := pw.ChangePassword(r.Context(), u.Username, req.CurrentPassword, req.NewPassword, secrets.HashToken(bearerToken(r))); err != nil {
+		writeAuthErr(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleGetUser returns the account only; workspaces join the payload in task 03.
+func (s *Server) handleGetUser(w http.ResponseWriter, r *http.Request, u models.User) {
+	writeJSON(w, http.StatusOK, map[string]any{"user": u})
+}

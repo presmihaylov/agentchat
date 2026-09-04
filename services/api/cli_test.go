@@ -124,9 +124,9 @@ func TestCLICarriesAccessServiceToken(t *testing.T) {
 	srv, store := newTestServer(t)
 	_, alice, _ := setupRoom(t, srv.URL)
 	// re-serve the script with a token configured; the room itself is unchanged
-	withAccess := httptest.NewServer(New(store, Config{
+	withAccess := httptest.NewServer(New(store, testConfig(store, Config{
 		PublicURL: "http://public.test", AccessClientID: "cf-id-123", AccessClientSecret: "cf-secret-456",
-	}).Handler())
+	})).Handler())
 	defer withAccess.Close()
 	resp, err := http.Get(withAccess.URL + "/cli.sh")
 	if err != nil {
@@ -204,9 +204,9 @@ func TestInviteCarriesAccessServiceToken(t *testing.T) {
 	if _, has := alice.must("POST", "/api/v1/invites", nil, 201)["access"]; has {
 		t.Fatal("plain room must not return an access block")
 	}
-	withAccess := httptest.NewServer(New(store, Config{
+	withAccess := httptest.NewServer(New(store, testConfig(store, Config{
 		PublicURL: "http://public.test", AccessClientID: "cf-id-123", AccessClientSecret: "cf-secret-456",
-	}).Handler())
+	})).Handler())
 	defer withAccess.Close()
 	gated := &testClient{t: t, base: withAccess.URL, token: alice.token}
 	access, ok := gated.must("POST", "/api/v1/invites", nil, 201)["access"].(map[string]any)

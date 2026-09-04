@@ -65,11 +65,22 @@ func InviteCode() string {
 // NewToken returns a participant bearer token ("act_" + 32 base58 chars,
 // ~187 bits) and the sha256 hash stored in the database.
 func NewToken() (token string, hash []byte) {
+	return prefixedToken("act_")
+}
+
+// NewSessionToken returns a human session bearer token ("ses_" + 32 base58
+// chars) and its sha256 hash. The prefix is what authed() dispatches on, so a
+// participant token can never be mistaken for a session.
+func NewSessionToken() (token string, hash []byte) {
+	return prefixedToken("ses_")
+}
+
+func prefixedToken(prefix string) (token string, hash []byte) {
 	b := make([]byte, 32)
 	for i := range b {
 		b[i] = base58[randInt(len(base58))]
 	}
-	token = "act_" + string(b)
+	token = prefix + string(b)
 	return token, HashToken(token)
 }
 

@@ -2,6 +2,7 @@ package models
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"testing"
@@ -300,5 +301,79 @@ func TestEmbeddingsQueue(t *testing.T) {
 	}
 	if err := s.ReleaseEmbeddings(ctx, ids); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func mkPasswordUser(t *testing.T, s *Store) User {
+	t.Helper()
+	name := fmt.Sprintf("pw%d", time.Now().UnixNano()%1_000_000_000_000)
+	u, err := s.CreatePasswordUser(context.Background(), name, name, []byte("$2a$04$notarealhash"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return u
+}
+
+func mkSession(t *testing.T, s *Store, userID string) []byte {
+	t.Helper()
+	_, hash := secrets.NewSessionToken()
+	if _, err := s.CreateSession(context.Background(), userID, "password", hash, time.Hour); err != nil {
+		t.Fatal(err)
+	}
+	return hash
+}
+
+// nil keepHash must revoke every session; a keepHash spares exactly that one.
+func TestDeleteUserSessionsNilKeepsNone(t *testing.T) {
+	s := testStore(t)
+	ctx := context.Background()
+	u := mkPasswordUser(t, s)
+	a, b := mkSession(t, s, u.ID), mkSession(t, s, u.ID)
+
+	n, err := s.DeleteUserSessions(ctx, u.ID, nil)
+	if err != nil || n != 2 {
+		t.Fatalf("nil keep: %d %v", n, err)
+	}
+	for _, h := range [][]byte{a, b} {
+		if _, _, err := s.SessionByTokenHash(ctx, h, time.Hour); !errors.Is(err, ErrNotFound) {
+			t.Fatalf("session survived a nil-keep delete: %v", err)
+		}
+	}
+
+	kept := mkSession(t, s, u.ID)
+	n, err = s.DeleteUserSessions(ctx, u.ID, kept)
+	if err != nil || n != 0 {
+		t.Fatalf("keep own: %d %v", n, err)
+	}
+	if _, _, err := s.SessionByTokenHash(ctx, kept, time.Hour); err != nil {
+		t.Fatalf("kept session gone: %v", err)
+	}
+}
+
+// SetPasswordHash revokes sessions in the same transaction as the new hash.
+func TestSetPasswordHashRevokesSessions(t *testing.T) {
+	s := testStore(t)
+	ctx := context.Background()
+	u := mkPasswordUser(t, s)
+	kept, other := mkSession(t, s, u.ID), mkSession(t, s, u.ID)
+
+	n, err := s.SetPasswordHash(ctx, u.ID, []byte("$2a$04$anotherfakehash"), kept)
+	if err != nil || n != 1 {
+		t.Fatalf("keep one: %d %v", n, err)
+	}
+	if _, _, err := s.SessionByTokenHash(ctx, other, time.Hour); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("other session survived: %v", err)
+	}
+	if _, _, err := s.SessionByTokenHash(ctx, kept, time.Hour); err != nil {
+		t.Fatalf("kept session gone: %v", err)
+	}
+	if _, hash, err := s.PasswordIdentity(ctx, u.Username); err != nil || string(hash) != "$2a$04$anotherfakehash" {
+		t.Fatalf("hash not stored: %q %v", hash, err)
+	}
+	if n, err := s.SetPasswordHash(ctx, u.ID, []byte("$2a$04$third"), nil); err != nil || n != 1 {
+		t.Fatalf("nil keep: %d %v", n, err)
+	}
+	if _, err := s.SetPasswordHash(ctx, "00000000-0000-0000-0000-000000000000", []byte("x"), nil); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("unknown user: %v", err)
 	}
 }

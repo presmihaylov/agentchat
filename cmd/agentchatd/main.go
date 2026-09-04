@@ -4,16 +4,19 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
 	"github.com/presmihaylov/agentchat/models"
 	"github.com/presmihaylov/agentchat/services/api"
+	"github.com/presmihaylov/agentchat/services/auth"
 	"github.com/presmihaylov/agentchat/services/embed"
 )
 
@@ -36,6 +39,26 @@ func accessConfig(getenv func(string) string) (id, secret string, err error) {
 		return "", "", errors.New("CLOUDFLARE_TUNNEL=true needs CF_ACCESS_CLIENT_ID and CF_ACCESS_CLIENT_SECRET")
 	}
 	return id, secret, nil
+}
+
+// authConfig reads the human-login knobs. Registration is on unless the
+// operator says otherwise; the session TTL is a Go duration ("720h").
+func authConfig(getenv func(string) string) (registration bool, ttl time.Duration, err error) {
+	registration = true
+	if v := getenv("AGENTCHAT_REGISTRATION_ENABLED"); v != "" {
+		registration, err = strconv.ParseBool(v)
+		if err != nil {
+			return false, 0, fmt.Errorf("AGENTCHAT_REGISTRATION_ENABLED: %w", err)
+		}
+	}
+	ttl = 720 * time.Hour
+	if v := getenv("AGENTCHAT_SESSION_TTL"); v != "" {
+		ttl, err = time.ParseDuration(v)
+		if err != nil || ttl <= 0 {
+			return false, 0, fmt.Errorf("AGENTCHAT_SESSION_TTL must be a positive duration like 720h, got %q", v)
+		}
+	}
+	return registration, ttl, nil
 }
 
 func run() error {
@@ -78,15 +101,27 @@ func run() error {
 		slog.Info("Cloudflare Access service token will be baked into /cli.sh")
 	}
 
+	registration, sessionTTL, err := authConfig(os.Getenv)
+	if err != nil {
+		return err
+	}
+	if !registration {
+		slog.Info("self-service registration disabled")
+	}
+
 	server := api.New(store, api.Config{
-		PublicURL:          publicURL,
-		Embedder:           embedder,
-		TrustProxy:         os.Getenv("AGENTCHAT_TRUST_PROXY") == "true",
-		AccessClientID:     accessID,
-		AccessClientSecret: accessSecret,
+		PublicURL:           publicURL,
+		Embedder:            embedder,
+		TrustProxy:          os.Getenv("AGENTCHAT_TRUST_PROXY") == "true",
+		AccessClientID:      accessID,
+		AccessClientSecret:  accessSecret,
+		Providers:           auth.NewRegistry(auth.NewPasswordProvider(store, registration)),
+		SessionTTL:          sessionTTL,
+		RegistrationEnabled: registration,
 	})
 
-	// unreferenced uploads (posted but never attached) get swept periodically
+	// unreferenced uploads (posted but never attached) and dead login
+	// sessions get swept periodically
 	go func() {
 		ticker := time.NewTicker(time.Hour)
 		defer ticker.Stop()
@@ -99,6 +134,11 @@ func run() error {
 					slog.Error("orphan attachment sweep failed", "err", err)
 				} else if n > 0 {
 					slog.Info("swept orphan attachments", "count", n)
+				}
+				if n, err := store.SweepSessions(ctx); err != nil {
+					slog.Error("session sweep failed", "err", err)
+				} else if n > 0 {
+					slog.Info("swept expired sessions", "count", n)
 				}
 			}
 		}

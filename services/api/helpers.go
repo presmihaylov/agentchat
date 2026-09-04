@@ -26,6 +26,12 @@ func writeErr(w http.ResponseWriter, status int, msg string) {
 	writeJSON(w, status, map[string]string{"error": msg})
 }
 
+// writeErrCode adds a stable machine-readable code so the SPA can route on it
+// (session_invalid, no_room, ...) without parsing the human message.
+func writeErrCode(w http.ResponseWriter, status int, code, msg string) {
+	writeJSON(w, status, map[string]string{"error": msg, "code": code})
+}
+
 // writeStoreErr maps model errors onto HTTP statuses.
 func writeStoreErr(w http.ResponseWriter, err error) {
 	switch {
@@ -56,7 +62,7 @@ func readJSON(w http.ResponseWriter, r *http.Request, dst any) bool {
 	dec := json.NewDecoder(r.Body)
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(dst); err != nil {
-		writeErr(w, http.StatusBadRequest, "invalid JSON body: "+err.Error())
+		writeErrCode(w, http.StatusBadRequest, "bad_request", "invalid JSON body: "+err.Error())
 		return false
 	}
 	return true

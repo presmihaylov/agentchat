@@ -15,7 +15,15 @@ import (
 	"time"
 
 	"github.com/presmihaylov/agentchat/models"
+	"github.com/presmihaylov/agentchat/services/auth"
 )
+
+// testConfig fills in the password provider every server needs.
+func testConfig(store *models.Store, cfg Config) Config {
+	cfg.Providers = auth.NewRegistry(auth.NewPasswordProvider(store, true))
+	cfg.RegistrationEnabled = true
+	return cfg
+}
 
 // Integration tests over real HTTP + the docker compose db (make db-up); skip otherwise.
 
@@ -39,7 +47,7 @@ func newTestServer(t *testing.T) (*httptest.Server, *models.Store) {
 	}
 	t.Cleanup(store.Close)
 
-	srv := httptest.NewServer(New(store, Config{PublicURL: "http://public.test"}).Handler())
+	srv := httptest.NewServer(New(store, testConfig(store, Config{PublicURL: "http://public.test"})).Handler())
 	t.Cleanup(srv.Close)
 	return srv, store
 }

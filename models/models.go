@@ -193,6 +193,32 @@ type SearchFilters struct {
 	MemberID *string
 }
 
+// User is a person's account; a login through any provider lands on one of these.
+type User struct {
+	ID                 string    `json:"id"`
+	Username           string    `json:"username"`
+	DisplayName        string    `json:"display_name"`
+	Email              *string   `json:"email,omitempty"`
+	MustChangePassword bool      `json:"must_change_password"`
+	CreatedAt          time.Time `json:"created_at"`
+}
+
+// Session is one ses_ login. Only the token's sha256 is stored.
+type Session struct {
+	ID         string    `json:"id"`
+	UserID     string    `json:"user_id"`
+	Provider   string    `json:"provider"`
+	CreatedAt  time.Time `json:"created_at"`
+	LastUsedAt time.Time `json:"last_used_at"`
+	ExpiresAt  time.Time `json:"expires_at"`
+}
+
+// SessionMaxAge caps a session at 90 days from creation, whatever the sliding TTL says.
+const SessionMaxAge = 90 * 24 * time.Hour
+
+// SessionTouchEvery bounds how often a request refreshes last_used_at and expires_at.
+const SessionTouchEvery = 5 * time.Minute
+
 // OnlineWindow is how recently a participant must have been seen to count as online.
 const OnlineWindow = 90 * time.Second
 
