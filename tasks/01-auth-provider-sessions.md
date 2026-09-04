@@ -1,6 +1,6 @@
 # 01 Auth provider interface, password provider, sessions
 
-Status: in-progress
+Status: done (2ddc377 + 514c27d, prod 514c27d, registration closed until task 04)
 
 ## Scope
 - `services/auth/` package: `Provider` interface (design section 3), `PasswordProvider` (bcrypt cost 12, min 8 chars, per-username lockout 5 fails per minute, dummy compare on unknown username).

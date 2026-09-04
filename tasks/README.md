@@ -12,7 +12,7 @@ has run its backfill and verification queries.
 
 | # | Task | Status |
 |---|---|---|
-| 01 | Auth provider interface, password provider, sessions | in-progress |
+| 01 | Auth provider interface, password provider, sessions | done |
 | 02 | Login, registration and settings UI | todo |
 | 03 | Room users schema, session room entry, room creation requires login | todo |
 | 04 | User migration (humans to users, default password developer) | todo |
