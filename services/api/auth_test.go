@@ -453,3 +453,32 @@ func TestActTokenIgnoresRoomHeader(t *testing.T) {
 		t.Fatalf("act_ logout: %d", st)
 	}
 }
+
+// A Clerk install is a separate deployment (design section 11): the provider
+// is listed only when configured, and until the verifier lands it refuses
+// every login with 501 rather than letting a token through unchecked.
+func TestClerkProviderStub(t *testing.T) {
+	_, store := newTestServer(t)
+	srv := httptest.NewServer(New(store, Config{
+		PublicURL: "http://public.test",
+		Providers: auth.NewRegistry(auth.NewPasswordProvider(store, true), auth.NewClerkProvider("sk_test_x")),
+	}).Handler())
+	defer srv.Close()
+	anon := &testClient{t: t, base: srv.URL}
+
+	names := anon.must("GET", "/api/v1/auth/providers", nil, 200)["providers"].([]any)
+	if len(names) != 2 || names[0] != "password" || names[1] != "clerk" {
+		t.Fatalf("providers: %v", names)
+	}
+	st, out := anon.do("POST", "/api/v1/auth/clerk/login", map[string]any{"token": "eyJ.fake.jwt"})
+	if st != 501 || out["code"] != "provider_not_implemented" {
+		t.Fatalf("clerk login: %d %v", st, out)
+	}
+	st, out = anon.do("POST", "/api/v1/auth/clerk/login", map[string]any{"token": ""})
+	if st != 401 || out["code"] != "invalid_credentials" {
+		t.Fatalf("clerk empty token: %d %v", st, out)
+	}
+	if _, ok := auth.Provider(auth.NewClerkProvider("k")).(auth.Registrar); ok {
+		t.Fatal("clerk must not register accounts locally")
+	}
+}

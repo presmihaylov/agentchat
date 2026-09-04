@@ -48,6 +48,8 @@ func writeAuthErr(w http.ResponseWriter, err error) {
 		writeErrCode(w, http.StatusUnauthorized, "invalid_credentials", err.Error())
 	case errors.Is(err, auth.ErrLockedOut):
 		writeErrCode(w, http.StatusTooManyRequests, "locked_out", err.Error())
+	case errors.Is(err, auth.ErrProviderNotImplemented):
+		writeErrCode(w, http.StatusNotImplemented, "provider_not_implemented", err.Error())
 	case strings.HasPrefix(err.Error(), "invalid JSON body"):
 		writeErrCode(w, http.StatusBadRequest, "bad_request", err.Error())
 	default:

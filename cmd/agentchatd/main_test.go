@@ -62,3 +62,16 @@ func TestParseFlagsMigrateTo(t *testing.T) {
 		t.Fatal("an unknown flag must be refused")
 	}
 }
+
+func TestProvidersClerkBehindSecretKey(t *testing.T) {
+	env := func(m map[string]string) func(string) string {
+		return func(k string) string { return m[k] }
+	}
+	if got := authProviders(nil, true, env(map[string]string{})).Names(); len(got) != 1 || got[0] != "password" {
+		t.Fatalf("default providers: %v", got)
+	}
+	got := authProviders(nil, true, env(map[string]string{"CLERK_SECRET_KEY": "sk_test_x"})).Names()
+	if len(got) != 2 || got[1] != "clerk" {
+		t.Fatalf("with CLERK_SECRET_KEY: %v", got)
+	}
+}

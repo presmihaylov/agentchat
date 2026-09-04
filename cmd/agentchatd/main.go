@@ -62,6 +62,16 @@ func authConfig(getenv func(string) string) (registration bool, ttl time.Duratio
 	return registration, ttl, nil
 }
 
+// authProviders builds the login registry. Password is always on; Clerk
+// joins only on a Clerk deployment (CLERK_SECRET_KEY set, design section 11).
+func authProviders(store auth.PasswordStore, registration bool, getenv func(string) string) *auth.Registry {
+	providers := []auth.Provider{auth.NewPasswordProvider(store, registration)}
+	if k := getenv("CLERK_SECRET_KEY"); k != "" {
+		providers = append(providers, auth.NewClerkProvider(k))
+	}
+	return auth.NewRegistry(providers...)
+}
+
 // parseFlags reads the command line. migrateTo is nil unless -migrate-to was
 // given; version 0 is not a valid target, so a plain zero cannot stand in for
 // "absent".
@@ -148,7 +158,7 @@ func run() error {
 		TrustProxy:          os.Getenv("AGENTCHAT_TRUST_PROXY") == "true",
 		AccessClientID:      accessID,
 		AccessClientSecret:  accessSecret,
-		Providers:           auth.NewRegistry(auth.NewPasswordProvider(store, registration)),
+		Providers:           authProviders(store, registration, os.Getenv),
 		SessionTTL:          sessionTTL,
 		RegistrationEnabled: registration,
 	})

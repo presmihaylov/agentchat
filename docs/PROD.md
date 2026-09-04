@@ -24,6 +24,9 @@ and only moves when you run the deploy script.
   (default `true`; `false` returns 403 on `/register`, logins still work) and
   `AGENTCHAT_SESSION_TTL` (a Go duration, default `720h`; the sliding session
   lifetime, capped at 90 days absolute). A bad value refuses to start.
+  `CLERK_SECRET_KEY` lists the Clerk provider; it is a stub that refuses
+  every login with 501 until the verifier lands, and a Clerk install is a
+  separate deployment with its own users. Never set it on this prod.
 - `~/agentchat-prod/logs/agentchatd.log` — app log.
 - `~/agentchat-prod/backups/agentchat-<utc stamp>-pre-<commit>.dump` — a
   `pg_dump -Fc` the deploy script takes before every binary swap. The newest
