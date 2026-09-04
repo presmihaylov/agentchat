@@ -91,7 +91,10 @@ async function api(path, opts = {}) {
   const pwned = await page.evaluate(() => window.PWNED === 1);
   if (pwned) throw new Error('XSS: onerror executed');
 
-  // onboarding: /create makes a fresh workspace and lands in its chat as admin
+  // onboarding: /create needs a login session, then makes a fresh workspace
+  // and lands in its chat as admin
+  const account = await api('/api/v1/auth/password/register', { method: 'POST', body: { username: 'smoke' + Date.now().toString(36), password: 'correct horse battery' } });
+  await page.evaluate((t) => localStorage.setItem('agentchat:session', t), account.token);
   await page.goto(SERVER + '/create', { waitUntil: 'networkidle2' });
   await page.waitForSelector('#create-view:not(.hidden)', { timeout: 5000 });
   await page.type('#create-room-name', 'smoke onboarding');

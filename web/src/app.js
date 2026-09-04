@@ -1,6 +1,7 @@
 /* AgentChat human web client — vanilla JS, talks to the same REST API as agents. */
 import { createComposer } from './composer.js';
 import { emojify, searchEmoji, rememberEmoji, shortcodeOf } from './emoji.js';
+import { sessionToken, isAccountPage, showSignInBanner, loginURL, onSessionInvalid } from './auth.js';
 
 (() => {
   'use strict';
@@ -45,9 +46,19 @@ import { emojify, searchEmoji, rememberEmoji, shortcodeOf } from './emoji.js';
     ? { pend: $('thread-attach-pending'), input: $('thread-attach-input') }
     : { pend: $('attach-pending'), input: $('attach-input') });
 
+  // One header builder for every fetch. A room's act_ token always wins; the
+  // login session only rides on the account pages, because a session on a
+  // room route still answers 403 no_room until task 03.
+  const authHeaders = (extra) => {
+    const headers = Object.assign({}, extra);
+    if (token) { headers['Authorization'] = 'Bearer ' + token; return headers; }
+    const ses = isAccountPage ? sessionToken() : null;
+    if (ses) headers['Authorization'] = 'Bearer ' + ses;
+    return headers;
+  };
+
   const api = async (path, opts = {}) => {
-    const headers = Object.assign({}, opts.headers);
-    if (token) headers['Authorization'] = 'Bearer ' + token;
+    const headers = authHeaders(opts.headers);
     if (opts.body && !(opts.body instanceof FormData)) {
       headers['Content-Type'] = 'application/json';
       opts = Object.assign({}, opts, { body: JSON.stringify(opts.body) });
@@ -58,6 +69,8 @@ import { emojify, searchEmoji, rememberEmoji, shortcodeOf } from './emoji.js';
     if (!resp.ok) {
       const err = new Error((data && data.error) || ('HTTP ' + resp.status));
       err.status = resp.status;
+      err.code = data && data.code;
+      if (resp.status === 401 && err.code === 'session_invalid') onSessionInvalid();
       throw err;
     }
     return data;
@@ -132,7 +145,7 @@ import { emojify, searchEmoji, rememberEmoji, shortcodeOf } from './emoji.js';
   const blobURLs = {};
   const blobURL = (attID) => {
     if (!blobURLs[attID]) {
-      blobURLs[attID] = fetch('/api/v1/attachments/' + attID, { headers: { Authorization: 'Bearer ' + token } })
+      blobURLs[attID] = fetch('/api/v1/attachments/' + attID, { headers: authHeaders() })
         .then((r) => (r.ok ? r.blob() : Promise.reject(new Error('image fetch failed'))))
         .then((b) => URL.createObjectURL(b))
         .catch(() => { delete blobURLs[attID]; return null; });
@@ -1280,7 +1293,7 @@ import { emojify, searchEmoji, rememberEmoji, shortcodeOf } from './emoji.js';
 
   const downloadAttachment = async (id, name) => {
     try {
-      const resp = await fetch('/api/v1/attachments/' + id, { headers: { Authorization: 'Bearer ' + token } });
+      const resp = await fetch('/api/v1/attachments/' + id, { headers: authHeaders() });
       if (!resp.ok) throw new Error('download failed (HTTP ' + resp.status + ')');
       const url = URL.createObjectURL(await resp.blob());
       const a = document.createElement('a');
@@ -1302,7 +1315,7 @@ import { emojify, searchEmoji, rememberEmoji, shortcodeOf } from './emoji.js';
     $('doc-dl').onclick = () => downloadAttachment(id, name);
     $('doc-modal').classList.remove('hidden');
     try {
-      const resp = await fetch('/api/v1/attachments/' + id, { headers: { Authorization: 'Bearer ' + token } });
+      const resp = await fetch('/api/v1/attachments/' + id, { headers: authHeaders() });
       if (!resp.ok) throw new Error('preview failed (HTTP ' + resp.status + ')');
       const text = await resp.text();
       if (/\.(md|markdown)$/i.test(name || '')) {
@@ -2457,6 +2470,9 @@ import { emojify, searchEmoji, rememberEmoji, shortcodeOf } from './emoji.js';
   // ---------- create workspace (onboarding at /create) ----------
 
   if (isCreatePage) {
+    // creating a workspace needs an account; the create + join calls
+    // themselves stay unauthenticated until task 03
+    if (!sessionToken()) { location.replace(loginURL('/create')); return; }
     $('create-view').classList.remove('hidden');
     $('create-form').addEventListener('submit', async (ev) => {
       ev.preventDefault();
@@ -2485,7 +2501,8 @@ import { emojify, searchEmoji, rememberEmoji, shortcodeOf } from './emoji.js';
     return;
   }
 
-  // boot
+  // boot; the account pages belong to auth.js
+  if (isAccountPage) return;
   (async () => {
     if (!slug) { document.body.textContent = 'Missing room link.'; return; }
     let saved = null;
@@ -2495,7 +2512,7 @@ import { emojify, searchEmoji, rememberEmoji, shortcodeOf } from './emoji.js';
       // only a 401 means the token is bad; a network blip or server restart
       // must not log the user out and orphan their identity
       for (;;) {
-        try { await enterChat(); return; }
+        try { await enterChat(); showSignInBanner(me); return; }
         catch (e) {
           if (e.status === 401 || e.status === 404) { token = null; localStorage.removeItem(storeKey); break; }
           console.error('boot', e);

@@ -13,6 +13,7 @@ import (
 
 	"github.com/presmihaylov/agentchat/models"
 	"github.com/presmihaylov/agentchat/pkg/secrets"
+	"github.com/presmihaylov/agentchat/services/auth"
 )
 
 func TestReadPasswordFromStdin(t *testing.T) {
@@ -32,6 +33,12 @@ func TestReadPasswordFromStdin(t *testing.T) {
 func TestRunUsage(t *testing.T) {
 	if err := run([]string{"alice", "hunter22"}); err == nil || !strings.Contains(err.Error(), "usage") {
 		t.Fatalf("password in argv must be refused: %v", err)
+	}
+	if err := run([]string{"-create"}); err == nil || !strings.Contains(err.Error(), "usage") {
+		t.Fatalf("-create without a username must be refused: %v", err)
+	}
+	if err := run([]string{"-bogus", "alice"}); err == nil || !strings.Contains(err.Error(), "usage") {
+		t.Fatalf("unknown flag must be refused: %v", err)
 	}
 }
 
@@ -66,7 +73,7 @@ func TestReset(t *testing.T) {
 		hashes = append(hashes, h)
 	}
 
-	n, err := reset(ctx, store, name, "new horse")
+	n, err := reset(ctx, store, name, "new horse", false)
 	if err != nil || n != 2 {
 		t.Fatalf("reset: %d %v", n, err)
 	}
@@ -85,7 +92,57 @@ func TestReset(t *testing.T) {
 	if bcrypt.CompareHashAndPassword(hash, []byte("old horse")) == nil {
 		t.Fatal("old password still accepted")
 	}
-	if _, err := reset(ctx, store, "nobody-"+name, "new horse"); err == nil || !strings.Contains(err.Error(), "no password account") {
+	if _, err := reset(ctx, store, "nobody-"+name, "new horse", false); err == nil || !strings.Contains(err.Error(), "no password account") {
 		t.Fatalf("unknown user: %v", err)
+	}
+	// an operator-set password is temporary: the UI must ask for a new one
+	if got, err := store.UserByIdentity(ctx, "password", name); err != nil || !got.MustChangePassword {
+		t.Fatalf("must_change_password after reset: %v %v", got.MustChangePassword, err)
+	}
+}
+
+// DB-backed: -create makes the account when it is missing and is a plain
+// reset when it exists.
+func TestResetCreate(t *testing.T) {
+	url := os.Getenv("AGENTCHAT_DB_URL")
+	if url == "" {
+		t.Skip("AGENTCHAT_DB_URL not set")
+	}
+	ctx := context.Background()
+	store, err := models.Open(ctx, url)
+	if err != nil {
+		t.Skipf("db unavailable: %v", err)
+	}
+	defer store.Close()
+
+	name := fmt.Sprintf("pwc%d", time.Now().UnixNano()%1_000_000_000_000)
+	n, err := reset(ctx, store, name, "first horse", true)
+	if err != nil || n != 0 {
+		t.Fatalf("create: %d %v", n, err)
+	}
+	u, err := store.UserByIdentity(ctx, "password", name)
+	if err != nil || u.Username != name || u.DisplayName != name || !u.MustChangePassword {
+		t.Fatalf("created user: %+v %v", u, err)
+	}
+	_, hash, err := store.PasswordIdentity(ctx, name)
+	if err != nil || bcrypt.CompareHashAndPassword(hash, []byte("first horse")) != nil {
+		t.Fatalf("created password: %v", err)
+	}
+
+	_, h := secrets.NewSessionToken()
+	if _, err := store.CreateSession(ctx, u.ID, "password", h, time.Hour); err != nil {
+		t.Fatal(err)
+	}
+	n, err = reset(ctx, store, name, "second horse", true)
+	if err != nil || n != 1 {
+		t.Fatalf("reset existing with -create: %d %v", n, err)
+	}
+	_, hash, _ = store.PasswordIdentity(ctx, name)
+	if bcrypt.CompareHashAndPassword(hash, []byte("second horse")) != nil {
+		t.Fatal("second password rejected")
+	}
+	// the shape rule answers before the DB constraint does
+	if _, err := reset(ctx, store, "Bad Name!", "first horse", true); !errors.Is(err, auth.ErrBadUsername) {
+		t.Fatalf("bad username: %v", err)
 	}
 }

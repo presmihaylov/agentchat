@@ -1,16 +1,19 @@
 // Command agentchat-passwd resets a user's password from the server host:
 //
-//	agentchat-passwd <username>
+//	agentchat-passwd [-create] <username>
 //
 // The new password is read from the terminal (hidden) or, when stdin is not a
 // terminal, from the first line of stdin; it never appears in argv or ps. It
-// writes a fresh bcrypt hash and logs the user out everywhere.
+// writes a fresh bcrypt hash, logs the user out everywhere and flags the
+// account so the web UI asks for a new password. -create makes the password
+// account when the username is unknown (registration is closed on prod).
 package main
 
 import (
 	"bufio"
 	"context"
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -31,10 +34,14 @@ func main() {
 }
 
 func run(args []string) error {
-	if len(args) != 1 {
-		return errors.New("usage: agentchat-passwd <username>  (password read from stdin)")
+	fs := flag.NewFlagSet("agentchat-passwd", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	create := fs.Bool("create", false, "create the password account when the username is unknown")
+	usage := errors.New("usage: agentchat-passwd [-create] <username>  (password read from stdin)")
+	if err := fs.Parse(args); err != nil || fs.NArg() != 1 {
+		return usage
 	}
-	username := strings.ToLower(strings.TrimSpace(args[0]))
+	username := strings.ToLower(strings.TrimSpace(fs.Arg(0)))
 	dbURL := os.Getenv("AGENTCHAT_DB_URL")
 	if dbURL == "" {
 		return errors.New("AGENTCHAT_DB_URL is required")
@@ -52,7 +59,7 @@ func run(args []string) error {
 	}
 	defer store.Close()
 
-	n, err := reset(ctx, store, username, password)
+	n, err := reset(ctx, store, username, password, *create)
 	if err != nil {
 		return err
 	}
@@ -86,18 +93,35 @@ func readPassword(in io.Reader, isTerminal bool) (string, error) {
 	return password, nil
 }
 
-// reset stores the new hash and revokes every session in one transaction.
-func reset(ctx context.Context, store *models.Store, username, password string) (int64, error) {
+// reset stores the new hash and revokes every session in one transaction,
+// then flags the account: an operator-set password is a temporary one.
+// With create, an unknown username becomes a new account (display name =
+// username) instead of an error.
+func reset(ctx context.Context, store *models.Store, username, password string, create bool) (int64, error) {
+	if create && !auth.ValidUsername(username) {
+		return 0, auth.ErrBadUsername
+	}
 	hash, err := auth.HashPassword(password)
 	if err != nil {
 		return 0, err
 	}
 	userID, _, err := store.PasswordIdentity(ctx, username)
+	if errors.Is(err, models.ErrNotFound) && !create {
+		return 0, fmt.Errorf("no password account for %q (use -create to add it)", username)
+	}
 	if errors.Is(err, models.ErrNotFound) {
-		return 0, fmt.Errorf("no password account for %q", username)
+		u, err := store.CreatePasswordUser(ctx, username, username, hash)
+		if err != nil {
+			return 0, err
+		}
+		return 0, store.SetMustChangePassword(ctx, u.ID, true)
 	}
 	if err != nil {
 		return 0, err
 	}
-	return store.SetPasswordHash(ctx, userID, hash, nil)
+	n, err := store.SetPasswordHash(ctx, userID, hash, nil)
+	if err != nil {
+		return 0, err
+	}
+	return n, store.SetMustChangePassword(ctx, userID, true)
 }

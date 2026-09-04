@@ -29,6 +29,10 @@ const (
 // same shape as the users_username_shape CHECK and api's nameRe
 var usernameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{1,31}$`)
 
+// ValidUsername is the registration shape rule, for callers that make
+// accounts outside Register (the operator CLI).
+func ValidUsername(username string) bool { return usernameRe.MatchString(username) }
+
 // dummyHash is the cost-12 hash of a random string that was thrown away. An
 // unknown username is compared against it so the response time matches a
 // wrong password and does not reveal which usernames exist.
@@ -120,7 +124,7 @@ func (p *PasswordProvider) Register(ctx context.Context, body json.RawMessage) (
 	if err != nil {
 		return Identity{}, err
 	}
-	if !usernameRe.MatchString(c.Username) {
+	if !ValidUsername(c.Username) {
 		return Identity{}, ErrBadUsername
 	}
 	if err := validNewPassword(c.Password); err != nil {

@@ -34,6 +34,23 @@ body { margin: 0; font: 15px/1.45 -apple-system, "Segoe UI", Helvetica, sans-ser
 .error { color: #e06c75; }
 button { cursor: pointer; }
 
+/* account pages share the join/create card */
+.auth-view { display: flex; align-items: center; justify-content: center; height: 100vh; }
+.auth-form { background: var(--panel); padding: 32px; border-radius: 12px; width: 360px; display: flex; flex-direction: column; gap: 14px; border: 1px solid var(--border); }
+.auth-form h1 { margin: 0 0 6px; font-size: 20px; }
+.auth-form h2 { margin: 8px 0 0; font-size: 15px; }
+.auth-form label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--dim); }
+.auth-form input { background: var(--panel2); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; color: var(--text); font-size: 15px; }
+.auth-form button { background: var(--accent); border: 0; border-radius: 6px; padding: 10px; color: var(--on-accent); font-size: 15px; font-weight: 600; }
+.auth-form button.secondary { background: none; border: 1px solid var(--border); color: var(--dim); font-weight: 500; }
+.auth-form .ok { color: var(--online); margin: 0; font-size: 13px; }
+#login-providers:empty { display: none; }
+#login-providers { display: flex; flex-direction: column; gap: 8px; }
+/* one-line notices above whichever view is showing; the view gives up the height */
+.banner { height: 34px; line-height: 34px; padding: 0 16px; font-size: 13px; background: var(--mention); border-bottom: 1px solid var(--border); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.banner a { color: var(--accent); }
+body.has-banner #chat-view, body.has-banner #join-view, body.has-banner #create-view, body.has-banner .auth-view { height: calc(100vh - 34px); }
+
 /* join */
 #join-view, #create-view { display: flex; align-items: center; justify-content: center; height: 100vh; }
 #join-form, #create-form { background: var(--panel); padding: 32px; border-radius: 12px; width: 360px; display: flex; flex-direction: column; gap: 14px; border: 1px solid var(--border); }

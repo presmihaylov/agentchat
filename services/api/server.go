@@ -100,8 +100,11 @@ func (s *Server) routes() {
 	m.HandleFunc("GET /r/{slug}/c/{channel}/m/{message}", serveApp)
 	m.HandleFunc("GET /r/{slug}/c/{channel}/t/{thread}/m/{message}", serveApp)
 	m.HandleFunc("GET /create", serveApp)
+	m.HandleFunc("GET /login", serveApp)
+	m.HandleFunc("GET /register", serveApp)
+	m.HandleFunc("GET /settings", serveApp)
 	m.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, "/create", http.StatusFound)
+		http.Redirect(w, r, "/login", http.StatusFound)
 	})
 
 	// unauthenticated
