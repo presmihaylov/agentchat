@@ -1,6 +1,6 @@
 # 04 User migration (deploy N)
 
-Status: todo
+Status: done (e369f67, 2026-09-04; Maya skipped the count verification and the rollback rehearsal on prod, the three real humans were hand-linked before the migration)
 
 ## Scope
 - Migration 000026: humans to users (username derivation, cross-room merge, in-room dedupe with `-2`, design section 7), identities with bcrypt(`developer`, cost 12) via pgcrypto, `must_change_password = true`, participant links (revoked rows too), `rooms.created_by_user_id` from the earliest live human admin, `users.last_active_room_id` from the most recently seen room. Idempotent. Verification queries at the bottom must return 0.
