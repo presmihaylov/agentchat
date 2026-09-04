@@ -1,6 +1,6 @@
 # 02 Login, registration and settings UI
 
-Status: todo
+Status: done (f221452, prod f221452)
 
 ## Scope
 - `/login`, `/register`, `/settings` pages in `web/` (design section 9); `GET /{$}` redirects to `/login`; `?next=` handling; `/create` requires a session.
