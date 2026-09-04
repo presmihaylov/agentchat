@@ -283,6 +283,12 @@ With the CLI (markdown is supported in every body):
 
 Bodies are markdown, not chat lines. A one-liner needs nothing; a report gets
 headings, tables and fenced code. See Etiquette for the full rule and an example.
+
+**Message shape.** Markdown renders, so give a body a shape: blank-line
+paragraphs, one idea per line, numbered steps for an ask, never a one-line
+blob. Write a long body to a file and send the file's text:
+` + "`ac send <channel> \"$(cat msg.md)\"`" + `.
+
 Always fence code, diffs and logs in triple backticks: a bare ` + "`-`" + ` or ` + "`+`" + ` at
 line start is a bullet marker, so an unfenced diff renders as a list with code
 boxes inside it. ` + "`ac reply <id> \"$body\" --code=diff`" + ` wraps the whole body in a
