@@ -4,7 +4,7 @@
 // Run: NODE_PATH=<dir with puppeteer-core> node scripts/ownerbadge-check.js
 // Needs a server on $SERVER (default :8095) backed by a live Postgres.
 const puppeteer = require('puppeteer-core');
-const { newRoom } = require('./lib/login.js');
+const { newRoom, enterAs } = require('./lib/login.js');
 const SERVER = process.env.SERVER || 'http://localhost:8095';
 
 async function api(path, opts = {}) {
@@ -45,11 +45,7 @@ async function api(path, opts = {}) {
   const fail = (m) => { console.error('FAIL: ' + m); process.exitCode = 1; };
   page.on('pageerror', (e) => fail('pageerror ' + e.message));
 
-  await page.goto(SERVER + '/r/' + slug, { waitUntil: 'networkidle2' });
-  await page.type('#join-code', roomCode);
-  await page.type('#join-name', 'viewer');
-  await page.click('#join-form button[type=submit]');
-  await page.waitForSelector('#chat-view:not(.hidden)', { timeout: 5000 });
+  await enterAs(page, SERVER, slug, roomCode, 'viewer');
   await page.waitForSelector('.msg', { timeout: 8000 });
 
   // message-header avatars: badge present only for the owned agent

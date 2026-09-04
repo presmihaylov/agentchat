@@ -78,4 +78,33 @@ async function enterWithCode(page, code) {
   await page.waitForSelector('#chat-view:not(.hidden)', { timeout: 8000 });
 }
 
-module.exports = { call, registerAndLogin, createRoom, newRoom, loginPage, enterWithCode, uniqUser, PASSWORD, sleep };
+// enterAs is the swept checks' one-liner: a fresh account named displayName
+// signs in, opens the room page, meets #enter-view and gets in with code.
+// Returns the ses_ token.
+async function enterAs(page, base, slug, code, displayName) {
+  const session = await loginPage(page, base, uniqUser(), { displayName, next: '/r/' + slug });
+  await enterWithCode(page, code);
+  return session;
+}
+
+// openWorkspace loads /w/<slug> with the session seeded and waits for the chat
+async function openWorkspace(page, base, session, slug) {
+  await page.goto(base + '/login', { waitUntil: 'networkidle2' });
+  await page.evaluate((t) => localStorage.setItem('agentchat:session', t), session);
+  await page.goto(base + '/w/' + slug, { waitUntil: 'networkidle2' });
+  await page.waitForSelector('#chat-view:not(.hidden)', { timeout: 8000 });
+}
+
+// switchTo picks slug in the workspace switcher; the switch is a full load of /w/<slug>
+async function switchTo(page, slug) {
+  await page.waitForSelector('#ws-switcher-wrap:not(.hidden)', { timeout: 8000 });
+  await page.click('#ws-switcher');
+  await page.waitForSelector('#ws-menu:not(.hidden)', { timeout: 4000 });
+  await Promise.all([
+    page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 8000 }),
+    page.click('#ws-menu a[href="/w/' + slug + '"]'),
+  ]);
+  await page.waitForSelector('#chat-view:not(.hidden)', { timeout: 8000 });
+}
+
+module.exports = { call, registerAndLogin, createRoom, newRoom, loginPage, enterWithCode, enterAs, openWorkspace, switchTo, uniqUser, PASSWORD, sleep };

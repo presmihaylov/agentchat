@@ -65,7 +65,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     page.on('console', (m) => console.error('console', m.type(), m.text()));
   }
   const sawStatus = (frag, st) => statuses.some(([u, s]) => u.includes(frag) && s === st);
-  const atPath = (p) => { lastStep = 'wait for ' + p; return page.waitForFunction((x) => location.pathname === x, { timeout: 8000 }, p); };
+  const atPath = (p) => { lastStep = 'wait for ' + p; return page.waitForFunction((x) => location.pathname === x || location.pathname.startsWith(x + '/'), { timeout: 8000 }, p); };
   // the room page rewrites its path to /r/<slug>/c/<channel> once it boots
   const atRoom = () => { lastStep = 'wait for room'; return page.waitForFunction((x) => location.pathname.startsWith(x), { timeout: 8000 }, roomPath); };
 
@@ -105,7 +105,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   await visible(page, '#app-header');
   await visible(page, '#app-user');
   assert(await text(page, '#app-username') === user, 'header username: ' + await text(page, '#app-username'));
-  assert(await href(page, '#app-brand') === SERVER + '/create', 'brand link: ' + await href(page, '#app-brand'));
+  assert(await href(page, '#app-brand') === SERVER + '/', 'brand link: ' + await href(page, '#app-brand'));
   assert(await href(page, '#settings-back') === SERVER + roomPath, 'settings back: ' + await href(page, '#settings-back'));
   assert(await hiddenNow(page, '#pw-ok'), 'pw-ok shown before any change');
   await shot(page, 'settings.png');
@@ -133,10 +133,10 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   await visible(page, '#settings-view');
   assert((await href(page, '#settings-back')).startsWith(SERVER + roomPath), 'referrer back: ' + await href(page, '#settings-back'));
 
-  // no next and no referrer: /create
+  // no next and no referrer: the landing (/)
   await page.goto(SERVER + '/settings', { waitUntil: 'networkidle2' });
   await visible(page, '#settings-view');
-  assert(await href(page, '#settings-back') === SERVER + '/create', 'fallback back: ' + await href(page, '#settings-back'));
+  assert(await href(page, '#settings-back') === SERVER + '/', 'fallback back: ' + await href(page, '#settings-back'));
 
   // an unsafe next is ignored
   for (const next of ['//evil.example/x', 'javascript:alert(1)', '/login', 'https://evil.example/', '/\t/evil.example/x']) {
@@ -144,7 +144,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     await page.goto(SERVER + '/settings?next=' + encodeURIComponent(next), { waitUntil: 'networkidle2' });
     await visible(page, '#settings-view');
     const got = await href(page, '#settings-back');
-    assert(got === SERVER + '/create', 'unsafe next ' + JSON.stringify(next) + ' honoured: ' + got);
+    assert(got === SERVER + '/', 'unsafe next ' + JSON.stringify(next) + ' honoured: ' + got);
   }
 
   // /create: header and Back
@@ -156,17 +156,21 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   await shot(page, 'create.png');
   await page.goto(SERVER + '/create', { waitUntil: 'networkidle2' });
   await visible(page, '#create-view');
-  assert(await href(page, '#create-back') === SERVER + '/create', 'create fallback back: ' + await href(page, '#create-back'));
+  assert(await href(page, '#create-back') === SERVER + '/', 'create fallback back: ' + await href(page, '#create-back'));
 
-  // signed in: /login and /register skip the form and go to next (or /create)
+  // signed in: /login and /register skip the form and go to next, or land
+  // in the user's workspace (/w/<slug>) when there is none
   await page.goto(SERVER + '/login' + roomNext, { waitUntil: 'networkidle2' });
   await atRoom();
   await page.goto(SERVER + '/login', { waitUntil: 'networkidle2' });
-  await atPath('/create');
+  await atPath('/w/' + slug);
   await page.goto(SERVER + '/register' + roomNext, { waitUntil: 'networkidle2' });
   await atRoom();
   await page.goto(SERVER + '/register', { waitUntil: 'networkidle2' });
-  await atPath('/create');
+  await atPath('/w/' + slug);
+  // and so does the root
+  await page.goto(SERVER + '/', { waitUntil: 'networkidle2' });
+  await atPath('/w/' + slug);
   assert(await hiddenNow(page, '#register-view'), 'register form shown to a signed-in user');
 
   // an operator reset: the banner on the room page links to settings with a way back

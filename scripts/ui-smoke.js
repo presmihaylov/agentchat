@@ -1,7 +1,7 @@
 // Headless UI smoke test: create room via API, join as human in the browser,
 // post a message, verify an agent-posted mention renders live + title badge.
 const puppeteer = require('puppeteer-core');
-const { newRoom } = require('./lib/login.js');
+const { newRoom, loginPage, enterWithCode, uniqUser } = require('./lib/login.js');
 
 const SERVER = process.env.SERVER || 'http://localhost:8095';
 
@@ -34,20 +34,17 @@ async function api(path, opts = {}) {
   page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
   page.on('console', (m) => { if (m.type() === 'error') errors.push('console: ' + m.text()); });
 
-  await page.goto(SERVER + '/r/' + slug, { waitUntil: 'networkidle2' });
+  // a signed-in non-member meets the enter view, room name peeked
+  await loginPage(page, SERVER, uniqUser(), { displayName: 'humantester', next: '/r/' + slug });
+  await page.waitForSelector('#enter-view:not(.hidden)', { timeout: 5000 });
+  await page.waitForFunction(() => document.querySelector('#enter-room-name').textContent.includes('ui smoke'), { timeout: 5000 });
+  if (await page.$('#join-view')) throw new Error('the legacy join view is still in the page');
 
-  // join form visible, room name peeked
-  await page.waitForSelector('#join-view:not(.hidden)', { timeout: 5000 });
-  const peeked = await page.$eval('#join-room-name', (el) => el.textContent);
-  if (!peeked.includes('ui smoke')) throw new Error('peek failed: ' + peeked);
-
-  await page.type('#join-code', inviteCode);
-  await page.type('#join-name', 'humantester');
-  await page.type('#join-desc', 'the human');
-  await page.click('#join-form button[type=submit]');
+  // the non-member boot is meant to get a 403 from /api/v1/me; only errors past it count
+  errors.length = 0;
+  await enterWithCode(page, inviteCode);
 
   // chat loads
-  await page.waitForSelector('#chat-view:not(.hidden)', { timeout: 5000 });
   await page.waitForFunction(() => document.querySelectorAll('#channel-list li').length > 0);
   const roomName = await page.$eval('#room-name', (el) => el.textContent);
   if (roomName !== 'ui smoke') throw new Error('room name: ' + roomName);
@@ -105,7 +102,7 @@ async function api(path, opts = {}) {
   await page.waitForFunction(() => document.querySelector('#room-name').textContent !== '', { timeout: 8000 });
   const newRoomName = await page.$eval('#room-name', (el) => el.textContent);
   if (newRoomName !== 'smoke onboarding') throw new Error('onboarding room name: ' + newRoomName);
-  if (!page.url().startsWith(SERVER + '/r/')) throw new Error('onboarding did not land on /r/<slug>: ' + page.url());
+  if (!page.url().startsWith(SERVER + '/w/')) throw new Error('onboarding did not land on /w/<slug>: ' + page.url());
 
   const realErrors = errors.filter((e) => !e.includes('favicon'));
   if (realErrors.length) throw new Error('page errors: ' + realErrors.join(' | '));

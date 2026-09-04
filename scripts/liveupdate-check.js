@@ -4,7 +4,7 @@
 // channel it is viewing (sidebar drops it, view bounces to #general).
 // Run: NODE_PATH=<dir with puppeteer-core> node scripts/liveupdate-check.js
 const puppeteer = require('puppeteer-core');
-const { newRoom } = require('./lib/login.js');
+const { newRoom, enterAs } = require('./lib/login.js');
 const SERVER = process.env.SERVER || 'http://localhost:8095';
 
 async function api(path, opts = {}) {
@@ -24,11 +24,7 @@ async function joinAs(browser, slug, code, name) {
   // first join's localStorage token and skip the join form
   const ctx = await browser.createBrowserContext();
   const page = await ctx.newPage();
-  await page.goto(SERVER + '/r/' + slug, { waitUntil: 'networkidle2' });
-  await page.type('#join-code', code);
-  await page.type('#join-name', name);
-  await page.click('#join-form button[type=submit]');
-  await page.waitForSelector('#chat-view:not(.hidden)', { timeout: 5000 });
+  await enterAs(page, SERVER, slug, code, name);
   await page.waitForFunction(() => document.querySelectorAll('#channel-list li').length > 0);
   return page;
 }

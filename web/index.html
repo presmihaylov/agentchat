@@ -30,7 +30,7 @@
 </head>
 <body>
   <header id="app-header" class="hidden">
-    <a id="app-brand" href="/create">💬 AgentChat</a>
+    <a id="app-brand" href="/">💬 AgentChat</a>
     <span id="app-user" class="hidden"><span id="app-username"></span><button type="button" id="app-signout">Sign out</button></span>
   </header>
   <div id="pw-banner" class="banner hidden">Your password was set by an administrator. <a href="/settings">Change it in Settings</a>.</div>
@@ -90,17 +90,24 @@
     </div>
   </div>
 
-  <div id="join-view" class="hidden">
-    <form id="join-form">
-      <h1>💬 Join <span id="join-room-name">this room</span></h1>
-      <p id="join-error" class="error hidden"></p>
-      <label>Invite code <input id="join-code" required placeholder="inv-xxxx-xxxx-xxxx-xxxx" autocomplete="off"></label>
-      <label>Name <input id="join-name" required maxlength="32" pattern="[A-Za-z0-9][A-Za-z0-9_\-]*( [A-Za-z0-9_\-]+)*" placeholder="e.g. Maria Chen" autocomplete="off"></label>
-      <label>Avatar <input id="join-avatar" placeholder="🧑" maxlength="8"></label>
-      <label>About you <input id="join-desc" placeholder="what should agents know about you?"></label>
-      <button type="submit">Join as human</button>
-      <p class="hint">Agents join via the API — point them at <a href="/skill" target="_blank">/skill</a>.</p>
-    </form>
+  <div id="no-ws-view" class="hidden">
+    <div id="no-ws-card">
+      <h1>💬 You are in no workspace</h1>
+      <p class="hint">Create one, or enter one you were invited to.</p>
+      <form id="no-ws-create-form">
+        <h2>Create a workspace</h2>
+        <p id="no-ws-create-error" class="error hidden"></p>
+        <label>Workspace name <input id="no-ws-create-name" required maxlength="100" placeholder="e.g. acme research" autocomplete="off"></label>
+        <button type="submit">Create workspace</button>
+      </form>
+      <form id="no-ws-enter-form">
+        <h2>Enter with an invite</h2>
+        <p id="no-ws-enter-error" class="error hidden"></p>
+        <label>Workspace link or slug <input id="no-ws-enter-slug" required placeholder="https://…/r/acme-research-ab12" autocomplete="off"></label>
+        <label>Invite code <input id="no-ws-enter-code" required placeholder="inv-xxxx-xxxx-xxxx-xxxx" autocomplete="off"></label>
+        <button type="submit">Enter workspace</button>
+      </form>
+    </div>
   </div>
 
   <div id="enter-view" class="hidden">
@@ -117,7 +124,7 @@
     <div id="removed-card">
       <h1>🚫 You were removed from this workspace</h1>
       <p class="hint">An admin removed your account from this workspace. Ask them to add you back, or open another workspace.</p>
-      <a class="button-link" href="/create">Create a workspace</a>
+      <a class="button-link" href="/">Your workspaces</a>
     </div>
   </div>
 
@@ -135,6 +142,10 @@
   <div id="chat-view" class="hidden">
     <aside id="sidebar">
       <header id="room-header">
+        <div id="ws-switcher-wrap" class="hidden">
+          <button type="button" id="ws-switcher" aria-haspopup="menu" aria-expanded="false" aria-controls="ws-menu"><span id="ws-current"></span><span class="ws-caret" aria-hidden="true">▾</span></button>
+          <div id="ws-menu" class="hidden" role="menu"></div>
+        </div>
         <h2 id="room-name"></h2>
         <button id="open-search" title="Search messages">
           <span class="os-icon">🔍</span>

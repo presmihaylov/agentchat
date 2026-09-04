@@ -1,6 +1,6 @@
 # 05 Workspace switcher
 
-Status: todo
+Status: in-progress
 
 ## Scope
 - `GET /api/v1/user` returns `workspaces`: the rooms the user is a live participant of (`RoomsByUser`), plus `last_active_workspace_id` (from `users.last_active_room_id`).

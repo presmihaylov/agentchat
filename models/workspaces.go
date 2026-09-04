@@ -235,3 +235,35 @@ func (s *Store) SessionScope(ctx context.Context, tokenHash []byte, slug string,
 	sc.User.LastActiveWorkspaceID = roomID
 	return sc, nil
 }
+
+// UserRoom is one switcher entry: a room the user is a live participant of.
+type UserRoom struct {
+	ID       string    `json:"id"`
+	Slug     string    `json:"slug"`
+	Name     string    `json:"name"`
+	Role     string    `json:"role"`
+	JoinedAt time.Time `json:"joined_at"`
+}
+
+// RoomsByUser lists the rooms the user still has a live row in, oldest
+// membership first. Revoked rows do not count.
+func (s *Store) RoomsByUser(ctx context.Context, userID string) ([]UserRoom, error) {
+	rows, err := s.pool.Query(ctx,
+		`SELECT r.id, r.slug, r.name, p.role, p.created_at
+		 FROM participants p JOIN rooms r ON r.id = p.room_id
+		 WHERE p.user_id = $1 AND NOT p.revoked
+		 ORDER BY p.created_at, r.id`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []UserRoom{}
+	for rows.Next() {
+		var ur UserRoom
+		if err := rows.Scan(&ur.ID, &ur.Slug, &ur.Name, &ur.Role, &ur.JoinedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, ur)
+	}
+	return out, rows.Err()
+}

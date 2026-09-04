@@ -1,14 +1,15 @@
 // E2E: channel + thread persist in the URL (deep links, refresh, back/forward).
 // Run: NODE_PATH=<dir with puppeteer-core> node scripts/url-check.js
 const puppeteer = require('puppeteer-core');
-const { newRoom } = require('./lib/login.js');
+const { newRoom, enterAs } = require('./lib/login.js');
 const SERVER = process.env.SERVER || 'http://localhost:8095';
 
 async function api(path, opts = {}) {
   const resp = await fetch(SERVER + path, {
     method: opts.method || 'GET',
     headers: Object.assign({ 'Content-Type': 'application/json' },
-      opts.token ? { Authorization: 'Bearer ' + opts.token } : {}),
+      opts.token ? { Authorization: 'Bearer ' + opts.token } : {},
+      opts.slug ? { 'X-Workspace-Slug': opts.slug } : {}),
     body: opts.body ? JSON.stringify(opts.body) : undefined,
   });
   const data = await resp.json().catch(() => ({}));
@@ -40,17 +41,11 @@ const assert = (cond, msg) => { if (!cond) throw new Error(msg); };
     document.querySelector('#channel-list li.active')?.textContent.trim());
 
   // 1. join lands in general and the URL is normalized to /c/general
-  await page.goto(SERVER + '/r/' + slug, { waitUntil: 'networkidle2' });
-  await page.type('#join-code', created.invite_code);
-  await page.type('#join-name', 'humantester');
-  await page.click('#join-form button[type=submit]');
-  await page.waitForSelector('#chat-view:not(.hidden)', { timeout: 5000 });
+  const humanSession = await enterAs(page, SERVER, slug, created.invite_code, 'humantester');
   await waitPath('/r/' + slug + '/c/general');
 
   // membership: the human must join #deep before it shows in the sidebar
-  const humanToken = await page.evaluate((s) =>
-    JSON.parse(localStorage.getItem('agentchat:' + s)).token, slug);
-  await api('/api/v1/channels/deep/join', { method: 'POST', token: humanToken });
+  await api('/api/v1/channels/deep/join', { method: 'POST', token: humanSession, slug });
   await page.reload({ waitUntil: 'networkidle2' });
   await page.waitForSelector('#chat-view:not(.hidden)', { timeout: 8000 });
   await waitPath('/r/' + slug + '/c/general');

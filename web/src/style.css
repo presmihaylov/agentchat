@@ -53,23 +53,23 @@ button { cursor: pointer; }
 #app-user { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--dim); }
 #app-signout { background: none; border: 1px solid var(--border); color: var(--dim); border-radius: 6px; font-size: 12px; padding: 4px 10px; }
 #app-signout:hover { border-color: var(--accent); color: var(--text); }
-body.has-header .auth-view, body.has-header #create-view { height: calc(100vh - 44px); }
+body.has-header .auth-view, body.has-header #create-view, body.has-header #no-ws-view { height: calc(100vh - 44px); }
 .back-link { font-size: 13px; color: var(--dim); text-decoration: none; align-self: flex-start; }
 .back-link:hover { color: var(--accent); }
 .auth-form .ok a { color: var(--accent); font-weight: 600; }
 /* one-line notices above whichever view is showing; the view gives up the height */
 .banner { height: 34px; line-height: 34px; padding: 0 16px; font-size: 13px; background: var(--mention); border-bottom: 1px solid var(--border); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .banner a { color: var(--accent); }
-body.has-banner #chat-view, body.has-banner #join-view, body.has-banner #enter-view, body.has-banner #removed-view, body.has-banner #create-view, body.has-banner .auth-view { height: calc(100vh - 34px); }
-body.has-banner.has-header .auth-view, body.has-banner.has-header #create-view { height: calc(100vh - 78px); }
+body.has-banner #chat-view, body.has-banner #no-ws-view, body.has-banner #enter-view, body.has-banner #removed-view, body.has-banner #create-view, body.has-banner .auth-view { height: calc(100vh - 34px); }
+body.has-banner.has-header .auth-view, body.has-banner.has-header #create-view, body.has-banner.has-header #no-ws-view { height: calc(100vh - 78px); }
 
 /* join */
-#join-view, #enter-view, #removed-view, #create-view { display: flex; align-items: center; justify-content: center; height: 100vh; }
-#join-form, #enter-form, #removed-card, #create-form { background: var(--panel); padding: 32px; border-radius: 12px; width: 360px; display: flex; flex-direction: column; gap: 14px; border: 1px solid var(--border); }
-#join-form h1, #enter-form h1, #removed-card h1, #create-form h1 { margin: 0 0 6px; font-size: 20px; }
-#join-form label, #enter-form label, #create-form label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--dim); }
-#join-form input, #enter-form input, #create-form input { background: var(--panel2); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; color: var(--text); font-size: 15px; }
-#join-form button, #enter-form button, #create-form button, #removed-card .button-link { background: var(--accent); border: 0; border-radius: 6px; padding: 10px; color: var(--on-accent); font-size: 15px; font-weight: 600; }
+#no-ws-view, #enter-view, #removed-view, #create-view { display: flex; align-items: center; justify-content: center; height: 100vh; }
+#no-ws-card, #enter-form, #removed-card, #create-form { background: var(--panel); padding: 32px; border-radius: 12px; width: 360px; display: flex; flex-direction: column; gap: 14px; border: 1px solid var(--border); }
+#no-ws-card h1, #enter-form h1, #removed-card h1, #create-form h1 { margin: 0 0 6px; font-size: 20px; }
+#no-ws-card label, #enter-form label, #create-form label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--dim); }
+#no-ws-card input, #enter-form input, #create-form input { background: var(--panel2); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; color: var(--text); font-size: 15px; }
+#no-ws-card button, #enter-form button, #create-form button, #removed-card .button-link { background: var(--accent); border: 0; border-radius: 6px; padding: 10px; color: var(--on-accent); font-size: 15px; font-weight: 600; }
 .hint { font-size: 12px; color: var(--dim); margin: 0; }
 .hint a { color: var(--accent); }
 #removed-card .button-link { text-align: center; text-decoration: none; }
@@ -79,6 +79,22 @@ body.has-banner.has-header .auth-view, body.has-banner.has-header #create-view {
 #sidebar { width: 240px; background: var(--panel); border-right: 1px solid var(--border); display: flex; flex-direction: column; overflow-y: auto; }
 #room-header { padding: 14px 16px; border-bottom: 1px solid var(--border); }
 #room-header h2 { margin: 0 0 10px; font-size: 16px; }
+#no-ws-card form { display: flex; flex-direction: column; gap: 10px; }
+#no-ws-card form h2 { margin: 4px 0 0; font-size: 15px; }
+/* workspace switcher: the current workspace is the button, the rest a menu */
+#ws-switcher-wrap { position: relative; margin: 0 0 10px; }
+#ws-switcher { display: flex; align-items: center; gap: 6px; width: 100%; background: none; border: 0; padding: 0; color: var(--text); font-size: 16px; font-weight: 700; text-align: left; cursor: pointer; }
+#ws-switcher:hover, #ws-switcher[aria-expanded="true"] { color: var(--accent); }
+#ws-current { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ws-caret { font-size: 12px; color: var(--dim); }
+/* sized to the header, not its content: the sidebar scrolls, so a wider menu
+   would be clipped and a long name must truncate inside the item instead */
+#ws-menu { position: absolute; top: 100%; left: 0; right: 0; z-index: 30; margin-top: 6px; padding: 6px; background: var(--panel2); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 6px 20px var(--shadow); display: flex; flex-direction: column; }
+#ws-menu .ws-item { display: block; width: 100%; text-align: left; background: none; border: 0; padding: 7px 10px; border-radius: 6px; color: var(--text); font-size: 14px; text-decoration: none; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#ws-menu .ws-item:hover, #ws-menu .ws-item:focus { background: var(--panel); color: var(--accent); outline: none; }
+#ws-menu .ws-item.current { color: var(--dim); cursor: default; }
+#ws-menu .ws-item.current:hover { background: none; color: var(--dim); }
+#ws-menu .ws-sep { height: 1px; margin: 4px 0; background: var(--border); }
 /* Slack-style: a full-width search field on its own row, then a tidy pill row.
    all header controls share the same muted ghost style so none screams. */
 #open-search { display: flex; align-items: center; gap: 8px; width: 100%; margin: 0 0 8px; background: var(--panel2); border: 1px solid var(--border); color: var(--dim); border-radius: 8px; padding: 7px 10px; font-size: 13px; cursor: pointer; text-align: left; }

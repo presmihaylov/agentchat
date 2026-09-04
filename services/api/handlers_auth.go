@@ -161,7 +161,24 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request, u 
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// handleGetUser returns the account only; workspaces join the payload in task 03.
+// handleGetUser is the one call behind the switcher: the account, its live
+// workspaces and the last-active hint, which only counts while the user is
+// still a live participant there.
 func (s *Server) handleGetUser(w http.ResponseWriter, r *http.Request, u models.User) {
-	writeJSON(w, http.StatusOK, map[string]any{"user": u})
+	rooms, err := s.store.RoomsByUser(r.Context(), u.ID)
+	if err != nil {
+		writeStoreErr(w, err)
+		return
+	}
+	hint := u.LastActiveWorkspaceID
+	u.LastActiveWorkspaceID = nil
+	out := map[string]any{"user": u, "workspaces": rooms}
+	for _, ur := range rooms {
+		if hint != nil && ur.ID == *hint {
+			out["last_active_workspace_id"] = ur.ID
+			u.LastActiveWorkspaceID = hint
+		}
+	}
+	out["user"] = u
+	writeJSON(w, http.StatusOK, out)
 }

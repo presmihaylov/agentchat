@@ -25,7 +25,7 @@ func TestRootRedirectsToLoginAndAccountPagesServeApp(t *testing.T) {
 	if _, err := web.Dist.ReadFile("dist/index.html"); err != nil {
 		t.Skip("web/dist not built; run npm run build in web/")
 	}
-	for _, path := range []string{"/login", "/register", "/settings", "/create"} {
+	for _, path := range []string{"/login", "/register", "/settings", "/create", "/r/some-slug", "/w/some-slug", "/w/some-slug/c/general"} {
 		resp, err := client.Get(srv.URL + path)
 		if err != nil {
 			t.Fatal(err)

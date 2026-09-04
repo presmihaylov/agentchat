@@ -1,7 +1,7 @@
 /* AgentChat human web client — vanilla JS, talks to the same REST API as agents. */
 import { createComposer } from './composer.js';
 import { emojify, searchEmoji, rememberEmoji, shortcodeOf } from './emoji.js';
-import { sessionToken, isAccountPage, showSignInBanner, loginURL, onSessionInvalid, backTarget } from './auth.js';
+import { sessionToken, isAccountPage, showSignInBanner, loginURL, onSessionInvalid, backTarget, fetchWorkspaces, signOut } from './auth.js';
 
 (() => {
   'use strict';
@@ -9,8 +9,10 @@ import { sessionToken, isAccountPage, showSignInBanner, loginURL, onSessionInval
   // the URL carries only the public slug; joining needs a separate invite code
   const isCreatePage = location.pathname.replace(/\/+$/, '') === '/create';
   // path shape: /r/<slug>[/c/<channel>[/t/<thread-id>]] — channel/thread are
-  // restored on load and kept in sync so refresh, back/forward and deep links work
+  // restored on load and kept in sync so refresh, back/forward and deep links work.
+  // /w/<slug> is the switcher's alias of /r/<slug>; the page keeps whichever it got
   const pathSegs = location.pathname.split('/').filter(Boolean);
+  const roomPrefix = pathSegs[0] === 'w' ? '/w/' : '/r/';
   const slug = isCreatePage ? '' : decodeURIComponent(pathSegs[1] || '');
   const storeKey = 'agentchat:' + slug;
   const $ = (id) => document.getElementById(id);
@@ -1108,6 +1110,7 @@ import { sessionToken, isAccountPage, showSignInBanner, loginURL, onSessionInval
     await fetchGroups();
     await fetchPublicChannels();
     $('room-name').textContent = room.name;
+    $('ws-current').textContent = room.name;
     const foot = $('me-footer');
     foot.innerHTML = '';
     foot.appendChild(avatarEl(me, 'avatar-sm'));
@@ -1127,7 +1130,7 @@ import { sessionToken, isAccountPage, showSignInBanner, loginURL, onSessionInval
 
   const syncURL = (push) => {
     if (!room) return;
-    let path = '/r/' + encodeURIComponent(room.slug);
+    let path = roomPrefix + encodeURIComponent(room.slug);
     if (current) path += '/c/' + encodeURIComponent(current.name);
     if (openThreadRoot) path += '/t/' + encodeURIComponent(openThreadRoot);
     if (location.pathname === path) return;
@@ -1713,18 +1716,6 @@ import { sessionToken, isAccountPage, showSignInBanner, loginURL, onSessionInval
 
   // ---------- join / boot ----------
 
-  const showJoin = async () => {
-    $('join-view').classList.remove('hidden');
-    try {
-      const peek = await api('/api/v1/rooms/peek?slug=' + encodeURIComponent(slug));
-      $('join-room-name').textContent = '“' + peek.name + '”';
-    } catch (e) {
-      $('join-error').textContent = e.status === 404 ? 'This link does not point to a workspace.' : e.message;
-      $('join-error').classList.remove('hidden');
-      $('join-form').querySelector('button[type=submit]').disabled = true;
-    }
-  };
-
   // the workspace entry for a signed-in non-member: the account supplies the
   // name, only the invite code is asked for
   const showEnter = async () => {
@@ -1765,7 +1756,7 @@ import { sessionToken, isAccountPage, showSignInBanner, loginURL, onSessionInval
   const enterChat = async () => {
     me = await api('/api/v1/me');
     try { notifyPrefs = await api('/api/v1/me/notifications'); } catch { /* defaults stand */ }
-    $('join-view').classList.add('hidden');
+    $('enter-view').classList.add('hidden');
     $('chat-view').classList.remove('hidden');
     await refreshRoom();
     await applyURL();
@@ -1773,29 +1764,58 @@ import { sessionToken, isAccountPage, showSignInBanner, loginURL, onSessionInval
     eventLoop();
   };
 
-  $('join-form').addEventListener('submit', async (ev) => {
-    ev.preventDefault();
-    try {
-      const out = await api('/api/v1/rooms/join', {
-        method: 'POST',
-        body: {
-          invite_code: $('join-code').value.trim(),
-          name: $('join-name').value.trim(),
-          avatar: $('join-avatar').value.trim() || '🧑',
-          description: $('join-desc').value.trim(),
-          is_human: true,
-        },
-      });
-      token = out.token;
-      // the code decides which room you join — follow its slug if it differs
-      const joinedSlug = (out.room && out.room.slug) || slug;
-      localStorage.setItem('agentchat:' + joinedSlug, JSON.stringify({ token }));
-      if (joinedSlug !== slug) { location.href = '/r/' + joinedSlug; return; }
-      await enterChat();
-    } catch (e) {
-      $('join-error').textContent = e.message;
-      $('join-error').classList.remove('hidden');
+  // ---------- workspace switcher (session users only) ----------
+
+  const wsMenuItem = (label, opts = {}) => {
+    const el = document.createElement(opts.href ? 'a' : 'button');
+    el.className = 'ws-item' + (opts.current ? ' current' : '');
+    el.setAttribute('role', 'menuitem');
+    el.textContent = label;
+    if (opts.href) el.href = opts.href;
+    if (!opts.href) el.type = 'button';
+    if (opts.onclick) el.onclick = opts.onclick;
+    if (opts.current) el.setAttribute('aria-current', 'true');
+    return el;
+  };
+
+  const setMenuOpen = (open) => {
+    $('ws-menu').classList.toggle('hidden', !open);
+    $('ws-switcher').setAttribute('aria-expanded', open ? 'true' : 'false');
+  };
+
+  // one GET /api/v1/user per boot fills the menu; a switch is a full load of
+  // /w/<slug>, so the list never has to stay live
+  const mountSwitcher = async () => {
+    let out;
+    try { out = await fetchWorkspaces(); } catch (e) { console.error('switcher', e); return; }
+    const menu = $('ws-menu');
+    menu.innerHTML = '';
+    menu.appendChild(wsMenuItem(room.name, { current: true }));
+    for (const ws of (out.workspaces || []).filter((w) => w.slug !== room.slug)) {
+      menu.appendChild(wsMenuItem(ws.name, { href: '/w/' + encodeURIComponent(ws.slug) }));
     }
+    const sep = document.createElement('div');
+    sep.className = 'ws-sep';
+    menu.appendChild(sep);
+    const here = location.pathname + location.search;
+    menu.appendChild(wsMenuItem('Create workspace', { href: '/create?next=' + encodeURIComponent(here) }));
+    menu.appendChild(wsMenuItem('Settings', { href: '/settings?next=' + encodeURIComponent(here) }));
+    menu.appendChild(wsMenuItem('Sign out', { onclick: () => { setMenuOpen(false); signOut(); } }));
+    $('ws-current').textContent = room.name;
+    $('room-name').classList.add('hidden');
+    $('ws-switcher-wrap').classList.remove('hidden');
+  };
+
+  $('ws-switcher').addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    setMenuOpen($('ws-menu').classList.contains('hidden'));
+  });
+  $('ws-menu').addEventListener('click', (ev) => ev.stopPropagation());
+  document.addEventListener('click', () => setMenuOpen(false));
+  document.addEventListener('keydown', (ev) => {
+    if (ev.key !== 'Escape' || $('ws-menu').classList.contains('hidden')) return;
+    setMenuOpen(false);
+    $('ws-switcher').focus();
   });
 
   $('composer').addEventListener('submit', async (ev) => {
@@ -2550,7 +2570,7 @@ import { sessionToken, isAccountPage, showSignInBanner, loginURL, onSessionInval
         const created = await api('/api/v1/rooms', {
           method: 'POST', body: { name: $('create-room-name').value.trim() },
         });
-        location.href = '/r/' + created.room.slug;
+        location.href = '/w/' + encodeURIComponent(created.room.slug);
       } catch (e) {
         btn.disabled = false;
         $('create-error').textContent = e.message;
@@ -2568,7 +2588,7 @@ import { sessionToken, isAccountPage, showSignInBanner, loginURL, onSessionInval
       // a signed-in visit: the session is the identity, whatever per-slug
       // token an earlier join left behind
       for (;;) {
-        try { await enterChat(); localStorage.removeItem(storeKey); return; }
+        try { await enterChat(); localStorage.removeItem(storeKey); mountSwitcher(); return; }
         catch (e) {
           if (routeAuthError(e)) return;
           if (e.status === 404) { showEnter(); return; }
@@ -2593,6 +2613,7 @@ import { sessionToken, isAccountPage, showSignInBanner, loginURL, onSessionInval
         }
       }
     }
-    showJoin();
+    // no session and no legacy token: sign in first, then #enter-view asks for the code
+    location.replace(loginURL());
   })();
 })();

@@ -3,7 +3,7 @@
 // Maya: "I want rendering to support full markdown in entries".
 // Run: NODE_PATH=<dir with puppeteer-core> node scripts/docpreview-check.js
 const puppeteer = require('puppeteer-core');
-const { newRoom } = require('./lib/login.js');
+const { newRoom, enterAs } = require('./lib/login.js');
 const SERVER = process.env.SERVER || 'http://localhost:8095';
 
 async function api(path, opts = {}) {
@@ -42,11 +42,7 @@ const TXT = 'line one\n# not a heading\n<b>not bold</b>\n';
     headless: 'new', args: ['--no-sandbox', '--disable-dev-shm-usage'],
   });
   const page = await browser.newPage();
-  await page.goto(SERVER + '/r/' + created.room.slug, { waitUntil: 'networkidle2' });
-  await page.type('#join-code', created.invite_code);
-  await page.type('#join-name', 'reader');
-  await page.click('#join-form button[type=submit]');
-  await page.waitForSelector('#chat-view:not(.hidden)', { timeout: 5000 });
+  await enterAs(page, SERVER, created.room.slug, created.invite_code, 'reader');
   await page.waitForSelector('button.attachment[data-name="report.md"]', { timeout: 8000 });
 
   const shown = () => page.evaluate(() => !document.getElementById('doc-modal').classList.contains('hidden'));

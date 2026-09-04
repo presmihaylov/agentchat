@@ -388,3 +388,104 @@ func TestEnterWrongCodeIs400(t *testing.T) {
 		t.Fatalf("a failed enter must not create a row: %d %v", st, out)
 	}
 }
+
+// GET /api/v1/user lists live memberships in join order and points at the
+// last-active workspace only while the user is still a live member there.
+// Names and room creation both run against the join order, so a sort by
+// name, slug or room age would fail the order assertion below.
+func TestUserRoomsListsLiveParticipations(t *testing.T) {
+	srv, _ := newTestServer(t)
+	adminOfSecond, _, second := sessionRoom(t, srv.URL, "alpha")
+	adminOfThird, _, third := sessionRoom(t, srv.URL, "mike")
+	_, _, first := sessionRoom(t, srv.URL, "zulu")
+	userID := ""
+
+	user, reg := register(t, srv.URL, uniqUser(), "correct horse")
+	userID = reg["user"].(map[string]any)["id"].(string)
+	out := user.must("GET", "/api/v1/user", nil, 200)
+	if ws := out["workspaces"].([]any); len(ws) != 0 {
+		t.Fatalf("fresh user should have no workspaces: %v", ws)
+	}
+	if _, has := out["last_active_workspace_id"]; has {
+		t.Fatalf("fresh user should have no last_active: %v", out)
+	}
+
+	for _, room := range []map[string]any{first, third, second} {
+		user.must("POST", "/api/v1/workspaces/"+room["slug"].(string)+"/enter", map[string]any{"invite_code": room["invite_code"]}, 200)
+	}
+	// open first, then second: last_active follows the most recent room route
+	user.slug = first["slug"].(string)
+	user.must("GET", "/api/v1/me", nil, 200)
+	user.slug = second["slug"].(string)
+	user.must("GET", "/api/v1/me", nil, 200)
+	kickUser(t, adminOfThird, userID)
+
+	out = user.must("GET", "/api/v1/user", nil, 200)
+	ws := out["workspaces"].([]any)
+	if len(ws) != 2 {
+		t.Fatalf("expected the two live rooms, got %v", ws)
+	}
+	for i, want := range []map[string]any{first, second} {
+		got := ws[i].(map[string]any)
+		if got["id"] != want["id"] || got["slug"] != want["slug"] || got["name"] != want["name"] || got["role"] != "member" {
+			t.Fatalf("workspace %d: got %v want %v", i, got, want)
+		}
+		if _, ok := got["joined_at"].(string); !ok {
+			t.Fatalf("workspace %d: joined_at missing: %v", i, got)
+		}
+	}
+	if out["last_active_workspace_id"] != second["id"] {
+		t.Fatalf("last_active should be second: %v", out["last_active_workspace_id"])
+	}
+	if out["user"].(map[string]any)["last_active_workspace_id"] != second["id"] {
+		t.Fatalf("user.last_active should be second: %v", out["user"])
+	}
+
+	// open third: the pointer moves nowhere (revoked), and the hint stays hidden
+	// once the user is kicked from the room it points to
+	user.slug = third["slug"].(string)
+	if st, _ := user.do("GET", "/api/v1/me", nil); st != 403 {
+		t.Fatalf("revoked me: %d", st)
+	}
+	out = user.must("GET", "/api/v1/user", nil, 200)
+	if out["last_active_workspace_id"] != second["id"] {
+		t.Fatalf("last_active after a revoked open: %v", out["last_active_workspace_id"])
+	}
+	kickUser(t, adminOfSecond, userID)
+	out = user.must("GET", "/api/v1/user", nil, 200)
+	if _, has := out["last_active_workspace_id"]; has {
+		t.Fatalf("last_active must vanish with the membership: %v", out)
+	}
+	if _, has := out["user"].(map[string]any)["last_active_workspace_id"]; has {
+		t.Fatalf("user.last_active must vanish with the membership: %v", out)
+	}
+	if ws := out["workspaces"].([]any); len(ws) != 1 || ws[0].(map[string]any)["id"] != first["id"] {
+		t.Fatalf("only first should remain: %v", ws)
+	}
+}
+
+// kickUser revokes userID's row through an admin client already scoped to the room.
+func kickUser(t *testing.T, admin *testClient, userID string) {
+	t.Helper()
+	parts := admin.must("GET", "/api/v1/participants", nil, 200)["participants"].([]any)
+	for _, p := range parts {
+		if p.(map[string]any)["user_id"] == userID {
+			admin.must("DELETE", "/api/v1/participants/"+p.(map[string]any)["id"].(string), nil, 200)
+			return
+		}
+	}
+	t.Fatalf("user row missing in %s: %v", admin.slug, parts)
+}
+
+// Agents and anonymous callers have no account behind GET /api/v1/user.
+func TestUserRouteRequiresSession(t *testing.T) {
+	srv, _ := newTestServer(t)
+	_, alice, _ := setupRoom(t, srv.URL)
+	if st, out := alice.do("GET", "/api/v1/user", nil); st != 401 || out["code"] != "session_required" {
+		t.Fatalf("act_ on /user: %d %v", st, out)
+	}
+	anon := &testClient{t: t, base: srv.URL}
+	if st, out := anon.do("GET", "/api/v1/user", nil); st != 401 || out["code"] != "session_required" {
+		t.Fatalf("anon on /user: %d %v", st, out)
+	}
+}

@@ -20,12 +20,12 @@ export const isAccountPage = ['/login', '/register', '/settings', '/create'].inc
 // "/\t/evil" is "//evil") and the origin compared; a next that points at
 // the login or register page itself would only loop
 export const safeNext = (raw, origin = location.origin) => {
-  if (typeof raw !== 'string' || raw[0] !== '/') return '/create';
+  if (typeof raw !== 'string' || raw[0] !== '/') return '/';
   let u;
-  try { u = new URL(raw, origin); } catch (e) { return '/create'; }
-  if (u.origin !== origin) return '/create';
+  try { u = new URL(raw, origin); } catch (e) { return '/'; }
+  if (u.origin !== origin) return '/';
   const target = u.pathname.replace(/\/+$/, '') || '/';
-  if (target === '/login' || target === '/register') return '/create';
+  if (target === '/login' || target === '/register') return '/';
   return u.pathname + u.search + u.hash;
 };
 const rawNext = () => new URLSearchParams(location.search).get('next');
@@ -41,10 +41,11 @@ const referrerPath = () => {
 };
 // where the Back link (and Continue after a password change) goes: ?next=
 // when given, else the room the user came from, else the signed-in landing
+// ("/": the last active workspace, or #no-ws-view)
 export const backTarget = () => {
   const raw = rawNext();
   if (raw !== null) return safeNext(raw);
-  return referrerPath() || '/create';
+  return referrerPath() || '/';
 };
 export const loginURL = (next) => '/login?next=' + encodeURIComponent(next || (location.pathname + location.search));
 // the sign-in / create-account cross links carry ?next= along
@@ -87,10 +88,94 @@ const showHeader = (user) => {
   $('app-signout').onclick = signOut;
 };
 
-const signOut = async () => {
+export const signOut = async () => {
   try { await authApi('/api/v1/auth/logout', { method: 'POST' }); } catch (e) { /* already gone */ }
   clearSession();
   location.href = '/login';
+};
+
+// fetchWorkspaces is the switcher's one call per boot: {user, workspaces,
+// last_active_workspace_id}; the server only names a workspace the user is
+// still a live member of
+export const fetchWorkspaces = () => authApi('/api/v1/user');
+
+// the slug out of a pasted workspace link (/r/<slug> or /w/<slug>), or the
+// bare slug the user typed
+export const slugFromLink = (raw) => {
+  const text = String(raw || '').trim();
+  if (!text) return '';
+  if (!/[/\s]/.test(text)) return text;
+  let u;
+  try { u = new URL(text, location.origin); } catch (e) { return ''; }
+  const segs = u.pathname.split('/').filter(Boolean);
+  if (segs.length < 2 || !['r', 'w'].includes(segs[0])) return '';
+  try { return decodeURIComponent(segs[1]); } catch (e) { return ''; }
+};
+
+const noWorkspaceError = (e) => {
+  if (e.code === 'workspace_quota') return 'You already own the maximum number of workspaces.';
+  if (e.code === 'invite_invalid') return 'That invite code does not open this workspace.';
+  if (e.status === 404) return 'This link does not point to a workspace.';
+  return e.message;
+};
+
+// #no-ws-view: the signed-in landing for a user with no live membership
+const showNoWorkspace = () => {
+  document.querySelectorAll('.auth-view').forEach((el) => el.classList.add('hidden'));
+  $('no-ws-view').classList.remove('hidden');
+  const wire = (formID, errID, submit) => {
+    $(formID).addEventListener('submit', async (ev) => {
+      ev.preventDefault();
+      hideErr(errID);
+      const btn = $(formID).querySelector('button[type=submit]');
+      btn.disabled = true;
+      try {
+        await submit();
+      } catch (e) {
+        btn.disabled = false;
+        showErr(errID, noWorkspaceError(e));
+      }
+    });
+  };
+  wire('no-ws-create-form', 'no-ws-create-error', async () => {
+    const out = await authApi('/api/v1/rooms', { method: 'POST', body: { name: $('no-ws-create-name').value.trim() } });
+    location.href = '/w/' + encodeURIComponent(out.room.slug);
+  });
+  wire('no-ws-enter-form', 'no-ws-enter-error', async () => {
+    const slug = slugFromLink($('no-ws-enter-slug').value);
+    if (!slug) throw new Error('Paste a workspace link (…/r/<slug>) or its slug.');
+    await authApi('/api/v1/workspaces/' + encodeURIComponent(slug) + '/enter', { method: 'POST', body: { invite_code: $('no-ws-enter-code').value.trim() } });
+    location.href = '/w/' + encodeURIComponent(slug);
+  });
+};
+
+// landing is what "/" means for a signed-in user: the last active workspace,
+// else the first one joined, else #no-ws-view. The server sends "/" to
+// /login, so the login page runs this when the session is still good.
+// A page that already fetched the payload passes it in, so the landing has
+// no second request to lose.
+export const landing = async (prefetched) => {
+  let out = prefetched;
+  if (!out) {
+    try { out = await fetchWorkspaces(); } catch (e) {
+      if (e.status !== 401) console.error('landing', e);
+      // a dead session on the login page: the form comes back
+      if (path === '/login') $('login-view').classList.remove('hidden');
+      return;
+    }
+  }
+  const ws = out.workspaces || [];
+  const target = ws.find((w) => w.id === out.last_active_workspace_id) || ws[0];
+  if (target) { location.replace('/w/' + encodeURIComponent(target.slug)); return; }
+  if (location.pathname !== '/') history.replaceState(null, '', '/');
+  showNoWorkspace();
+};
+
+// go follows a resolved ?next=: "/" is the landing, everything else a page
+const go = (next, prefetched) => {
+  if (next === '/') return landing(prefetched);
+  location.href = next;
+  return null;
 };
 
 const setBanner = (id, on) => {
@@ -131,10 +216,14 @@ const providers = () => authApi('/api/v1/auth/providers').catch(() => ({ provide
 
 // the pw-banner rides on every page that holds a session; it also refreshes
 // after a successful change (must_change_password flips to false)
+// lastUserPayload is the whole /api/v1/user answer of the latest refresh, so
+// a page that lands right after it can reuse the workspace list
+let lastUserPayload = null;
 const refreshUser = async () => {
   if (!sessionToken()) { setBanner('pw-banner', false); return null; }
   try {
     const out = await authApi('/api/v1/user');
+    lastUserPayload = out;
     setBanner('pw-banner', !!(out.user && out.user.must_change_password));
     // the settings link brings the user back here (a room page) afterwards
     $('pw-banner').querySelector('a').href = '/settings?next=' + encodeURIComponent(isAccountPage ? backTarget() : location.pathname + location.search);
@@ -163,8 +252,8 @@ const loginPage = async () => {
     b.textContent = 'Sign in with ' + name;
     $('login-providers').appendChild(b);
   }
-  // an already valid session skips the form
-  if (sessionToken() && await refreshUser()) { location.replace(nextParam()); return; }
+  // the handler goes on first: whenever the form is (re)shown it must submit
+  // through the API, never natively with the credentials in the URL
   $('login-form').addEventListener('submit', async (ev) => {
     ev.preventDefault();
     hideErr('login-error');
@@ -176,17 +265,21 @@ const loginPage = async () => {
         body: { username: $('login-username').value.trim().toLowerCase(), password: $('login-password').value },
       });
       setSession(out.token);
-      location.href = nextParam();
+      $('login-view').classList.add('hidden');
+      await go(nextParam());
     } catch (e) {
-      btn.disabled = false;
       showErr('login-error', loginErrorText(e));
     }
+    // a landing that failed brought the form back; it must be usable again
+    btn.disabled = false;
   });
+  // an already valid session skips the form
+  if (sessionToken() && await refreshUser()) { $('login-view').classList.add('hidden'); await go(nextParam(), lastUserPayload); }
 };
 
 const registerPage = async () => {
   // an already valid session skips the form
-  if (sessionToken() && await refreshUser()) { location.replace(nextParam()); return; }
+  if (sessionToken() && await refreshUser()) { await go(nextParam(), lastUserPayload); return; }
   const provs = await providers();
   if (!provs.registration_enabled || !(provs.providers || []).includes('password')) {
     $('register-closed').classList.remove('hidden');
@@ -209,7 +302,8 @@ const registerPage = async () => {
         },
       });
       setSession(out.token);
-      location.href = nextParam();
+      $('register-view').classList.add('hidden');
+      await go(nextParam());
     } catch (e) {
       btn.disabled = false;
       showErr('register-error', e.message);

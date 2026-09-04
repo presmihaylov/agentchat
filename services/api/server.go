@@ -100,6 +100,12 @@ func (s *Server) routes() {
 	m.HandleFunc("GET /r/{slug}/c/{channel}/t/{thread}", serveApp)
 	m.HandleFunc("GET /r/{slug}/c/{channel}/m/{message}", serveApp)
 	m.HandleFunc("GET /r/{slug}/c/{channel}/t/{thread}/m/{message}", serveApp)
+	// /w/ is the switcher's alias of /r/; join_url and old links keep /r/
+	m.HandleFunc("GET /w/{slug}", serveApp)
+	m.HandleFunc("GET /w/{slug}/c/{channel}", serveApp)
+	m.HandleFunc("GET /w/{slug}/c/{channel}/t/{thread}", serveApp)
+	m.HandleFunc("GET /w/{slug}/c/{channel}/m/{message}", serveApp)
+	m.HandleFunc("GET /w/{slug}/c/{channel}/t/{thread}/m/{message}", serveApp)
 	m.HandleFunc("GET /create", serveApp)
 	m.HandleFunc("GET /login", serveApp)
 	m.HandleFunc("GET /register", serveApp)

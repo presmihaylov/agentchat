@@ -6,7 +6,7 @@
 // headless browser's real clipboard, which is unreliable.
 // Run: NODE_PATH=<dir with puppeteer-core> node scripts/copy-check.js
 const puppeteer = require('puppeteer-core');
-const { newRoom } = require('./lib/login.js');
+const { newRoom, enterAs } = require('./lib/login.js');
 const SERVER = process.env.SERVER || 'http://localhost:8095';
 
 async function api(path, opts = {}) {
@@ -30,11 +30,7 @@ async function api(path, opts = {}) {
     headless: 'new', args: ['--no-sandbox', '--disable-dev-shm-usage'],
   });
   const page = await browser.newPage();
-  await page.goto(SERVER + '/r/' + slug, { waitUntil: 'networkidle2' });
-  await page.type('#join-code', created.invite_code);
-  await page.type('#join-name', 'copytester');
-  await page.click('#join-form button[type=submit]');
-  await page.waitForSelector('#chat-view:not(.hidden)', { timeout: 5000 });
+  await enterAs(page, SERVER, slug, created.invite_code, 'copytester');
 
   // instrument: hide the clipboard API (as plain HTTP does) and stub execCommand
   // so we can drive both the success and failure branches deterministically

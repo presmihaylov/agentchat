@@ -172,19 +172,19 @@ const userStatus = (page, tok) => page.evaluate(async (t) => {
   await page.type('#login-username', user);
   await page.type('#login-password', pw);
   await submit('#login-form', '/api/v1/auth/password/login');
-  await page.waitForFunction(() => location.pathname === '/create', { timeout: 8000 });
-  if (page.url() !== SERVER + '/create') throw new Error('unsafe next honoured: ' + page.url());
-  await visible(page, '#create-view'); // the gate reads the session at boot; clear it only after that
+  await page.waitForFunction(() => location.pathname === '/', { timeout: 8000 });
+  if (page.url() !== SERVER + '/') throw new Error('unsafe next honoured: ' + page.url());
+  await visible(page, '#no-ws-view'); // the landing reads the session at boot; clear it only after that
 
   // a signed-in visit to /login goes straight to next; a next the URL parser
   // would turn into another host (tab, newline, CR are dropped), or one that
-  // points back at the login/register page, falls back to /create
+  // points back at the login/register page, falls back to the landing at "/"
   for (const next of ['%2F%09%2Fevil.example%2Fx', '%2F%0A%2Fevil.example%2Fx', '%2F%0D%2Fevil.example%2Fx', '%2Flogin', '%2Flogin%3Fnext%3D%2Flogin', '%2Fregister']) {
     lastStep = 'next ' + next;
     await page.goto(SERVER + '/login?next=' + next, { waitUntil: 'networkidle2' });
-    await page.waitForFunction(() => location.pathname === '/create', { timeout: 8000 });
-    if (page.url() !== SERVER + '/create') throw new Error('next ' + next + ' honoured: ' + page.url());
-    await visible(page, '#create-view');
+    await page.waitForFunction(() => location.pathname === '/', { timeout: 8000 });
+    if (page.url() !== SERVER + '/') throw new Error('next ' + next + ' honoured: ' + page.url());
+    await visible(page, '#no-ws-view');
   }
   await page.goto(SERVER + '/login?next=%2Fsettings%3Ftab%3D1', { waitUntil: 'networkidle2' });
   await page.waitForFunction(() => location.pathname === '/settings', { timeout: 8000 });
@@ -200,6 +200,38 @@ const userStatus = (page, tok) => page.evaluate(async (t) => {
   await submit('#login-form', '/api/v1/auth/password/login');
   await page.waitForFunction(() => location.pathname === '/settings', { timeout: 8000 });
   await visible(page, '#settings-view');
+
+  // a landing that cannot list workspaces: the signed-in visit to /login
+  // reuses the payload of its session check (one GET /api/v1/user, so a
+  // failure of a second one cannot bring back the form), and when the check
+  // itself fails the form that comes back still submits through the API
+  let userCalls = 0;
+  let failFrom = 2;
+  const outage = (req) => {
+    if (req.method() !== 'GET' || !req.url().endsWith('/api/v1/user')) { req.continue(); return; }
+    userCalls++;
+    if (userCalls < failFrom) { req.continue(); return; }
+    req.respond({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'test outage', code: 'test_outage' }) });
+  };
+  await page.setRequestInterception(true);
+  page.on('request', outage);
+  await page.goto(SERVER + '/login', { waitUntil: 'networkidle2' });
+  await page.waitForFunction(() => location.pathname === '/', { timeout: 8000 });
+  await visible(page, '#no-ws-view');
+  if (userCalls !== 1) throw new Error('signed-in /login made ' + userCalls + ' GET /api/v1/user calls');
+  userCalls = 0;
+  failFrom = 1;
+  await page.goto(SERVER + '/login', { waitUntil: 'networkidle2' });
+  await visible(page, '#login-view');
+  await page.type('#login-username', user);
+  await page.type('#login-password', pw);
+  await submit('#login-form', '/api/v1/auth/password/login');
+  await visible(page, '#login-view');
+  await page.waitForFunction(() => !document.querySelector('#login-form button[type=submit]').disabled, { timeout: 8000 });
+  if (page.url() !== SERVER + '/login') throw new Error('form submitted natively: ' + page.url());
+  if (!(await session(page) || '').startsWith('ses_')) throw new Error('no session after the login that could not land');
+  page.off('request', outage);
+  await page.setRequestInterception(false);
 
   // the user's own workspace, plus a legacy act_ join in it under another
   // name (the creator's row is linked to the account and cannot be reclaimed)
@@ -240,9 +272,11 @@ const userStatus = (page, tok) => page.evaluate(async (t) => {
   lastStep = 'on /create ' + page.url();
   await visible(page, '#pw-banner');
   await visible(page, '#create-view');
-  // a signed-in visit to /register skips the form like /login does
+  // a signed-in visit to /register skips the form like /login does and
+  // lands in the user's workspace
   await page.goto(SERVER + '/register', { waitUntil: 'networkidle2' });
-  await page.waitForFunction(() => location.pathname === '/create', { timeout: 8000 });
+  lastStep = 'wait for /w/' + slug;
+  await page.waitForFunction((p) => location.pathname.startsWith(p), { timeout: 8000 }, '/w/' + slug);
   await visible(page, '#pw-banner');
   // ...and on a room page, where the session drives the room as the creator
   // and the legacy per-slug token is forgotten
@@ -307,10 +341,10 @@ const userStatus = (page, tok) => page.evaluate(async (t) => {
   // console errors; Chrome's line does not carry the code, so the codes are checked
   // from the responses themselves: every 401 and 429 the page saw must be one of those
   // (a rate_limited 429 is retried by submit above and never the final answer)
-  const realErrors = errors.filter((e) => !e.includes('favicon') && !/status of (401|429)/.test(e));
+  const realErrors = errors.filter((e) => !e.includes('favicon') && !/status of (401|429|500)/.test(e) && !e.startsWith('console: landing'));
   if (realErrors.length) throw new Error('page errors: ' + realErrors.join(' | '));
   // a session_invalid 401 redirects at once, so its body may be lost (null); a 429 never navigates
-  const okCodes = { 401: ['invalid_credentials', 'session_invalid', null], 429: ['locked_out', 'rate_limited'] };
+  const okCodes = { 401: ['invalid_credentials', 'session_invalid', null], 429: ['locked_out', 'rate_limited'], 500: ['test_outage'] };
   const odd = allStatuses.filter(([, st, code]) => st >= 400 && !(okCodes[st] || []).includes(code));
   if (odd.length) throw new Error('unexpected error responses: ' + JSON.stringify(odd));
 
