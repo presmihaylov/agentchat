@@ -28,7 +28,24 @@ export const safeNext = (raw, origin = location.origin) => {
   if (target === '/login' || target === '/register') return '/create';
   return u.pathname + u.search + u.hash;
 };
-const nextParam = () => safeNext(new URLSearchParams(location.search).get('next'));
+const rawNext = () => new URLSearchParams(location.search).get('next');
+const nextParam = () => safeNext(rawNext());
+// same-origin referrer that is not itself an account page, else nothing
+const referrerPath = () => {
+  let u;
+  try { u = new URL(document.referrer); } catch (e) { return null; }
+  if (u.origin !== location.origin) return null;
+  const target = u.pathname.replace(/\/+$/, '') || '/';
+  if (['/login', '/register', '/settings', '/create', '/'].includes(target)) return null;
+  return u.pathname + u.search + u.hash;
+};
+// where the Back link (and Continue after a password change) goes: ?next=
+// when given, else the room the user came from, else the signed-in landing
+export const backTarget = () => {
+  const raw = rawNext();
+  if (raw !== null) return safeNext(raw);
+  return referrerPath() || '/create';
+};
 export const loginURL = (next) => '/login?next=' + encodeURIComponent(next || (location.pathname + location.search));
 // the sign-in / create-account cross links carry ?next= along
 const keepNext = (id) => { $(id).href += location.search; };
@@ -57,6 +74,23 @@ const authApi = async (apiPath, opts = {}) => {
   err.code = data && data.code;
   if (resp.status === 401 && err.code === 'session_invalid') onSessionInvalid();
   throw err;
+};
+
+// the account pages get the app bar; the username and sign out wait for a valid session
+const showHeader = (user) => {
+  if (!isAccountPage) return;
+  $('app-header').classList.remove('hidden');
+  document.body.classList.add('has-header');
+  $('app-user').classList.toggle('hidden', !user);
+  if (!user) return;
+  $('app-username').textContent = user.username;
+  $('app-signout').onclick = signOut;
+};
+
+const signOut = async () => {
+  try { await authApi('/api/v1/auth/logout', { method: 'POST' }); } catch (e) { /* already gone */ }
+  clearSession();
+  location.href = '/login';
 };
 
 const setBanner = (id, on) => {
@@ -102,6 +136,9 @@ const refreshUser = async () => {
   try {
     const out = await authApi('/api/v1/user');
     setBanner('pw-banner', !!(out.user && out.user.must_change_password));
+    // the settings link brings the user back here (a room page) afterwards
+    $('pw-banner').querySelector('a').href = '/settings?next=' + encodeURIComponent(isAccountPage ? backTarget() : location.pathname + location.search);
+    showHeader(out.user);
     return out.user;
   } catch (e) {
     setBanner('pw-banner', false);
@@ -148,7 +185,8 @@ const loginPage = async () => {
 };
 
 const registerPage = async () => {
-  refreshUser();
+  // an already valid session skips the form
+  if (sessionToken() && await refreshUser()) { location.replace(nextParam()); return; }
   const provs = await providers();
   if (!provs.registration_enabled || !(provs.providers || []).includes('password')) {
     $('register-closed').classList.remove('hidden');
@@ -179,26 +217,22 @@ const registerPage = async () => {
   });
 };
 
-const signOut = async () => {
-  try { await authApi('/api/v1/auth/logout', { method: 'POST' }); } catch (e) { /* already gone */ }
-  clearSession();
-  location.href = '/login';
-};
-
 const settingsPage = async () => {
   if (!sessionToken()) { location.replace(loginURL('/settings')); return; }
   const user = await refreshUser();
   if (!user) { location.replace(loginURL('/settings')); return; }
   const provs = await providers();
+  const back = backTarget();
   if (!(provs.providers || []).includes('password')) {
     $('settings-nopw-username').textContent = user.username;
+    $('settings-nopw-back').href = back;
     $('settings-nopw').classList.remove('hidden');
-    $('signout-nopw').onclick = signOut;
     return;
   }
   $('settings-username').textContent = user.username;
+  $('settings-back').href = back;
+  $('pw-continue').href = back;
   $('settings-view').classList.remove('hidden');
-  $('signout').onclick = signOut;
   $('pw-form').addEventListener('submit', async (ev) => {
     ev.preventDefault();
     hideErr('pw-error');
@@ -222,6 +256,7 @@ const settingsPage = async () => {
 };
 
 const pages = { '/login': loginPage, '/register': registerPage, '/settings': settingsPage };
+showHeader(null);
 if (pages[path]) {
   pages[path]().catch((e) => console.error('auth', e));
 }

@@ -1,7 +1,7 @@
 /* AgentChat human web client — vanilla JS, talks to the same REST API as agents. */
 import { createComposer } from './composer.js';
 import { emojify, searchEmoji, rememberEmoji, shortcodeOf } from './emoji.js';
-import { sessionToken, isAccountPage, showSignInBanner, loginURL, onSessionInvalid } from './auth.js';
+import { sessionToken, isAccountPage, showSignInBanner, loginURL, onSessionInvalid, backTarget } from './auth.js';
 
 (() => {
   'use strict';
@@ -2473,6 +2473,7 @@ import { sessionToken, isAccountPage, showSignInBanner, loginURL, onSessionInval
     // creating a workspace needs an account; the create + join calls
     // themselves stay unauthenticated until task 03
     if (!sessionToken()) { location.replace(loginURL('/create')); return; }
+    $('create-back').href = backTarget();
     $('create-view').classList.remove('hidden');
     $('create-form').addEventListener('submit', async (ev) => {
       ev.preventDefault();

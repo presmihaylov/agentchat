@@ -29,6 +29,10 @@
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>💬</text></svg>">
 </head>
 <body>
+  <header id="app-header" class="hidden">
+    <a id="app-brand" href="/create">💬 AgentChat</a>
+    <span id="app-user" class="hidden"><span id="app-username"></span><button type="button" id="app-signout">Sign out</button></span>
+  </header>
   <div id="pw-banner" class="banner hidden">Your password was set by an administrator. <a href="/settings">Change it in Settings</a>.</div>
   <div id="signin-banner" class="banner hidden"></div>
 
@@ -65,24 +69,24 @@
 
   <div id="settings-view" class="auth-view hidden">
     <form id="pw-form" class="auth-form">
+      <a id="settings-back" class="back-link" href="/create">← Back</a>
       <h1>💬 Settings</h1>
       <p class="hint">Signed in as <strong id="settings-username"></strong></p>
       <h2>Change password</h2>
       <p id="pw-error" class="error hidden"></p>
-      <p id="pw-ok" class="ok hidden">Password changed. Other devices were signed out.</p>
+      <p id="pw-ok" class="ok hidden">Password changed. Other devices were signed out. <a id="pw-continue" href="/create">Continue →</a></p>
       <label>Current password <input id="pw-current" type="password" required autocomplete="current-password"></label>
       <label>New password <input id="pw-new" type="password" required minlength="8" maxlength="72" autocomplete="new-password"></label>
       <label>Confirm new password <input id="pw-confirm" type="password" required autocomplete="new-password"></label>
       <button type="submit">Change password</button>
-      <button type="button" id="signout" class="secondary">Sign out</button>
     </form>
   </div>
 
   <div id="settings-nopw" class="auth-view hidden">
     <div class="auth-form">
+      <a id="settings-nopw-back" class="back-link" href="/create">← Back</a>
       <h1>💬 Settings</h1>
       <p class="hint">Signed in as <strong id="settings-nopw-username"></strong>. This sign-in method has no password to change.</p>
-      <button type="button" id="signout-nopw" class="secondary">Sign out</button>
     </div>
   </div>
 
@@ -101,6 +105,7 @@
 
   <div id="create-view" class="hidden">
     <form id="create-form">
+      <a id="create-back" class="back-link" href="/create">← Back</a>
       <h1>💬 Create a workspace</h1>
       <p id="create-error" class="error hidden"></p>
       <label>Workspace name <input id="create-room-name" required maxlength="100" placeholder="e.g. acme research" autocomplete="off"></label>

@@ -46,10 +46,22 @@ button { cursor: pointer; }
 .auth-form .ok { color: var(--online); margin: 0; font-size: 13px; }
 #login-providers:empty { display: none; }
 #login-providers { display: flex; flex-direction: column; gap: 8px; }
+/* the compact bar on the account pages: brand home, who is signed in, sign out */
+#app-header { height: 44px; display: flex; align-items: center; justify-content: space-between; padding: 0 16px; background: var(--panel); border-bottom: 1px solid var(--border); }
+#app-brand { color: var(--text); text-decoration: none; font-weight: 600; font-size: 15px; }
+#app-brand:hover { color: var(--accent); }
+#app-user { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--dim); }
+#app-signout { background: none; border: 1px solid var(--border); color: var(--dim); border-radius: 6px; font-size: 12px; padding: 4px 10px; }
+#app-signout:hover { border-color: var(--accent); color: var(--text); }
+body.has-header .auth-view, body.has-header #create-view { height: calc(100vh - 44px); }
+.back-link { font-size: 13px; color: var(--dim); text-decoration: none; align-self: flex-start; }
+.back-link:hover { color: var(--accent); }
+.auth-form .ok a { color: var(--accent); font-weight: 600; }
 /* one-line notices above whichever view is showing; the view gives up the height */
 .banner { height: 34px; line-height: 34px; padding: 0 16px; font-size: 13px; background: var(--mention); border-bottom: 1px solid var(--border); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .banner a { color: var(--accent); }
 body.has-banner #chat-view, body.has-banner #join-view, body.has-banner #create-view, body.has-banner .auth-view { height: calc(100vh - 34px); }
+body.has-banner.has-header .auth-view, body.has-banner.has-header #create-view { height: calc(100vh - 78px); }
 
 /* join */
 #join-view, #create-view { display: flex; align-items: center; justify-content: center; height: 100vh; }

@@ -50,6 +50,8 @@ node scripts/theme-check.js                 # THEME_CHECK_OK
 node scripts/reactions-check.js             # REACTIONS_CHECK_OK
 node scripts/codeblock-check.js             # CODEBLOCK_CHECK_OK
 node scripts/docpreview-check.js           # DOCPREVIEW_CHECK_OK
+node scripts/login-check.js                # LOGIN_CHECK_OK (needs AGENTCHAT_DB_URL for agentchat-passwd)
+node scripts/settings-nav-check.js         # SETTINGS_NAV_CHECK_OK (same)
 ```
 
 ## Conventions

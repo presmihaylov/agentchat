@@ -124,7 +124,7 @@ const userStatus = (page, tok) => page.evaluate(async (t) => {
   const shown = await page.$eval('#settings-username', (el) => el.textContent);
   if (shown !== user) throw new Error('settings username: ' + shown);
   await shot(page, 'settings.png');
-  await page.click('#signout');
+  await page.click('#app-signout');
   await page.waitForFunction(() => location.pathname === '/login', { timeout: 8000 });
   if (await session(page)) throw new Error('session survived sign out');
   if (!sawStatus('/api/v1/auth/logout', 204)) throw new Error('logout was not called');
@@ -236,8 +236,9 @@ const userStatus = (page, tok) => page.evaluate(async (t) => {
   lastStep = 'on /create ' + page.url();
   await visible(page, '#pw-banner');
   await visible(page, '#create-view');
+  // a signed-in visit to /register skips the form like /login does
   await page.goto(SERVER + '/register', { waitUntil: 'networkidle2' });
-  await visible(page, '#register-view');
+  await page.waitForFunction(() => location.pathname === '/create', { timeout: 8000 });
   await visible(page, '#pw-banner');
   // ...and on a room page, where the act_ token drives the room and the session only the banner
   await openRoom();
