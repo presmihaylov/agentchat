@@ -5,17 +5,18 @@ Maya's decisions (2026-09-04) are section 13 of the design. A workspace is a roo
 One file per task. Status is one of: todo, in-progress, review, deployed, done.
 "done" means deployed to prod and verified in a real browser.
 Every task ships on its own deploy. Never batch two tasks into one deploy.
-Each deploy has its own rollback target for `agentchatd -migrate-to` (design section 7):
-01 to 23, 03 to 24, 04 to 25. "Deploy N" is the task 04 deploy; task 08 is deploy N+1.
-Prod keeps `AGENTCHAT_REGISTRATION_ENABLED=false` from the task 01 deploy until task 04 has run.
+Each deploy has its own rollback target (design section 7): 01 to 23, 03 to 24, 04 to 25.
+"Deploy N" is the task 04 deploy (the backfill); "deploy N+1" is the task 08 deploy.
+`AGENTCHAT_REGISTRATION_ENABLED=false` on the mini from the task 01 deploy until task 04
+has run its backfill and verification queries.
 
 | # | Task | Status |
 |---|---|---|
 | 01 | Auth provider interface, password provider, sessions | in-progress |
 | 02 | Login, registration and settings UI | todo |
-| 03 | Room users schema, room creation requires login, session room entry | todo |
-| 04 | User migration (humans to users, default password developer), deploy N | todo |
+| 03 | Room users schema, session room entry, room creation requires login | todo |
+| 04 | User migration (humans to users, default password developer) | todo |
 | 05 | Workspace switcher | todo |
-| 06 | Skill, cli.sh, fleet and prod docs | todo |
+| 06 | Skill (humans section), harness guides, cli.sh proof, fleet and prod docs | todo |
 | 07 | Final e2e pass, Clerk stub, completeness critic | todo |
 | 08 | Deploy N+1: retire legacy human tokens | todo |

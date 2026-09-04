@@ -602,7 +602,9 @@ participant id. `api_test.go` gains `TestSessionAuthResolvesParticipant`,
 `TestEnterWithInviteCodeCreatesLinkedParticipant`, `TestEnterDoesNotAdoptByName`,
 `TestEnterWrongCodeIs400`, `TestActTokenIgnoresRoomHeader`, `TestRoomCreateRequiresSession`,
 `TestRoomQuota`, `TestUserRoomsListsLiveParticipations`, `TestSessionAbsoluteCap`,
-`TestAgentJoinRowUnchanged`.
+`TestAgentJoinRowUnchanged`, `TestJoinCannotReclaimLinkedHuman`,
+`TestRoomCreateInvalidDisplayNameUsesUsername` (a 40-char or emoji `display_name` yields
+a participant named after the username).
 
 ## 8 API
 
