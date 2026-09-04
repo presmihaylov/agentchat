@@ -1,6 +1,6 @@
 # 03 Room users schema, session room entry, room creation requires login
 
-Status: todo
+Status: done (a42c2ca, 2026-09-04)
 
 Ships in one deploy: the server side of session room access and the SPA changes that depend on it. Splitting them would leave a creator as an unlinked member of their own workspace (design section 9).
 
