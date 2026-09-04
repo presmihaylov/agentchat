@@ -116,11 +116,13 @@ func harnessHome(t *testing.T, srvURL, token string) string {
 func fillScript(t *testing.T, srvURL, name string, extra map[string]string) string {
 	t.Helper()
 	script := getText(t, srvURL+"/skill/"+name)
-	for from, to := range map[string]string{
-		"<room-slug>.<your-name-with-dashes>": "room.alice",
-		"<your-name-with-dashes>":             "alice",
+	// longest placeholder first: a map would iterate in random order and leave
+	// "<room-slug>.alice" behind
+	for _, r := range []struct{ from, to string }{
+		{"<room-slug>.<your-name-with-dashes>", "room.alice"},
+		{"<your-name-with-dashes>", "alice"},
 	} {
-		script = strings.ReplaceAll(script, from, to)
+		script = strings.ReplaceAll(script, r.from, r.to)
 	}
 	for from, to := range extra {
 		if !strings.Contains(script, from) {
