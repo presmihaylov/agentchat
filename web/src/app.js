@@ -173,6 +173,60 @@ import { sessionToken, isAccountPage, showSignInBanner, loginURL, onSessionInval
     return 'on ' + d.toLocaleDateString([], { month: 'short', day: 'numeric' });
   };
 
+  // calendar day in the viewer's local time; the key the date dividers split on
+  const dayOf = (iso) => new Date(iso).toDateString();
+  const fmtDay = (iso) => {
+    const d = new Date(iso);
+    const now = new Date();
+    if (dayOf(iso) === now.toDateString()) return 'Today';
+    const yd = new Date(now); yd.setDate(now.getDate() - 1);
+    if (dayOf(iso) === yd.toDateString()) return 'Yesterday';
+    if (d.getFullYear() === now.getFullYear()) {
+      return d.toLocaleDateString([], { weekday: 'long' }) + ', ' + d.getDate() + ' ' + d.toLocaleDateString([], { month: 'long' });
+    }
+    return d.getDate() + ' ' + d.toLocaleDateString([], { month: 'short' }) + ' ' + d.getFullYear();
+  };
+  const dateDividerEl = (iso) => {
+    const el = document.createElement('div');
+    el.className = 'date-divider';
+    el.dataset.day = dayOf(iso);
+    el.innerHTML = `<span>${esc(fmtDay(iso))}</span>`;
+    return el;
+  };
+  // Slack-style day markers: one before the first .msg of each local day.
+  // Rebuilt from scratch, so a prepended page or a live append never leaves a
+  // stale marker mid-day. Sits after the unread divider when both apply.
+  const syncDateDividers = (box) => {
+    box.querySelectorAll(':scope > .date-divider').forEach((n) => n.remove());
+    let last = null;
+    [...box.children].filter((n) => n.classList.contains('msg')).forEach((n) => {
+      const day = dayOf(n.dataset.at);
+      if (day !== last) box.insertBefore(dateDividerEl(n.dataset.at), n);
+      last = day;
+    });
+    syncStuckDividers(box);
+  };
+  // Sticky markers share one containing block (the box), so every marker
+  // scrolled past piles up at the top. Keep only the latest one visible, as a
+  // floating pill without side lines; the rest hide until they scroll back.
+  const syncStuckDividers = (box) => {
+    const divs = [...box.querySelectorAll(':scope > .date-divider')];
+    if (!divs.length) return;
+    const limit = box.getBoundingClientRect().top + parseFloat(getComputedStyle(box).paddingTop);
+    const gap = parseFloat(getComputedStyle(divs[0]).marginBottom);
+    // where a marker would sit unpinned: right above its first message
+    // (a marker with no message under it is transient; treat it as far below)
+    const natural = (d) => (d.nextElementSibling ? d.nextElementSibling.getBoundingClientRect().top - gap - d.offsetHeight : Infinity);
+    let shown = -1;
+    if (box.scrollTop > 0) divs.forEach((d, i) => { if (natural(d) <= limit + 1) shown = i; });
+    divs.forEach((d, i) => {
+      const next = divs[i + 1];
+      const pushed = next && natural(next) <= limit + d.offsetHeight;
+      d.classList.toggle('stuck', i === shown);
+      d.classList.toggle('covered', i < shown || (i === shown && !!pushed));
+    });
+  };
+
   // attachment images sit behind bearer auth — blob-fetch once, cache the
   // object URL per attachment id (avatars and inline images share this)
   const blobURLs = {};
@@ -258,6 +312,10 @@ import { sessionToken, isAccountPage, showSignInBanner, loginURL, onSessionInval
     rxTip.classList.toggle('below', above < 4);
   };
   document.addEventListener('scroll', hideReactionTip, true);
+  // scroll events do not bubble, so capture catches both message boxes
+  document.addEventListener('scroll', (e) => {
+    if (e.target instanceof Element && e.target.matches('#messages, #thread-messages')) syncStuckDividers(e.target);
+  }, true);
 
   const reactionPill = (m, rx) => {
     const b = document.createElement('button');
@@ -384,6 +442,7 @@ import { sessionToken, isAccountPage, showSignInBanner, loginURL, onSessionInval
       const el = document.createElement('div');
       el.className = 'msg system-entry';
       el.dataset.id = m.id;
+      el.dataset.at = m.created_at;
       el.innerHTML = `<span class="sys-text"><span class="sys-name">${esc(m.author_name)}</span> ${esc(m.body)}</span><span class="sys-time">${fmtTime(m.created_at)}</span>`;
       attachMsgMenu(el, m);
       return el;
@@ -391,6 +450,7 @@ import { sessionToken, isAccountPage, showSignInBanner, loginURL, onSessionInval
     const el = document.createElement('div');
     el.className = 'msg';
     el.dataset.id = m.id;
+    el.dataset.at = m.created_at;
     if (m.is_broadcast) el.classList.add('broadcast');
 
     const canEdit = m.author_id === me.id;
@@ -1222,6 +1282,7 @@ import { sessionToken, isAccountPage, showSignInBanner, loginURL, onSessionInval
       }
       box.appendChild(msgEl(m, false));
     });
+    syncDateDividers(box);
     box.scrollTop = box.scrollHeight;
     markRead(ch);
     loadThreads();
@@ -1240,6 +1301,7 @@ import { sessionToken, isAccountPage, showSignInBanner, loginURL, onSessionInval
     const frag = document.createDocumentFragment();
     older.forEach((m) => frag.appendChild(msgEl(m, false)));
     box.insertBefore(frag, box.firstChild);
+    syncDateDividers(box); // the old first message may now sit mid-day
     box.scrollTop += anchor.getBoundingClientRect().top - wasAt;
     return true;
   };
@@ -1321,6 +1383,7 @@ import { sessionToken, isAccountPage, showSignInBanner, loginURL, onSessionInval
     const box = $('thread-messages');
     box.innerHTML = '';
     out.messages.forEach((m) => box.appendChild(msgEl(m, true)));
+    syncDateDividers(box);
     box.scrollTop = box.scrollHeight;
     markThreadRead(rootID);
   };
@@ -1430,9 +1493,9 @@ import { sessionToken, isAccountPage, showSignInBanner, loginURL, onSessionInval
     const rec = { body, rootID, node };
     pendingSends.push(rec);
     if (!rootID && current) {
-      const box = $('messages'); box.appendChild(node); box.scrollTop = box.scrollHeight;
+      const box = $('messages'); box.appendChild(node); syncDateDividers(box); box.scrollTop = box.scrollHeight;
     } else if (rootID && rootID === openThreadRoot) {
-      const box = $('thread-messages'); box.appendChild(node); box.scrollTop = box.scrollHeight;
+      const box = $('thread-messages'); box.appendChild(node); syncDateDividers(box); box.scrollTop = box.scrollHeight;
     }
     if (att) { pendingAtt[which] = null; attachEls(which).pend.classList.add('hidden'); }
 
@@ -1443,7 +1506,9 @@ import { sessionToken, isAccountPage, showSignInBanner, loginURL, onSessionInval
     } catch (e) {
       const i = pendingSends.indexOf(rec);
       if (i >= 0) pendingSends.splice(i, 1);
+      const box = node.parentElement;
       node.remove(); // roll back the placeholder; caller restores the draft
+      if (box) syncDateDividers(box); // drop the day marker the placeholder opened
       throw e;
     }
   };
@@ -1609,6 +1674,7 @@ import { sessionToken, isAccountPage, showSignInBanner, loginURL, onSessionInval
         const box = $('messages');
         const nearBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 120;
         box.appendChild(msgEl(m, false));
+        syncDateDividers(box); // a first message after midnight opens a new day
         if (nearBottom) box.scrollTop = box.scrollHeight;
         // a hidden tab is not "viewing": marking read here would silently erase
         // the unread count and the new-messages divider for messages never seen
@@ -1647,6 +1713,7 @@ import { sessionToken, isAccountPage, showSignInBanner, loginURL, onSessionInval
     if (t === 'message.deleted') {
       const id = ev.payload.message_id;
       msgNode(id)?.remove();
+      syncDateDividers($('messages'));
       if (openThreadRoot === id) closeThread();
       else if (openThreadRoot) {
         try { await openThread(openThreadRoot); } // a reply was deleted

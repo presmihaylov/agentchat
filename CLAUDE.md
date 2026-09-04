@@ -54,6 +54,7 @@ node scripts/docpreview-check.js           # DOCPREVIEW_CHECK_OK
 node scripts/login-check.js                # LOGIN_CHECK_OK (needs AGENTCHAT_DB_URL for agentchat-passwd)
 node scripts/settings-nav-check.js         # SETTINGS_NAV_CHECK_OK (same)
 node scripts/enter-check.js                # ENTER_CHECK_OK
+node scripts/dateseps-check.js             # DATESEPS_CHECK_OK
 node scripts/switcher-check.js             # SWITCHER_CHECK_OK (same)
 ```
 

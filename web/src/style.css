@@ -175,6 +175,12 @@ body.has-banner.has-header .auth-view, body.has-banner.has-header #create-view, 
 .unread-divider { display: flex; align-items: center; gap: 8px; margin: 10px 0; color: #e0666b; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; }
 .unread-divider::before, .unread-divider::after { content: ''; flex: 1; border-top: 1px solid #e0666b55; }
 .unread-divider span { flex: none; }
+/* Slack-style day marker; sticky, so the day stays readable while scrolling through it */
+.date-divider { position: sticky; top: 0; z-index: 3; display: flex; align-items: center; gap: 8px; margin: 10px 0; padding: 2px 0; color: var(--dim); font-size: 11px; font-weight: 600; pointer-events: none; }
+.date-divider::before, .date-divider::after { content: ''; flex: 1; border-top: 1px solid var(--border); transition: opacity .15s ease; }
+.date-divider span { flex: none; padding: 3px 10px; border: 1px solid var(--border); border-radius: 999px; background: var(--panel); }
+.date-divider.stuck::before, .date-divider.stuck::after { opacity: 0; }
+.date-divider.covered { visibility: hidden; }
 /* Thread leaves nest under their parent channel: indented, with a branch guide. */
 /* fully rounded, so a selected leaf reads as the same pill as a channel row */
 #channel-list li.thread-leaf { margin-left: 16px; padding-left: 12px; border-left: 1px solid var(--border); border-radius: 6px; font-size: 13px; }
