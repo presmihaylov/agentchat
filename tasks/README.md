@@ -23,7 +23,7 @@ has run its backfill and verification queries.
 | 09 | One settings place: Workspace + Personal | done (b9cc1d6) |
 | 10 | "Invite member" in the workspace menu | done (240c9f4) |
 | 11 | Workspace avatars | done |
-| 12 | Workspace rail (Discord style) | todo |
+| 12 | Workspace rail (Discord style) | done |
 | 13 | Per-workspace badges in the rail | todo |
 | 14 | Delete workspace | todo |
 | 15 | Kick members | todo |
