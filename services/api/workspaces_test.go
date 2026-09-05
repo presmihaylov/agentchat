@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"sort"
 	"strings"
@@ -667,5 +668,72 @@ func TestUserWorkspacesUnreadAndMentions(t *testing.T) {
 	bob.must("POST", "/api/v1/channels/general/messages", map[string]any{"body": "@annie even muted"}, 201)
 	if u, m := state(); !u || m != 1 {
 		t.Fatalf("muted mention: unread=%v mentions=%v", u, m)
+	}
+}
+
+// Delete workspace: the owner types the name and the room goes with every
+// row under it; a non-owner admin and an agent are refused; the agent's
+// token dies with its participant row.
+func TestDeleteWorkspace(t *testing.T) {
+	srv, store := newTestServer(t)
+	owner, user, room := sessionRoom(t, srv.URL, "doomed")
+	slug := room["slug"].(string)
+	other, _ := register(t, srv.URL, uniqUser(), "correct horse")
+	other.slug = slug
+	entered := other.must("POST", "/api/v1/workspaces/"+slug+"/enter", map[string]any{"invite_code": room["invite_code"]}, 200)
+	otherPID := entered["participant"].(map[string]any)["id"].(string)
+	owner.must("POST", "/api/v1/participants/"+otherPID+"/role", map[string]any{"role": "admin"}, 200)
+	agent := &testClient{t: t, base: srv.URL}
+	joined := agent.must("POST", "/api/v1/rooms/join", map[string]any{
+		"invite_code": room["invite_code"], "name": "bot", "description": "a test agent",
+	}, 201)
+	agent.token = joined["token"].(string)
+	ownerPID := owner.must("GET", "/api/v1/me", nil, 200)["id"].(string)
+	att, err := store.CreateAttachment(context.Background(), room["id"].(string), ownerPID, "a.txt", "text/plain", []byte("hi"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	member, _ := register(t, srv.URL, uniqUser(), "correct horse")
+	member.slug = slug
+	member.must("POST", "/api/v1/workspaces/"+slug+"/enter", map[string]any{"invite_code": room["invite_code"]}, 200)
+
+	if st, out := agent.do("DELETE", "/api/v1/room", map[string]any{"name": "doomed"}); st != 403 {
+		t.Fatalf("agent delete: %d %v", st, out)
+	}
+	if st, out := member.do("DELETE", "/api/v1/room", map[string]any{"name": "doomed"}); st != 403 {
+		t.Fatalf("plain member delete: %d %v", st, out)
+	}
+	if st, out := other.do("DELETE", "/api/v1/room", map[string]any{"name": "doomed"}); st != 403 || out["code"] != "owner_required" {
+		t.Fatalf("non-owner admin delete: %d %v", st, out)
+	}
+	if st, out := owner.do("DELETE", "/api/v1/room", map[string]any{"name": "Doomed"}); st != 400 || out["code"] != "name_mismatch" {
+		t.Fatalf("wrong name: %d %v", st, out)
+	}
+	out := owner.must("DELETE", "/api/v1/room", map[string]any{"name": "doomed"}, 200)
+	if out["deleted"] != true || out["slug"] != slug {
+		t.Fatalf("delete: %v", out)
+	}
+
+	if st, out := agent.do("GET", "/api/v1/me", nil); st != 401 {
+		t.Fatalf("agent after delete: %d %v", st, out)
+	}
+	// a coded 404 so open tabs of the deleted room route themselves home
+	if st, out := owner.do("GET", "/api/v1/room", nil); st != 404 || out["code"] != "workspace_not_found" {
+		t.Fatalf("owner after delete: %d %v", st, out)
+	}
+	if st, out := owner.do("GET", "/api/v1/events?since=0", nil); st != 404 || out["code"] != "workspace_not_found" {
+		t.Fatalf("owner events after delete: %d %v", st, out)
+	}
+	for _, w := range owner.must("GET", "/api/v1/user", nil, 200)["workspaces"].([]any) {
+		if w.(map[string]any)["slug"] == slug {
+			t.Fatalf("deleted room still listed for %v", user["username"])
+		}
+	}
+	if _, err := store.AttachmentByID(context.Background(), room["id"].(string), att.ID); !errors.Is(err, models.ErrNotFound) {
+		t.Fatalf("attachment after delete: %v", err)
+	}
+	if _, err := store.RoomByID(context.Background(), room["id"].(string)); !errors.Is(err, models.ErrNotFound) {
+		t.Fatalf("room after delete: %v", err)
 	}
 }

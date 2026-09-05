@@ -147,6 +147,29 @@ func (s *Store) RenameRoom(ctx context.Context, roomID, name string) (Room, erro
 	return r, tx.Commit(ctx)
 }
 
+// DeleteRoom removes the room and, through the cascades, every participant
+// (so each agent token dies), channel, message and attachment row; uploads
+// live in the attachments table, so nothing is left on disk. The room lock
+// goes first so no event writer is mid-transaction on the way out.
+func (s *Store) DeleteRoom(ctx context.Context, roomID string) error {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	if err := lockRoomEvents(ctx, tx, roomID); err != nil {
+		return err
+	}
+	res, err := tx.Exec(ctx, `DELETE FROM rooms WHERE id = $1`, roomID)
+	if err != nil {
+		return err
+	}
+	if res.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return tx.Commit(ctx)
+}
+
 func (s *Store) RoomByID(ctx context.Context, id string) (Room, error) {
 	var r Room
 	err := scanRoom(s.pool.QueryRow(ctx,

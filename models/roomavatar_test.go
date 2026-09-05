@@ -35,8 +35,14 @@ func TestOrphanGCKeepsRoomAvatar(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if n != 1 {
-		t.Fatalf("GC deleted %d rows, want the one stray", n)
+	// the dev db is shared: other tests' strays may go in the same sweep, so
+	// count our own rows, not the total
+	if n < 1 {
+		t.Fatalf("GC deleted %d rows, want at least the one stray", n)
+	}
+	var strayLeft int
+	if err := s.pool.QueryRow(ctx, `SELECT count(*) FROM attachments WHERE id = $1`, orphan.ID).Scan(&strayLeft); err != nil || strayLeft != 0 {
+		t.Fatalf("stray attachment survived: left=%d err=%v", strayLeft, err)
 	}
 	var kept int
 	if err := s.pool.QueryRow(ctx, `SELECT count(*) FROM attachments WHERE id = $1`, logo.ID).Scan(&kept); err != nil || kept != 1 {
@@ -46,7 +52,10 @@ func TestOrphanGCKeepsRoomAvatar(t *testing.T) {
 	if _, err := s.SetRoomAvatar(ctx, r.ID, nil); err != nil {
 		t.Fatal(err)
 	}
-	if n, err := s.DeleteOrphanAttachments(ctx); err != nil || n != 1 {
+	if n, err := s.DeleteOrphanAttachments(ctx); err != nil || n < 1 {
 		t.Fatalf("GC after remove: n=%d err=%v", n, err)
+	}
+	if err := s.pool.QueryRow(ctx, `SELECT count(*) FROM attachments WHERE id = $1`, logo.ID).Scan(&kept); err != nil || kept != 0 {
+		t.Fatalf("cleared avatar survived the GC: kept=%d err=%v", kept, err)
 	}
 }

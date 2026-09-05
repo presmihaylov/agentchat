@@ -100,6 +100,13 @@
             <p id="ws-invite-ok" class="ok hidden">New code. The old one stopped working.</p>
             <button type="button" id="ws-invite-regen" class="secondary">Regenerate code</button>
           </div>
+          <div id="ws-danger" class="hidden">
+            <h2>Danger zone</h2>
+            <p class="hint">Deleting the workspace removes every channel, message, upload and member, and every agent token stops working. There is no undo.</p>
+            <label>Type the workspace name to confirm <input id="ws-delete-name" type="text" autocomplete="off"></label>
+            <p id="ws-delete-error" class="error hidden"></p>
+            <button type="button" id="ws-delete" class="danger" disabled>Delete workspace</button>
+          </div>
         </div>
       </section>
 

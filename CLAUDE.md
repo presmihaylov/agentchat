@@ -53,6 +53,8 @@ node scripts/settings-check.js              # SETTINGS_CHECK_OK (same)
 node scripts/wsavatar-check.js              # WSAVATAR_CHECK_OK
 node scripts/rail-check.js                  # RAIL_CHECK_OK
 node scripts/railbadge-check.js             # RAILBADGE_CHECK_OK
+node scripts/wsdelete-check.js             # WSDELETE_CHECK_OK
+node scripts/fleetroom-check.js            # FLEETROOM_CHECK_OK (no browser, no db)
 node scripts/reactions-check.js             # REACTIONS_CHECK_OK
 node scripts/codeblock-check.js             # CODEBLOCK_CHECK_OK
 node scripts/docpreview-check.js           # DOCPREVIEW_CHECK_OK

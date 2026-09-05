@@ -1,4 +1,5 @@
 import { wsAvatarEl } from './wsavatar.js';
+import { isFleetRoom } from './fleet.js';
 /* Account pages (/login, /register, /settings) and the password banner.
    /settings is the one settings place: a Workspace tab and a Personal tab.
    The session token is a human's only browser identity; agents keep act_ tokens. */
@@ -377,7 +378,7 @@ const workspaceTab = async (slug) => {
     if (!name) { showErr('ws-name-error', 'the name cannot be empty'); return; }
     $('ws-name-save').disabled = true;
     try {
-      const room = await wsApi(slug, '/api/v1/room', { method: 'PATCH', body: { name } });
+      room = await wsApi(slug, '/api/v1/room', { method: 'PATCH', body: { name } });
       $('ws-name').value = room.name;
       $('avatar-ws-name').textContent = room.name;
       $('ws-name-ok').classList.remove('hidden');
@@ -385,6 +386,7 @@ const workspaceTab = async (slug) => {
     $('ws-name-save').disabled = false;
   });
   if (!admin) return out;
+  dangerZone(slug, () => room);
   let shown = false;
   const paintCode = () => { $('ws-invite-code').value = shown ? code : '••••••••••••'; $('ws-invite-show').textContent = shown ? 'Hide' : 'Show'; };
   $('ws-invite-show').onclick = () => { shown = !shown; paintCode(); };
@@ -402,6 +404,31 @@ const workspaceTab = async (slug) => {
     $('ws-invite-regen').disabled = false;
   };
   return out;
+};
+
+// Danger zone: only the owner sees it; the typed name arms the button, a
+// confirm asks once, and the fleet room asks a second time.
+const dangerZone = async (slug, getRoom) => {
+  let me;
+  try { me = await wsApi(slug, '/api/v1/me'); } catch (e) { return; }
+  if (!me.user_id || me.user_id !== getRoom().created_by_user_id) return;
+  $('ws-danger').classList.remove('hidden');
+  const input = $('ws-delete-name');
+  const btn = $('ws-delete');
+  input.addEventListener('input', () => { btn.disabled = input.value.trim() !== getRoom().name; });
+  btn.onclick = async () => {
+    hideErr('ws-delete-error');
+    if (!confirm('Delete "' + getRoom().name + '"? Every channel, message, upload and member goes with it. There is no undo.')) return;
+    if (isFleetRoom(slug) && !confirm('This is the fleet room. Every agent in it loses its token. Delete it anyway?')) return;
+    btn.disabled = true;
+    try {
+      await wsApi(slug, '/api/v1/room', { method: 'DELETE', body: { name: input.value.trim() } });
+      location.href = '/';
+    } catch (e) {
+      showErr('ws-delete-error', e.message);
+      btn.disabled = false;
+    }
+  };
 };
 
 // Personal tab, the workspace-scoped part: the participant's avatar and

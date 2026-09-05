@@ -80,6 +80,12 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
       if (!isAccountPage) location.replace(loginURL());
       return true;
     }
+    if (e.status === 404 && e.code === 'workspace_not_found') {
+      // the workspace was deleted under this tab: let / pick the next one
+      authHandled = true;
+      location.replace('/');
+      return true;
+    }
     if (e.status === 403 && e.code === 'workspace_forbidden') {
       authHandled = true;
       if (e.reason === 'revoked') { showRemoved(); return true; }

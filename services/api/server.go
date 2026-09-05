@@ -151,6 +151,7 @@ func (s *Server) routes() {
 	m.HandleFunc("PATCH /api/v1/me/notifications", s.authed(s.handleSetNotifyPrefs))
 
 	m.HandleFunc("PATCH /api/v1/room", s.authed(s.handleRenameRoom))
+	m.HandleFunc("DELETE /api/v1/room", s.authed(s.handleDeleteRoom))
 	m.HandleFunc("POST /api/v1/room/rotate-secret", s.authed(s.handleRotateSecret))
 	m.HandleFunc("POST /api/v1/room/avatar", s.authed(s.handleSetRoomAvatar))
 	m.HandleFunc("DELETE /api/v1/room/avatar", s.authed(s.handleRemoveRoomAvatar))
@@ -259,7 +260,7 @@ func (s *Server) participantForSession(w http.ResponseWriter, r *http.Request, t
 		return models.Participant{}, r, false
 	}
 	if sc.RoomID == nil {
-		writeErr(w, http.StatusNotFound, "not found")
+		writeErrCode(w, http.StatusNotFound, "workspace_not_found", "no such workspace")
 		return models.Participant{}, r, false
 	}
 	if sc.Participant == nil {

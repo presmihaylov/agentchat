@@ -1,6 +1,7 @@
 package api
 
 import (
+	"log"
 	"net/http"
 	"strings"
 
@@ -41,6 +42,41 @@ func (s *Server) handleRenameRoom(w http.ResponseWriter, r *http.Request, p mode
 		return
 	}
 	writeJSON(w, http.StatusOK, room)
+}
+
+type deleteRoomReq struct {
+	Name string `json:"name"`
+}
+
+// Only the owner (the user who created the room) may delete it; the typed
+// name is the confirmation. Agents have no user, so they never qualify.
+func (s *Server) handleDeleteRoom(w http.ResponseWriter, r *http.Request, p models.Participant) {
+	if !requireAdmin(w, p) {
+		return
+	}
+	room, err := s.store.RoomByID(r.Context(), p.RoomID)
+	if err != nil {
+		writeStoreErr(w, err)
+		return
+	}
+	if p.UserID == nil || room.CreatedByUserID == nil || *p.UserID != *room.CreatedByUserID {
+		writeErrCode(w, http.StatusForbidden, "owner_required", "only the workspace owner can delete it")
+		return
+	}
+	var req deleteRoomReq
+	if !readJSON(w, r, &req) {
+		return
+	}
+	if strings.TrimSpace(req.Name) != room.Name {
+		writeErrCode(w, http.StatusBadRequest, "name_mismatch", "type the workspace name exactly to confirm")
+		return
+	}
+	if err := s.store.DeleteRoom(r.Context(), room.ID); err != nil {
+		writeStoreErr(w, err)
+		return
+	}
+	log.Printf("room %s (%s) deleted by user %s", room.ID, room.Slug, *p.UserID)
+	writeJSON(w, http.StatusOK, map[string]any{"deleted": true, "slug": room.Slug})
 }
 
 func (s *Server) handleRotateSecret(w http.ResponseWriter, r *http.Request, p models.Participant) {
