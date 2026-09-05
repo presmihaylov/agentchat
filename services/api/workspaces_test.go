@@ -775,10 +775,10 @@ func TestKickMembers(t *testing.T) {
 	ownerPID := owner.must("GET", "/api/v1/me", nil, 200)["id"].(string)
 
 	// the owner is protected from admins and from themself
-	if st, out := admin.do("DELETE", "/api/v1/participants/"+ownerPID, nil); st != 403 || out["code"] != "owner_protected" {
+	if st, out := admin.do("DELETE", "/api/v1/participants/"+ownerPID, nil); st != 409 || out["code"] != "owner_protected" {
 		t.Fatalf("admin removes owner: %d %v", st, out)
 	}
-	if st, out := owner.do("DELETE", "/api/v1/participants/me", nil); st != 400 || out["code"] != "owner_cannot_leave" {
+	if st, out := owner.do("DELETE", "/api/v1/participants/me", nil); st != 409 || out["code"] != "owner_cannot_leave" {
 		t.Fatalf("owner self-remove: %d %v", st, out)
 	}
 	if st, out := admin.do("POST", "/api/v1/participants/"+ownerPID+"/role", map[string]any{"role": "member"}); st != 403 || out["code"] != "owner_protected" {
@@ -961,5 +961,138 @@ func TestWorkspaceOrderAndMute(t *testing.T) {
 	wa = user.must("PATCH", "/api/v1/user/workspaces/"+a, map[string]any{"muted": false}, 200)
 	if wa["muted"] != false {
 		t.Fatalf("unmute response: %v", wa)
+	}
+}
+
+// TestAgentOwners: an agent belongs to a human (task 19). A plain-link join
+// hands it to the creator, a bound link to the link's owner; removing the
+// human revokes their agents at once (tokens 401, roster clean, one counted
+// #general line); rejoining does not revive them; admins rebind an owner; the
+// creator and the last admin can neither be removed nor leave.
+func TestAgentOwners(t *testing.T) {
+	srv, store := newTestServer(t)
+	creator, _, room := sessionRoom(t, srv.URL, "owned crew")
+	slug := room["slug"].(string)
+	creatorPID := creator.must("GET", "/api/v1/me", nil, 200)["id"].(string)
+	enter := func() (*testClient, string) {
+		c, _ := register(t, srv.URL, uniqUser(), "correct horse")
+		c.slug = slug
+		out := c.must("POST", "/api/v1/workspaces/"+slug+"/enter", map[string]any{"invite": room["invite"]}, 200)
+		return c, out["participant"].(map[string]any)["id"].(string)
+	}
+	joinAgent := func(link, name string) (*testClient, map[string]any) {
+		c := &testClient{t: t, base: srv.URL}
+		out := c.must("POST", "/api/v1/rooms/join", map[string]any{"invite": link, "name": name, "description": "t"}, 201)
+		c.token = out["token"].(string)
+		return c, out["participant"].(map[string]any)
+	}
+
+	// plain link: the creator owns the agent
+	plainBot, plainP := joinAgent(room["invite"].(string), "plainbot")
+	if plainP["owner_id"] != creatorPID {
+		t.Fatalf("plain-link agent owner: %v want creator %s", plainP["owner_id"], creatorPID)
+	}
+	// bound link: the human who minted it
+	omar, omarPID := enter()
+	link := omar.must("POST", "/api/v1/invites", map[string]any{"bind_owner": true}, 201)["join_url"].(string)
+	bot1, b1 := joinAgent(link, "reviewer")
+	bot2, b2 := joinAgent(link, "opus")
+	if b1["owner_id"] != omarPID || b2["owner_id"] != omarPID || b1["owner_user_id"] == nil {
+		t.Fatalf("bound-link owners: %v %v", b1, b2)
+	}
+
+	// admin rebinds an owner: only to a live human with an account, only on an agent
+	dim, ninaPID := enter()
+	if st, out := omar.do("PATCH", "/api/v1/participants/"+b2["id"].(string)+"/owner", map[string]any{"owner_id": ninaPID}); st != 403 {
+		t.Fatalf("member rebinds: %d %v", st, out)
+	}
+	if st, out := creator.do("PATCH", "/api/v1/participants/"+b2["id"].(string)+"/owner", map[string]any{"owner_id": plainP["id"]}); st != 400 || out["code"] != "bad_owner" {
+		t.Fatalf("agent as owner: %d %v", st, out)
+	}
+	if st, out := creator.do("PATCH", "/api/v1/participants/"+ninaPID+"/owner", map[string]any{"owner_id": omarPID}); st != 400 {
+		t.Fatalf("human target: %d %v", st, out)
+	}
+	moved := creator.must("PATCH", "/api/v1/participants/"+b2["id"].(string)+"/owner", map[string]any{"owner_id": ninaPID}, 200)["participant"].(map[string]any)
+	if moved["owner_id"] != ninaPID {
+		t.Fatalf("rebind: %v", moved)
+	}
+	_ = dim
+
+	// removing omar takes reviewer with them, not opus (now nina's)
+	creator.must("DELETE", "/api/v1/participants/"+omarPID, nil, 200)
+	if st, _ := bot1.do("GET", "/api/v1/me", nil); st != 401 {
+		t.Fatalf("owned agent after owner removal: %d want 401", st)
+	}
+	if st, _ := bot2.do("GET", "/api/v1/me", nil); st != 200 {
+		t.Fatalf("rebound agent after old owner removal: %d want 200", st)
+	}
+	if st, _ := plainBot.do("GET", "/api/v1/me", nil); st != 200 {
+		t.Fatalf("creator's agent: %d want 200", st)
+	}
+	names := map[string]bool{}
+	for _, p := range creator.must("GET", "/api/v1/participants", nil, 200)["participants"].([]any) {
+		names[p.(map[string]any)["name"].(string)] = true
+	}
+	if names["reviewer"] || !names["opus"] || !names["plainbot"] {
+		t.Fatalf("roster after cascade: %v", names)
+	}
+	general := creator.must("GET", "/api/v1/channels/general/messages?limit=5", nil, 200)["messages"].([]any)
+	found := false
+	for _, m := range general {
+		if strings.Contains(m.(map[string]any)["body"].(string), "and 1 agent from the workspace") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("no counted #general line: %v", general)
+	}
+	// a restart on the plain link keeps an agent with the human it has (a
+	// reclaim never hands it to the creator)
+	roomID := creator.must("GET", "/api/v1/room", nil, 200)["room"].(map[string]any)["id"].(string)
+	keeperOwner, keeperOwnerPID := enter()
+	keeperLink := keeperOwner.must("POST", "/api/v1/invites", map[string]any{"bind_owner": true}, 201)["join_url"].(string)
+	_, kp := joinAgent(keeperLink, "keeper")
+	if err := store.GoOffline(context.Background(), roomID, kp["id"].(string)); err != nil {
+		t.Fatal(err)
+	}
+	rc := &testClient{t: t, base: srv.URL}
+	re := rc.must("POST", "/api/v1/rooms/join", map[string]any{"invite": room["invite"], "name": "keeper", "description": "t"}, 200)["participant"].(map[string]any)
+	if re["owner_id"] != keeperOwnerPID {
+		t.Fatalf("plain-link reclaim changed the owner: %v want %s", re["owner_id"], keeperOwnerPID)
+	}
+	// a removed human stays out, and so does their agent
+	if st, out := omar.do("POST", "/api/v1/workspaces/"+slug+"/enter", map[string]any{"invite": room["invite"]}); st != 403 || out["reason"] != "revoked" {
+		t.Fatalf("removed human re-enters: %d %v", st, out)
+	}
+	if st, _ := bot1.do("GET", "/api/v1/me", nil); st != 401 {
+		t.Fatalf("agent revived by rejoin attempt: %d", st)
+	}
+	// a second human leaves on their own: same cascade, "left ... and 1 agent"
+	nina2, _ := enter()
+	link2 := nina2.must("POST", "/api/v1/invites", map[string]any{"bind_owner": true}, 201)["join_url"].(string)
+	bot3, _ := joinAgent(link2, "reviewer2")
+	nina2.must("DELETE", "/api/v1/participants/me", nil, 200)
+	if st, _ := bot3.do("GET", "/api/v1/me", nil); st != 401 {
+		t.Fatalf("agent after owner left: %d", st)
+	}
+
+	// the creator (also the last admin here) can neither be removed nor leave,
+	// and no agent token changes when it is tried
+	if st, out := creator.do("DELETE", "/api/v1/participants/me", nil); st != 409 || out["code"] != "owner_cannot_leave" {
+		t.Fatalf("creator leaves: %d %v", st, out)
+	}
+	admin, adminPID := enter()
+	creator.must("POST", "/api/v1/participants/"+adminPID+"/role", map[string]any{"role": "admin"}, 200)
+	if st, out := admin.do("DELETE", "/api/v1/participants/"+creatorPID, nil); st != 409 || out["code"] != "owner_protected" {
+		t.Fatalf("admin removes creator: %d %v", st, out)
+	}
+	if st, _ := plainBot.do("GET", "/api/v1/me", nil); st != 200 {
+		t.Fatalf("creator's agent after refused removals: %d", st)
+	}
+	// last admin: demote the creator is refused (owner_protected), so make the
+	// only other admin leave and check the last-admin guard on a plain room
+	admin.must("DELETE", "/api/v1/participants/me", nil, 200)
+	if st, out := creator.do("DELETE", "/api/v1/participants/me", nil); st != 409 {
+		t.Fatalf("last admin leaves: %d %v", st, out)
 	}
 }

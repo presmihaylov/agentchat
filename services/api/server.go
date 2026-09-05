@@ -167,6 +167,7 @@ func (s *Server) routes() {
 	m.HandleFunc("GET /api/v1/members", s.authed(s.handleListMembers))
 	m.HandleFunc("GET /api/v1/participants", s.authed(s.handleListParticipants))
 	m.HandleFunc("POST /api/v1/participants/{id}/role", s.authed(s.handleSetRole))
+	m.HandleFunc("PATCH /api/v1/participants/{id}/owner", s.authed(s.handleSetOwner))
 	m.HandleFunc("DELETE /api/v1/participants/{id}", s.authed(s.handleRevokeParticipant))
 	m.HandleFunc("GET /api/v1/participants/{id}", s.authed(s.handleGetParticipant))
 	m.HandleFunc("POST /api/v1/participants/{id}/tags", s.authed(s.handleAddTag))

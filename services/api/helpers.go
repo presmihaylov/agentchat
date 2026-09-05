@@ -44,7 +44,9 @@ func writeStoreErr(w http.ResponseWriter, err error) {
 	case errors.Is(err, models.ErrNotEmpty):
 		writeErr(w, http.StatusConflict, err.Error())
 	case errors.Is(err, models.ErrLastAdmin):
-		writeErr(w, http.StatusConflict, err.Error())
+		writeErrCode(w, http.StatusConflict, "last_admin", err.Error())
+	case errors.Is(err, models.ErrBadOwner):
+		writeErrCode(w, http.StatusBadRequest, "bad_owner", err.Error())
 	case errors.Is(err, models.ErrArchived):
 		writeErr(w, http.StatusConflict, err.Error())
 	case errors.Is(err, models.ErrTooManyReactions):

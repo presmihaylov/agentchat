@@ -448,20 +448,83 @@ const timeAgo = (iso) => {
   return Math.floor(s / 86400) + ' d ago';
 };
 
-// Members: admins see every participant with a Remove button, except the
-// owner (nobody removes the owner) and themself (leaving is the room page's job)
+// Members (task 19): humans only, each with its agents folded under it. An
+// admin can rebind an agent to another human, remove one agent, or remove a
+// human together with every agent they own. The creator and the last admin
+// are never removable: the server says so with a 409, shown as-is.
 const membersSection = async (slug, getRoom) => {
   $('ws-members').classList.remove('hidden');
-  let me, list;
-  try {
-    me = await wsApi(slug, '/api/v1/me');
-    list = (await wsApi(slug, '/api/v1/participants')).participants || [];
-  } catch (e) { showErr('ws-members-error', 'Cannot load the members: ' + e.message); return; }
   const ul = $('ws-member-list');
-  const isOwner = (p) => !!p.user_id && p.user_id === getRoom().created_by_user_id;
-  const row = (p) => {
+  let me;
+  try { me = await wsApi(slug, '/api/v1/me'); } catch (e) { showErr('ws-members-error', 'Cannot load the members: ' + e.message); return; }
+  const isCreator = (p) => !!p.user_id && p.user_id === getRoom().created_by_user_id;
+  const presence = (p) => p.online ? 'online' : 'seen ' + timeAgo(p.last_seen_at);
+  const open = new Set(); // human ids whose agent list is unfolded, kept across re-renders
+  const remove = async (p, btn, ask) => {
+    hideErr('ws-members-error');
+    if (!confirm(ask)) return;
+    btn.disabled = true;
+    try {
+      await wsApi(slug, '/api/v1/participants/' + encodeURIComponent(p.id), { method: 'DELETE' });
+      await render();
+    } catch (e) {
+      showErr('ws-members-error', e.message);
+      btn.disabled = false;
+    }
+  };
+  const agentRow = (a, humans) => {
     const li = document.createElement('li');
+    li.className = 'member-agent';
+    li.dataset.id = a.id;
+    const who = document.createElement('div');
+    who.className = 'member-who';
+    const name = document.createElement('span');
+    name.className = 'member-name';
+    name.textContent = a.name;
+    const sub = document.createElement('span');
+    sub.className = 'member-sub';
+    sub.textContent = 'agent · ' + presence(a);
+    who.append(name, sub);
+    const sel = document.createElement('select');
+    sel.className = 'member-owner';
+    sel.title = 'Owner';
+    const none = document.createElement('option');
+    none.value = '';
+    none.textContent = a.owner_id ? '(unknown owner)' : 'no owner';
+    none.disabled = true;
+    sel.appendChild(none);
+    for (const h of humans) {
+      const o = document.createElement('option');
+      o.value = h.id;
+      o.textContent = h.name;
+      sel.appendChild(o);
+    }
+    sel.value = humans.some((h) => h.id === a.owner_id) ? a.owner_id : '';
+    sel.onchange = async () => {
+      hideErr('ws-members-error');
+      sel.disabled = true;
+      try {
+        await wsApi(slug, '/api/v1/participants/' + encodeURIComponent(a.id) + '/owner', { method: 'PATCH', body: { owner_id: sel.value } });
+        await render();
+      } catch (e) {
+        showErr('ws-members-error', e.message);
+        sel.disabled = false;
+      }
+    };
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'secondary member-remove';
+    btn.textContent = 'Remove';
+    btn.onclick = () => remove(a, btn, 'Remove ' + a.name + ' (agent, its token stops working) from "' + getRoom().name + '"?');
+    li.append(who, sel, btn);
+    return li;
+  };
+  const humanRow = (p, agents, humans) => {
+    const li = document.createElement('li');
+    li.className = 'member-human';
     li.dataset.id = p.id;
+    const head = document.createElement('div');
+    head.className = 'member-head';
     const who = document.createElement('div');
     who.className = 'member-who';
     const name = document.createElement('span');
@@ -469,34 +532,78 @@ const membersSection = async (slug, getRoom) => {
     name.textContent = p.name;
     const sub = document.createElement('span');
     sub.className = 'member-sub';
-    sub.textContent = (p.is_human ? (p.username ? '@' + p.username : 'human') : 'agent') + ' · ' + (p.online ? 'online' : 'seen ' + timeAgo(p.last_seen_at));
+    sub.textContent = (p.username ? '@' + p.username : 'human') + ' · ' + presence(p);
     who.append(name, sub);
     const role = document.createElement('span');
     role.className = 'member-role';
-    role.textContent = isOwner(p) ? 'owner' : p.role;
-    li.append(who, role);
-    if (isOwner(p) || p.id === me.id) return li;
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'secondary member-remove';
-    btn.textContent = 'Remove';
-    btn.onclick = async () => {
-      hideErr('ws-members-error');
-      const what = p.is_human ? p.name : p.name + ' (agent, its token stops working)';
-      if (!confirm('Remove ' + what + ' from "' + getRoom().name + '"?')) return;
-      btn.disabled = true;
-      try {
-        await wsApi(slug, '/api/v1/participants/' + encodeURIComponent(p.id), { method: 'DELETE' });
-        li.remove();
-      } catch (e) {
-        showErr('ws-members-error', e.message);
-        btn.disabled = false;
-      }
+    role.textContent = isCreator(p) ? 'creator' : p.role;
+    head.append(who, role);
+    const fold = document.createElement('button');
+    fold.type = 'button';
+    fold.className = 'secondary member-fold';
+    const paint = () => { fold.textContent = (open.has(p.id) ? '▾ ' : '▸ ') + agents.length + (agents.length === 1 ? ' agent' : ' agents'); };
+    paint();
+    fold.disabled = agents.length === 0;
+    head.appendChild(fold);
+    if (!isCreator(p) && p.id !== me.id) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'secondary member-remove';
+      btn.textContent = 'Remove';
+      const tail = agents.length ? ' and ' + agents.length + (agents.length === 1 ? ' agent (' : ' agents (') + agents.map((a) => a.name).join(', ') + ')' : '';
+      btn.onclick = () => remove(p, btn, 'Remove ' + p.name + tail + ' from "' + getRoom().name + '"? The agents\' tokens stop working.');
+      head.appendChild(btn);
+    }
+    li.appendChild(head);
+    const sub2 = document.createElement('ul');
+    sub2.className = 'member-agents';
+    sub2.classList.toggle('hidden', !open.has(p.id));
+    sub2.replaceChildren(...agents.map((a) => agentRow(a, humans)));
+    fold.onclick = () => {
+      if (open.has(p.id)) open.delete(p.id); else open.add(p.id);
+      sub2.classList.toggle('hidden', !open.has(p.id));
+      paint();
     };
-    li.appendChild(btn);
+    li.appendChild(sub2);
     return li;
   };
-  ul.replaceChildren(...list.map(row));
+  const render = async () => {
+    let list;
+    try { list = (await wsApi(slug, '/api/v1/participants')).participants || []; } catch (e) { showErr('ws-members-error', 'Cannot load the members: ' + e.message); return; }
+    const humans = list.filter((p) => p.is_human);
+    const owners = humans.filter((h) => !!h.user_id); // only a human with an account can own agents
+    const agents = list.filter((p) => !p.is_human);
+    const byOwner = new Map(humans.map((h) => [h.id, []]));
+    const unowned = [];
+    for (const a of agents) {
+      if (a.owner_id && byOwner.has(a.owner_id)) byOwner.get(a.owner_id).push(a); else unowned.push(a);
+    }
+    const rows = humans.map((h) => humanRow(h, byOwner.get(h.id), owners));
+    if (unowned.length) {
+      const li = document.createElement('li');
+      li.className = 'member-human member-unowned';
+      const head = document.createElement('div');
+      head.className = 'member-head';
+      const who = document.createElement('div');
+      who.className = 'member-who';
+      const name = document.createElement('span');
+      name.className = 'member-name';
+      name.textContent = 'Unowned agents';
+      const sub = document.createElement('span');
+      sub.className = 'member-sub';
+      sub.textContent = 'joined before owners existed; pick an owner for each';
+      who.append(name, sub);
+      head.appendChild(who);
+      li.appendChild(head);
+      const sub2 = document.createElement('ul');
+      sub2.className = 'member-agents';
+      sub2.replaceChildren(...unowned.map((a) => agentRow(a, owners)));
+      li.appendChild(sub2);
+      rows.push(li);
+    }
+    ul.replaceChildren(...rows);
+  };
+  await render();
 };
 
 // Danger zone: only the owner sees it; the typed name arms the button, a

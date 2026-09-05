@@ -183,13 +183,15 @@ func (s *Server) handleRevokeParticipant(w http.ResponseWriter, r *http.Request,
 		writeStoreErr(w, err)
 		return
 	}
-	// the owner is the one row nobody removes: not an admin, not the owner themself
+	// the creator is the one row nobody removes: not an admin, not the creator
+	// themself. Their agents would go with them (task 19), so this is 409 with
+	// a reason, never a silent no-op
 	if owner {
 		if target.ID == p.ID {
-			writeErrCode(w, http.StatusBadRequest, "owner_cannot_leave", "the workspace owner cannot leave it; delete the workspace instead")
+			writeErrCode(w, http.StatusConflict, "owner_cannot_leave", "the workspace creator cannot leave it; delete the workspace instead")
 			return
 		}
-		writeErrCode(w, http.StatusForbidden, "owner_protected", "the workspace owner cannot be removed")
+		writeErrCode(w, http.StatusConflict, "owner_protected", "the workspace creator cannot be removed; their agents would go with them")
 		return
 	}
 	if err := s.store.Revoke(r.Context(), p.RoomID, target.ID, p.ID); err != nil {
@@ -227,4 +229,43 @@ func (s *Server) handleRemoveRoomAvatar(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 	writeJSON(w, http.StatusOK, room)
+}
+
+type setOwnerReq struct {
+	OwnerID string `json:"owner_id"`
+}
+
+// handleSetOwner rebinds an agent to another human member (admins only):
+// a wrong owner from the migration is one request, not a migration.
+func (s *Server) handleSetOwner(w http.ResponseWriter, r *http.Request, p models.Participant) {
+	if !requireAdmin(w, p) {
+		return
+	}
+	target, err := s.resolveParticipant(r, p, r.PathValue("id"))
+	if err != nil {
+		writeStoreErr(w, err)
+		return
+	}
+	if target.IsHuman {
+		writeErr(w, http.StatusBadRequest, "only an agent has an owner")
+		return
+	}
+	var req setOwnerReq
+	if !readJSON(w, r, &req) {
+		return
+	}
+	if !isUUID(req.OwnerID) {
+		writeErr(w, http.StatusBadRequest, "owner_id must be a participant id")
+		return
+	}
+	if err := s.store.SetOwner(r.Context(), p.RoomID, target.ID, req.OwnerID); err != nil {
+		writeStoreErr(w, err)
+		return
+	}
+	fresh, err := s.store.ParticipantByID(r.Context(), p.RoomID, target.ID)
+	if err != nil {
+		writeStoreErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"participant": fresh})
 }

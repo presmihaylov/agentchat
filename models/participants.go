@@ -40,7 +40,11 @@ func (s *Store) CreateParticipant(ctx context.Context, roomID, name, avatar, des
 	if err != nil {
 		return p, err
 	}
-	return p, tx.Commit(ctx)
+	if err := tx.Commit(ctx); err != nil {
+		return p, err
+	}
+	// the joined row with its owner and account names resolved
+	return s.ParticipantByID(ctx, roomID, p.ID)
 }
 
 // createParticipantTx is the one insert path for joins, /enter and CreateRoomAs.
@@ -93,7 +97,8 @@ func createParticipantTx(ctx context.Context, tx pgx.Tx, roomID, name, avatar, d
 // working. Only an offline identity can be re-claimed. Revoked identities stay
 // locked out.
 // ownerID rebinds ownership to the principal of the code actually used, so a
-// rejoin with an owner-scoped code finally stamps the badge (nil = room code).
+// rejoin with an owner-scoped code finally stamps the badge; nil (a plain
+// link) keeps the owner the agent already has.
 func (s *Store) ReclaimParticipant(ctx context.Context, roomID, name string, tokenHash []byte, ownerID *string) (Participant, error) {
 	var p Participant
 	tx, err := s.pool.Begin(ctx)
@@ -132,7 +137,7 @@ func (s *Store) ReclaimParticipant(ctx context.Context, roomID, name string, tok
 	// room code) drops to member, so an offline admin can't be impersonated into
 	// admin. An existing admin must re-grant the role explicitly.
 	if _, err := tx.Exec(ctx,
-		`UPDATE participants SET token_hash = $2, last_seen_at = now(), presence_online = TRUE, owner_id = $3, role = 'member' WHERE id = $1`,
+		`UPDATE participants SET token_hash = $2, last_seen_at = now(), presence_online = TRUE, owner_id = COALESCE($3, owner_id), role = 'member' WHERE id = $1`,
 		id, tokenHash, ownerID); err != nil {
 		return p, err
 	}
@@ -147,18 +152,22 @@ func (s *Store) ReclaimParticipant(ctx context.Context, roomID, name string, tok
 	return s.ParticipantByID(ctx, roomID, id)
 }
 
-// ParticipantByTokenHash authenticates a request; revoked participants fail auth.
+// ParticipantByTokenHash authenticates a request; revoked participants fail
+// auth, and so does an agent whose owner's row is revoked (task 19: an agent
+// lives and dies with its human's membership).
 func (s *Store) ParticipantByTokenHash(ctx context.Context, hash []byte) (Participant, error) {
 	var p Participant
 	err := s.pool.QueryRow(ctx,
 		`SELECT p.id, p.room_id, p.name, p.avatar, p.avatar_attachment_id, p.description, p.is_human, p.role,
-		        p.owner_id, o.name, p.user_id, u.username, p.last_seen_at, p.created_at,
+		        p.owner_id, o.name, o.user_id, ou.username, p.user_id, u.username, p.last_seen_at, p.created_at,
 		        p.last_seen_at > now() - $2::interval AS online
 		 FROM participants p LEFT JOIN participants o ON o.id = p.owner_id
+		 LEFT JOIN users ou ON ou.id = o.user_id
 		 LEFT JOIN users u ON u.id = p.user_id
-		 WHERE p.token_hash = $1 AND NOT p.revoked`,
+		 WHERE p.token_hash = $1 AND NOT p.revoked
+		   AND (p.owner_id IS NULL OR NOT o.revoked)`,
 		hash, OnlineWindow.String(),
-	).Scan(&p.ID, &p.RoomID, &p.Name, &p.Avatar, &p.AvatarAttachmentID, &p.Description, &p.IsHuman, &p.Role, &p.OwnerID, &p.OwnerName, &p.UserID, &p.Username, &p.LastSeenAt, &p.CreatedAt, &p.Online)
+	).Scan(&p.ID, &p.RoomID, &p.Name, &p.Avatar, &p.AvatarAttachmentID, &p.Description, &p.IsHuman, &p.Role, &p.OwnerID, &p.OwnerName, &p.OwnerUserID, &p.OwnerUsername, &p.UserID, &p.Username, &p.LastSeenAt, &p.CreatedAt, &p.Online)
 	return p, mapRowErr(err)
 }
 
@@ -200,7 +209,7 @@ func (s *Store) listParticipants(ctx context.Context, roomID string, id, name, c
 	roster := id == nil && name == nil
 	rows, err := s.pool.Query(ctx,
 		`SELECT p.id, p.room_id, p.name, p.avatar, p.avatar_attachment_id, p.description, p.is_human, p.role,
-		        p.owner_id, o.name AS owner_name, p.user_id, u.username,
+		        p.owner_id, o.name AS owner_name, o.user_id, ou.username, p.user_id, u.username,
 		        p.last_seen_at, p.created_at,
 		        p.last_seen_at > now() - $2::interval AS online,
 		        COALESCE(
@@ -211,6 +220,7 @@ func (s *Store) listParticipants(ctx context.Context, roomID string, id, name, c
 		            '[]'::json) AS tags
 		 FROM participants p
 		 LEFT JOIN participants o ON o.id = p.owner_id
+		 LEFT JOIN users ou ON ou.id = o.user_id
 		 LEFT JOIN users u ON u.id = p.user_id
 		 WHERE p.room_id = $1 AND NOT p.revoked
 		   AND ($3::uuid IS NULL OR p.id = $3)
@@ -230,7 +240,7 @@ func (s *Store) listParticipants(ctx context.Context, roomID string, id, name, c
 		var p Participant
 		var tagsJSON []byte
 		if err := rows.Scan(&p.ID, &p.RoomID, &p.Name, &p.Avatar, &p.AvatarAttachmentID, &p.Description, &p.IsHuman, &p.Role,
-			&p.OwnerID, &p.OwnerName, &p.UserID, &p.Username,
+			&p.OwnerID, &p.OwnerName, &p.OwnerUserID, &p.OwnerUsername, &p.UserID, &p.Username,
 			&p.LastSeenAt, &p.CreatedAt, &p.Online, &tagsJSON); err != nil {
 			return nil, err
 		}
@@ -407,19 +417,137 @@ func (s *Store) Revoke(ctx context.Context, roomID, id, actorID string) error {
 	if err := revokeInvitesOfTx(ctx, tx, roomID, id); err != nil {
 		return err
 	}
-
 	payload, _ := json.Marshal(map[string]string{"participant_id": id})
 	if err := appendEventTx(ctx, tx, roomID, "participant.revoked", payload); err != nil {
 		return err
 	}
-	author, body := id, "left the workspace"
+	// a human's agents go with them (task 19): same transaction, own events,
+	// so their tokens die the instant the human's does
+	agents, err := revokeOwnedAgentsTx(ctx, tx, roomID, id)
+	if err != nil {
+		return err
+	}
+	tail := ""
+	if n := len(agents); n == 1 {
+		tail = " and 1 agent"
+	} else if n > 1 {
+		tail = fmt.Sprintf(" and %d agents", n)
+	}
+	author, body := id, "left the workspace"+tail
 	if actorID != "" && actorID != id {
-		author, body = actorID, "removed "+targetName+" from the workspace"
+		author, body = actorID, "removed "+targetName+tail+" from the workspace"
 	}
 	if err := generalEntryTx(ctx, tx, roomID, author, body); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)
+}
+
+// revokeOwnedAgentsTx revokes every live agent owned by the participant and
+// returns their names.
+func revokeOwnedAgentsTx(ctx context.Context, tx pgx.Tx, roomID, ownerID string) ([]string, error) {
+	rows, err := tx.Query(ctx,
+		`UPDATE participants SET revoked = true
+		 WHERE room_id = $1 AND owner_id = $2 AND NOT is_human AND NOT revoked
+		 RETURNING id, name`, roomID, ownerID)
+	if err != nil {
+		return nil, err
+	}
+	type rev struct{ id, name string }
+	var revs []rev
+	for rows.Next() {
+		var r rev
+		if err := rows.Scan(&r.id, &r.name); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		revs = append(revs, r)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	names := make([]string, 0, len(revs))
+	for _, r := range revs {
+		if err := revokeInvitesOfTx(ctx, tx, roomID, r.id); err != nil {
+			return nil, err
+		}
+		payload, _ := json.Marshal(map[string]string{"participant_id": r.id, "owner_id": ownerID})
+		if err := appendEventTx(ctx, tx, roomID, "participant.revoked", payload); err != nil {
+			return nil, err
+		}
+		names = append(names, r.name)
+	}
+	return names, nil
+}
+
+// OwnedAgents lists the live agents a participant owns, oldest first.
+func (s *Store) OwnedAgents(ctx context.Context, roomID, ownerID string) ([]Participant, error) {
+	all, err := s.listParticipants(ctx, roomID, nil, nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	out := []Participant{}
+	for _, p := range all {
+		if !p.IsHuman && p.OwnerID != nil && *p.OwnerID == ownerID {
+			out = append(out, p)
+		}
+	}
+	return out, nil
+}
+
+// ErrBadOwner is an owner that is not a live human member with an account.
+var ErrBadOwner = errors.New("the owner must be a human member of this workspace with an account")
+
+// SetOwner rebinds an agent to another human member (admins fix a wrong
+// migration guess with it). The target must be a live agent of the room.
+func (s *Store) SetOwner(ctx context.Context, roomID, agentID, ownerID string) error {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext($1))`, roomID); err != nil {
+		return err
+	}
+	var ok bool
+	if err := tx.QueryRow(ctx,
+		`SELECT EXISTS (SELECT 1 FROM participants
+		   WHERE room_id = $1 AND id = $2 AND is_human AND NOT revoked AND user_id IS NOT NULL)`,
+		roomID, ownerID).Scan(&ok); err != nil {
+		return err
+	}
+	if !ok {
+		return ErrBadOwner
+	}
+	tag, err := tx.Exec(ctx,
+		`UPDATE participants SET owner_id = $3 WHERE room_id = $1 AND id = $2 AND NOT is_human AND NOT revoked`,
+		roomID, agentID, ownerID)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	payload, _ := json.Marshal(map[string]string{"participant_id": agentID, "owner_id": ownerID})
+	if err := appendEventTx(ctx, tx, roomID, "participant.owner_changed", payload); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+// CreatorRow is the workspace creator's live member row, the default owner
+// of an agent that joins on a plain link; nil when the creator has no row.
+func (s *Store) CreatorRow(ctx context.Context, roomID string) (*string, error) {
+	var id *string
+	err := s.pool.QueryRow(ctx,
+		`SELECT p.id FROM rooms r JOIN participants p
+		   ON p.room_id = r.id AND p.user_id = r.created_by_user_id AND p.is_human AND NOT p.revoked
+		 WHERE r.id = $1`, roomID).Scan(&id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	return id, err
 }
 
 // TouchPresence marks the participant as recently seen. Crossing from an

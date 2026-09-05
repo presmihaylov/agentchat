@@ -1,7 +1,9 @@
 // E2E for kick members (task 15). An admin opens the Members section of
 // workspace settings, removes an agent and a human, both rows go, the human's
 // next load of the room shows the removed notice, and the owner row (and the
-// admin's own row) carry no Remove button.
+// admin's own row) carry no Remove button. Since task 19 the list is a tree:
+// humans on top, each one's agents folded under it (the plain-code agent
+// belongs to the creator).
 // Run: NODE_PATH=<dir with puppeteer-core> SERVER=http://localhost:8095 OUT=<dir> node scripts/kick-check.js
 const fs = require('fs');
 const path = require('path');
@@ -14,9 +16,11 @@ const assert = (cond, msg) => { if (!cond) throw new Error(msg); };
 let step = 'setup';
 let failPage = null;
 const shot = (page, name) => page.screenshot({ path: path.join(OUT, 'kick-' + name) });
-const rows = (page) => page.$$eval('#ws-member-list li', (els) => els.map((li) => ({
-  id: li.dataset.id, name: li.querySelector('.member-name').textContent, role: li.querySelector('.member-role').textContent,
-  sub: li.querySelector('.member-sub').textContent, remove: !!li.querySelector('.member-remove'),
+const rows = (page) => page.$$eval('#ws-member-list > li', (els) => els.map((li) => ({
+  id: li.dataset.id, name: li.querySelector('.member-head .member-name').textContent, role: (li.querySelector('.member-role') || {}).textContent,
+  sub: li.querySelector('.member-head .member-sub').textContent, remove: !!li.querySelector('.member-head > .member-remove'),
+  fold: li.querySelector('.member-fold').textContent,
+  agents: [...li.querySelectorAll('.member-agent')].map((a) => ({ id: a.dataset.id, name: a.querySelector('.member-name').textContent, sub: a.querySelector('.member-sub').textContent, remove: !!a.querySelector('.member-remove') })),
 })));
 
 (async () => {
@@ -59,13 +63,17 @@ const rows = (page) => page.$$eval('#ws-member-list li', (els) => els.map((li) =
   await openWorkspace(page, SERVER, adminSession, slug);
   await openSettings(page, SERVER, 'workspace');
   await page.waitForSelector('#ws-members:not(.hidden)', { timeout: 8000 });
-  await page.waitForFunction(() => document.querySelectorAll('#ws-member-list li').length === 4, { timeout: 8000 });
+  await page.waitForFunction(() => document.querySelectorAll('#ws-member-list > li').length === 3, { timeout: 8000 });
   let list = await rows(page);
   const byName = (n) => list.find((r) => r.name === n);
-  assert(byName('Ona Owner') && byName('Ona Owner').role === 'owner' && !byName('Ona Owner').remove, 'owner row: ' + JSON.stringify(byName('Ona Owner')));
+  assert(byName('Ona Owner') && byName('Ona Owner').role === 'creator' && !byName('Ona Owner').remove && byName('Ona Owner').fold.endsWith('1 agent'), 'owner row: ' + JSON.stringify(byName('Ona Owner')));
   assert(byName('Ada Admin') && byName('Ada Admin').role === 'admin' && !byName('Ada Admin').remove, 'own row: ' + JSON.stringify(byName('Ada Admin')));
   assert(byName('Hal Human') && byName('Hal Human').remove && byName('Hal Human').sub.startsWith('@'), 'human row: ' + JSON.stringify(byName('Hal Human')));
-  assert(byName('crewbot') && byName('crewbot').remove && byName('crewbot').sub.startsWith('agent'), 'agent row: ' + JSON.stringify(byName('crewbot')));
+  // the plain-code agent sits under the creator, folded until asked
+  await page.click('#ws-member-list > li[data-id="' + byName('Ona Owner').id + '"] .member-fold');
+  list = await rows(page);
+  const bot = byName('Ona Owner').agents.find((a) => a.name === 'crewbot');
+  assert(bot && bot.remove && bot.sub.startsWith('agent'), 'agent row: ' + JSON.stringify(byName('Ona Owner')));
   await shot(page, 'members.png');
 
   step = '2';

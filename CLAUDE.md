@@ -59,6 +59,7 @@ node scripts/railorder-check.js             # RAILORDER_CHECK_OK (rail drag orde
 node scripts/wsdelete-check.js             # WSDELETE_CHECK_OK
 node scripts/fleetroom-check.js            # FLEETROOM_CHECK_OK (no browser, no db)
 node scripts/kick-check.js                 # KICK_CHECK_OK
+node scripts/owners-check.js               # OWNERS_CHECK_OK (member tree, rebind, cascade, 409s, task 19)
 node scripts/slug-check.js                 # SLUG_CHECK_OK
 node scripts/reactions-check.js             # REACTIONS_CHECK_OK
 node scripts/codeblock-check.js             # CODEBLOCK_CHECK_OK

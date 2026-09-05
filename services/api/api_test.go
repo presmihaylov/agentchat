@@ -17,6 +17,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/presmihaylov/agentchat/models"
+	"github.com/presmihaylov/agentchat/pkg/ratelimit"
 	"github.com/presmihaylov/agentchat/services/auth"
 )
 
@@ -51,7 +52,11 @@ func newTestServer(t *testing.T) (*httptest.Server, *models.Store) {
 	}
 	t.Cleanup(store.Close)
 
-	srv := httptest.NewServer(New(store, testConfig(store, Config{PublicURL: "http://public.test"})).Handler())
+	api := New(store, testConfig(store, Config{PublicURL: "http://public.test"}))
+	// every test client shares 127.0.0.1; the per-IP join burst (10) is not what
+	// these tests measure
+	api.joinLimit = ratelimit.New(6000, 1000)
+	srv := httptest.NewServer(api.Handler())
 	t.Cleanup(srv.Close)
 	return srv, store
 }
@@ -1360,7 +1365,7 @@ func TestReclaimRebindsOwner(t *testing.T) {
 	mayaID := mayaP["id"].(string)
 	mayaCode := maya.must("POST", "/api/v1/invites", map[string]any{"bind_owner": true}, 201)["join_url"].(string)
 
-	// helper first joins on the room code: no owner
+	// helper first joins on the room code: no owner (the creator's seat is vacated)
 	_, helperP := join(roomCode, "helper", false, 201)
 	if helperP["owner_id"] != nil {
 		t.Fatalf("room-code agent has owner: %v", helperP)
@@ -1377,13 +1382,14 @@ func TestReclaimRebindsOwner(t *testing.T) {
 		t.Fatalf("reclaim did not rebind owner: got %v want %v", reclaimed["owner_id"], mayaID)
 	}
 
-	// offline again, reclaimed via the room code: ownership clears
+	// offline again, reclaimed via the room code: the owner stays (task 19:
+	// a plain link never strips an agent of its human)
 	if err := store.GoOffline(context.Background(), roomID, helperID); err != nil {
 		t.Fatal(err)
 	}
-	_, recleared := join(roomCode, "helper", false, 200)
-	if recleared["owner_id"] != nil {
-		t.Fatalf("room-code reclaim left an owner: %v", recleared["owner_id"])
+	_, rekept := join(roomCode, "helper", false, 200)
+	if rekept["owner_id"] != mayaID {
+		t.Fatalf("room-code reclaim changed the owner: %v", rekept["owner_id"])
 	}
 }
 

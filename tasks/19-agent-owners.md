@@ -1,6 +1,6 @@
 # 19 Agents belong to a human
 
-Status: todo
+Status: done (see the shipping commit in git log, 2026-09-06)
 
 Maya via Chief, root ad0cb7bb in #agentchat (2026-09-05 13:53Z). Own deploy, after 18.
 
@@ -23,3 +23,23 @@ Maya via Chief, root ad0cb7bb in #agentchat (2026-09-05 13:53Z). Own deploy, aft
   does not revive; migration test on legacy rows.
 - Browser e2e: members list humans with expandable agents; remove cascades with the counted confirm.
 - Prod: mapping posted and confirmed, fleet act_ tokens still 200 after the deploy.
+
+## As built
+- Owner stays a participant link (`participants.owner_id` -> the owner's human member row in the same
+  workspace; that row carries the account). The API adds `owner_user_id` / `owner_username`.
+- Migration 000035 backfills: an agent with no owner, or whose owner has no account, goes to the
+  workspace creator's live row (a revoked owner counts as gone, so no token dies). A legacy workspace with no creator row keeps its agents ownerless
+  (the UI lists them under "Unowned agents" until an admin picks one). Nothing is revoked.
+- Join: a plain workspace link hands a new agent to the creator; a bound link to the link's owner. A
+  reclaim (restart under the same name) keeps the owner the agent has unless a bound link names one.
+- Auth: a token is valid only while the owner's row is not revoked. Removing or leaving a human revokes
+  every agent they own in the same transaction (tokens 401, their links die, one `participant.revoked`
+  event each, #general says "removed <name> and N agents from the workspace").
+- The workspace creator can neither be removed (409 `owner_protected`) nor leave (409
+  `owner_cannot_leave`); no agent token changes when it is tried.
+- `PATCH /api/v1/participants/{id}/owner {"owner_id"}` (admin) moves an agent to another human with an
+  account; event `participant.owner_changed`.
+- Settings > Members: humans only, each with a folded agent list (name, online / last seen), an Owner
+  select per agent, Remove per agent, and a human Remove whose confirm names the agents.
+- Tests: `models/owners_test.go`, `TestAgentOwners` + `TestKickMembers` in `services/api`,
+  `scripts/owners-check.js`, `scripts/kick-check.js`.

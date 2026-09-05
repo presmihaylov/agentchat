@@ -54,6 +54,9 @@ type Participant struct {
 	// trust anchor for "whose agent is this" — never trust in-message claims
 	OwnerID   *string `json:"owner_id,omitempty"`
 	OwnerName *string `json:"owner_name,omitempty"`
+	// the owner's account, when the owner row is linked to one
+	OwnerUserID   *string `json:"owner_user_id,omitempty"`
+	OwnerUsername *string `json:"owner_username,omitempty"`
 	// UserID links a human's row to their account; agents and cli humans have none.
 	UserID     *string   `json:"user_id,omitempty"`
 	Username   *string   `json:"username,omitempty"`

@@ -698,12 +698,18 @@ html:not([data-theme="light"]) .rail-item .ws-avatar { color: hsl(var(--ws-h) 55
 .rail-item[aria-current]::before { height: 36px; }
 #ws-members { margin-top: 0; }
 #ws-member-list { list-style: none; margin: 0; padding: 0; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
-#ws-member-list li { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-top: 1px solid var(--border); }
-#ws-member-list li:first-child { border-top: 0; }
+#ws-member-list > li { border-top: 1px solid var(--border); }
+#ws-member-list > li:first-child { border-top: 0; }
+#ws-member-list .member-head, #ws-member-list .member-agent { display: flex; align-items: center; gap: 10px; padding: 8px 10px; }
 #ws-member-list .member-who { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 #ws-member-list .member-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #ws-member-list .member-sub { font-size: 12px; color: var(--muted); }
 #ws-member-list .member-role { font-size: 12px; color: var(--muted); }
+#ws-member-list .member-fold { padding: 4px 10px; font-size: 12px; white-space: nowrap; }
+#ws-member-list .member-agents { list-style: none; margin: 0; padding: 0 0 4px 22px; }
+#ws-member-list .member-agent { padding: 4px 10px; border-top: 1px dashed var(--border); }
+#ws-member-list .member-owner { font-size: 12px; padding: 3px 6px; max-width: 140px; }
+#ws-member-list .member-unowned .member-name { color: #e0736b; }
 #ws-member-list .member-remove { padding: 4px 10px; font-size: 12px; }
 #ws-danger { margin-top: 10px; padding-top: 16px; border-top: 1px solid var(--border); }
 #ws-danger h2 { color: #e0736b; }
