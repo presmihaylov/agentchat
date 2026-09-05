@@ -195,15 +195,15 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   assert((await href(page, '#settings-back')).startsWith(SERVER + roomPath), 'back from the banner: ' + await href(page, '#settings-back'));
   // the banner on an account page keeps the same way back
   assert(await page.$eval('#pw-banner a', (el) => el.getAttribute('href')) === bannerHref, 'pw-banner link on settings');
-  // the sign-in banner on the room page (no session) also carries the room
-  // a legacy act_ human, seeded only now: a session boot deletes the per-slug key
+  // a legacy act_ token with no session is dead since 000027: the room page
+  // goes to sign in with the room as next, and the per-slug key is scrubbed
   const legacy = await api('/api/v1/rooms/join', { method: 'POST', body: { invite_code: created.invite_code, name: 'Legacy Nav', is_human: true } });
   await page.evaluate(() => localStorage.removeItem('agentchat:session'));
   await page.evaluate((k, t) => localStorage.setItem(k, JSON.stringify({ token: t })), 'agentchat:' + slug, legacy.token);
   await page.goto(SERVER + roomPath, { waitUntil: 'networkidle2' });
-  await visible(page, '#signin-banner');
-  const signinHref = await page.$eval('#signin-banner a', (el) => el.getAttribute('href'));
-  assert(signinHref.startsWith('/login' + roomNext), 'signin-banner link: ' + signinHref);
+  await page.waitForFunction(() => location.pathname === '/login', { timeout: 8000 });
+  assert(new URL(page.url()).search.startsWith(roomNext), 'legacy token landed on ' + page.url());
+  assert(await page.evaluate((k) => localStorage.getItem(k), 'agentchat:' + slug) === null, 'legacy per-slug key kept');
   await setSession(page, relogin.token);
 
   // sign out from the header: lands on /login, the session key is gone

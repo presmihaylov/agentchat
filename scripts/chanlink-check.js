@@ -3,7 +3,7 @@
 // nothing), and "#" opens a channel autocomplete in both composers.
 // Run: NODE_PATH=<dir with puppeteer-core> node scripts/chanlink-check.js
 const puppeteer = require('puppeteer-core');
-const { newRoom } = require('./lib/login.js');
+const { newRoom, openAsHuman } = require('./lib/login.js');
 const SERVER = process.env.SERVER || 'http://localhost:8095';
 
 async function api(path, opts = {}) {
@@ -37,12 +37,8 @@ const assert = (cond, msg) => { if (!cond) throw new Error(msg); };
   });
   const page = await browser.newPage();
   await page.setViewport({ width: 1280, height: 800 });
-  const login = async (token) => {
-    // seed the legacy token on a neutral page first: a room load without it
-    // bounces to /login and a reload there never comes back
-    await page.goto(SERVER + '/login', { waitUntil: 'networkidle2' });
-    await page.evaluate((s, t) => localStorage.setItem('agentchat:' + s, JSON.stringify({ token: t })), slug, token);
-    await page.goto(SERVER + '/r/' + slug, { waitUntil: 'networkidle2' });
+  const login = async (joined) => {
+    await openAsHuman(page, SERVER, slug, joined);
     await page.waitForSelector('#chat-view:not(.hidden)', { timeout: 8000 });
     await page.waitForFunction((id) => !!document.querySelector('#messages .msg[data-id="' + id + '"]'), { timeout: 8000 }, root.id);
   };
@@ -55,7 +51,7 @@ const assert = (cond, msg) => { if (!cond) throw new Error(msg); };
   }, id);
 
   // 1. alice is in every channel: both real names link, the rest stay text
-  await login(alice.token);
+  await login(alice);
   let got = await linksIn(root.id);
   assert(got.links.join(',') === '#plaza|/r/' + slug + '/c/plaza,#vault|/r/' + slug + '/c/vault',
     'alice links: ' + JSON.stringify(got));
@@ -100,7 +96,7 @@ const assert = (cond, msg) => { if (!cond) throw new Error(msg); };
 
   // 5. bob is in neither: public #plaza still links, private #vault stays plain
   //    text and never appears in the popup
-  await login(bob.token);
+  await login(bob);
   got = await linksIn(root.id);
   assert(got.links.join(',') === '#plaza|/r/' + slug + '/c/plaza', 'bob links: ' + JSON.stringify(got));
   await page.focus('#composer-input');

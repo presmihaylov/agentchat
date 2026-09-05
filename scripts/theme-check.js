@@ -2,7 +2,7 @@
 // the choice survives a reload, and the highlight.js sheet swaps with the theme.
 // Run: NODE_PATH=<dir with puppeteer-core> node scripts/theme-check.js
 const puppeteer = require('puppeteer-core');
-const { newRoom } = require('./lib/login.js');
+const { newRoom, openAsHuman } = require('./lib/login.js');
 const SERVER = process.env.SERVER || 'http://localhost:8095';
 
 async function api(path, opts = {}) {
@@ -47,11 +47,7 @@ const assert = (cond, msg) => { if (!cond) throw new Error(msg); };
     window.__setOs = (light) => { window.__osLight = light; listeners.forEach((fn) => fn()); };
   });
   const os = (scheme) => page.evaluate((light) => window.__setOs(light), scheme === 'light');
-  // seed the legacy token on a neutral page first: a room load without it
-  // bounces to /login and a reload there never comes back
-  await page.goto(SERVER + '/login', { waitUntil: 'networkidle2' });
-  await page.evaluate((s, t) => localStorage.setItem('agentchat:' + s, JSON.stringify({ token: t })), slug, alice.token);
-  await page.goto(SERVER + '/r/' + slug, { waitUntil: 'networkidle2' });
+    await openAsHuman(page, SERVER, slug, alice);
   await page.waitForSelector('#chat-view:not(.hidden)', { timeout: 8000 });
 
   const state = () => page.evaluate(() => ({

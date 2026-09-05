@@ -4,7 +4,7 @@
 // Run: NODE_PATH=<dir with puppeteer-core> node scripts/mentionbadge-check.js
 // Needs a server on $SERVER (default :8095) backed by a live Postgres.
 const puppeteer = require('puppeteer-core');
-const { newRoom } = require('./lib/login.js');
+const { newRoom, openAsHuman } = require('./lib/login.js');
 const SERVER = process.env.SERVER || 'http://localhost:8095';
 
 async function api(path, opts = {}) {
@@ -55,10 +55,7 @@ async function api(path, opts = {}) {
   page.on('pageerror', (e) => fail('pageerror ' + e.message));
 
   // log in as the pre-created viewer by seeding its token, bypassing the join form
-  // seed on a neutral page: a room load without the token bounces to /login
-  await page.goto(SERVER + '/login', { waitUntil: 'networkidle2' });
-  await page.evaluate((s, tok) => localStorage.setItem('agentchat:' + s, JSON.stringify({ token: tok })), slug, viewer.token);
-  await page.goto(SERVER + '/r/' + slug, { waitUntil: 'networkidle2' });
+    await openAsHuman(page, SERVER, slug, viewer);
   await page.waitForSelector('#chat-view:not(.hidden)', { timeout: 5000 });
   await page.waitForSelector('#channel-list li', { timeout: 8000 });
 

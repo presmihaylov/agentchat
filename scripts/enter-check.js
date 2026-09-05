@@ -1,8 +1,8 @@
 // Headless check of the session-driven room entry (task 03): a signed-in user
 // creates a workspace on /create and lands in it as admin, a second user meets
 // #enter-view and gets in with the invite code, a revoked user sees the removed
-// notice, a legacy act_ human (per-slug token, no session) still boots with
-// the sign-in banner, a visitor with neither goes to /login?next=, and a stale
+// notice, a legacy act_ human (per-slug token, no session) bounces to sign in
+// with the key scrubbed, a visitor with neither goes to /login?next=, and a stale
 // session on a room page bounces to /login?next=.
 // Run: NODE_PATH=<dir with puppeteer-core> SERVER=http://localhost:8090 node scripts/enter-check.js
 const puppeteer = require('puppeteer-core');
@@ -116,16 +116,14 @@ const roomApi = (p, session, slug, opts = {}) => call(SERVER, p, Object.assign({
   await pageC.waitForFunction(() => location.pathname === '/login', { timeout: 8000 });
   if (new URL(pageC.url()).searchParams.get('next') !== '/r/' + slug) throw new Error('no-identity visit: ' + pageC.url());
   if (await pageC.$('#join-view')) throw new Error('the legacy join view is still in the page');
-  // a legacy act_ human (a /join before accounts existed) still boots on the
-  // per-slug token, with the sign-in banner and without the switcher
+  // a legacy act_ human (a /join before accounts existed) no longer boots on
+  // the per-slug token since 000027: sign in first, and the key is scrubbed
   const legacy = await call(SERVER, '/api/v1/rooms/join', { method: 'POST', body: { invite_code: code, name: 'Legacy Human', is_human: true } });
   await pageC.evaluate((k, t) => localStorage.setItem(k, JSON.stringify({ token: t })), 'agentchat:' + slug, legacy.token);
   await pageC.goto(SERVER + '/r/' + slug, { waitUntil: 'networkidle2' });
-  await visible(pageC, '#chat-view');
-  await visible(pageC, '#signin-banner');
-  await pageC.waitForFunction(() => document.querySelector('#participant-list').textContent.includes('Legacy Human'), { timeout: 8000 });
-  if (!await hiddenNow(pageC, '#ws-switcher-wrap')) throw new Error('switcher shown to a legacy act_ human');
-  if (await hiddenNow(pageC, '#room-name')) throw new Error('plain room name hidden for a legacy act_ human');
+  await pageC.waitForFunction(() => location.pathname === '/login', { timeout: 8000 });
+  if (new URL(pageC.url()).searchParams.get('next') !== '/r/' + slug) throw new Error('legacy token visit: ' + pageC.url());
+  if (await pageC.evaluate((k) => localStorage.getItem(k), 'agentchat:' + slug) !== null) throw new Error('legacy per-slug key kept');
 
   // a stale session on a room page goes to the login page with next
   const pageD = await openAs('ses_' + 'x'.repeat(32));

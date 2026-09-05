@@ -1,6 +1,6 @@
 # 08 Deploy N+1: retire legacy human tokens
 
-Status: todo (blocked: at least 7 days after 04 is on prod and a full e2e pass on prod)
+Status: in-progress (Maya ordered it on 2026-09-04, no wait; design section 16)
 
 ## Scope
 - Migration 000027: `UPDATE participants SET token_hash = NULL WHERE is_human AND user_id IS NOT NULL` (design section 6). Down is a no-op; this deploy is the point of no return for human browser tokens.

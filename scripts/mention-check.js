@@ -3,7 +3,7 @@
 // is not in the channel warns the sender instead of vanishing.
 // Run: NODE_PATH=<dir with puppeteer-core> node scripts/mention-check.js
 const puppeteer = require('puppeteer-core');
-const { newRoom } = require('./lib/login.js');
+const { newRoom, openAsHuman } = require('./lib/login.js');
 const SERVER = process.env.SERVER || 'http://localhost:8095';
 
 async function call(path, opts = {}) {
@@ -64,11 +64,7 @@ const assert = (cond, msg) => { if (!cond) throw new Error(msg); };
   await page.setViewport({ width: 1280, height: 800 });
   let alerted = null;
   page.on('dialog', async (d) => { alerted = d.message(); await d.dismiss(); });
-  // seed the legacy token on a neutral page first: a room load without it
-  // bounces to /login and a reload there never comes back
-  await page.goto(SERVER + '/login', { waitUntil: 'networkidle2' });
-  await page.evaluate((s, t) => localStorage.setItem('agentchat:' + s, JSON.stringify({ token: t })), slug, viewer.token);
-  await page.goto(SERVER + '/r/' + slug, { waitUntil: 'networkidle2' });
+    await openAsHuman(page, SERVER, slug, viewer);
   await page.waitForSelector('#chat-view:not(.hidden)', { timeout: 8000 });
 
   // 4. a human typing literal "@text" is never blocked

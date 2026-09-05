@@ -1,7 +1,7 @@
 /* AgentChat human web client — vanilla JS, talks to the same REST API as agents. */
 import { createComposer } from './composer.js';
 import { emojify, searchEmoji, rememberEmoji, shortcodeOf } from './emoji.js';
-import { sessionToken, isAccountPage, showSignInBanner, loginURL, onSessionInvalid, backTarget, fetchWorkspaces, signOut } from './auth.js';
+import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fetchWorkspaces, signOut } from './auth.js';
 
 (() => {
   'use strict';
@@ -17,7 +17,6 @@ import { sessionToken, isAccountPage, showSignInBanner, loginURL, onSessionInval
   const storeKey = 'agentchat:' + slug;
   const $ = (id) => document.getElementById(id);
 
-  let token = null;
   let me = null;
   let room = null;
   let joinURL = null;
@@ -48,12 +47,10 @@ import { sessionToken, isAccountPage, showSignInBanner, loginURL, onSessionInval
     ? { pend: $('thread-attach-pending'), input: $('thread-attach-input') }
     : { pend: $('attach-pending'), input: $('attach-input') });
 
-  // One header builder for every fetch. The boot picks the identity: a legacy
-  // per-slug act_ token only when there is no login session; a session names
-  // its workspace through X-Workspace-Slug on room pages.
+  // One header builder for every fetch. The login session is the only browser
+  // identity; it names its workspace through X-Workspace-Slug on room pages.
   const authHeaders = (extra) => {
     const headers = Object.assign({}, extra);
-    if (token) { headers['Authorization'] = 'Bearer ' + token; return headers; }
     const ses = sessionToken();
     if (!ses) return headers;
     headers['Authorization'] = 'Bearer ' + ses;
@@ -77,13 +74,6 @@ import { sessionToken, isAccountPage, showSignInBanner, loginURL, onSessionInval
       authHandled = true;
       if (e.reason === 'revoked') { showRemoved(); return true; }
       showEnter();
-      return true;
-    }
-    // a legacy act_ token the server no longer knows: forget it and start over
-    if (e.status === 401 && token) {
-      authHandled = true;
-      localStorage.removeItem(storeKey);
-      location.reload();
       return true;
     }
     return false;
@@ -2651,36 +2641,18 @@ import { sessionToken, isAccountPage, showSignInBanner, loginURL, onSessionInval
   if (isAccountPage) return;
   (async () => {
     if (!slug) { document.body.textContent = 'Missing room link.'; return; }
-    if (sessionToken()) {
-      // a signed-in visit: the session is the identity, whatever per-slug
-      // token an earlier join left behind
-      for (;;) {
-        try { await enterChat(); localStorage.removeItem(storeKey); mountSwitcher(); return; }
-        catch (e) {
-          if (routeAuthError(e)) return;
-          if (e.status === 404) { showEnter(); return; }
-          console.error('boot', e);
-          await new Promise((r) => setTimeout(r, 3000));
-        }
+    // a per-slug act_ token from before accounts existed is dead since 000027;
+    // scrub it so nothing ever reads it again
+    localStorage.removeItem(storeKey);
+    if (!sessionToken()) { location.replace(loginURL()); return; }
+    for (;;) {
+      try { await enterChat(); mountSwitcher(); return; }
+      catch (e) {
+        if (routeAuthError(e)) return;
+        if (e.status === 404) { showEnter(); return; }
+        console.error('boot', e);
+        await new Promise((r) => setTimeout(r, 3000));
       }
     }
-    let saved = null;
-    try { saved = JSON.parse(localStorage.getItem(storeKey) || 'null'); } catch (e) { /* corrupt entry */ }
-    if (saved && saved.token) {
-      token = saved.token;
-      // only a 401 means the token is bad; a network blip or server restart
-      // must not log the user out and orphan their identity
-      for (;;) {
-        try { await enterChat(); showSignInBanner(me); return; }
-        catch (e) {
-          if (e.status === 404) { token = null; localStorage.removeItem(storeKey); break; }
-          if (routeAuthError(e)) return;
-          console.error('boot', e);
-          await new Promise((r) => setTimeout(r, 3000));
-        }
-      }
-    }
-    // no session and no legacy token: sign in first, then #enter-view asks for the code
-    location.replace(loginURL());
   })();
 })();

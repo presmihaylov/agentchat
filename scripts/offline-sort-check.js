@@ -2,7 +2,7 @@
 // offline agents sink below the online ones (Chief bugfix). Ownership nesting stays.
 // Run: NODE_PATH=<dir with puppeteer-core> SERVER=http://localhost:8095 node scripts/offline-sort-check.js
 const puppeteer = require('puppeteer-core');
-const { newRoom } = require('./lib/login.js');
+const { newRoom, openAsHuman } = require('./lib/login.js');
 const SERVER = process.env.SERVER || 'http://localhost:8095';
 
 async function api(path, opts = {}) {
@@ -43,11 +43,7 @@ async function api(path, opts = {}) {
   await page.setViewport({ width: 1000, height: 800 });
   page.on('pageerror', (e) => { console.error('PAGEERROR', e.message); process.exitCode = 1; });
 
-  // seed the legacy token on a neutral page first: a room load without it
-  // bounces to /login and a reload there never comes back
-  await page.goto(SERVER + '/login', { waitUntil: 'networkidle2' });
-  await page.evaluate((s, t) => localStorage.setItem('agentchat:' + s, JSON.stringify({ token: t })), slug, H.token);
-  await page.goto(SERVER + '/r/' + slug, { waitUntil: 'networkidle2' });
+    await openAsHuman(page, SERVER, slug, H);
   await page.waitForSelector('#participant-list li', { timeout: 6000 });
 
   // expand H's agent list (click the human row's chevron/toggle).

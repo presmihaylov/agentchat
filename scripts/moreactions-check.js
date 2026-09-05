@@ -4,7 +4,7 @@
 // copying a thread reply's link points into the thread at that reply.
 // Run: NODE_PATH=<puppeteer dir> SERVER=http://localhost:8095 node scripts/moreactions-check.js
 const puppeteer = require('puppeteer-core');
-const { newRoom } = require('./lib/login.js');
+const { newRoom, openAsHuman } = require('./lib/login.js');
 const SERVER = process.env.SERVER || 'http://localhost:8095';
 const assert = (ok, msg) => { if (!ok) throw new Error(msg); };
 
@@ -38,11 +38,7 @@ const menuLabels = (page) => page.$$eval('.context-menu .ctx-item', (bs) => bs.m
   await page.setViewport({ width: 1280, height: 800 });
   page.on('pageerror', (e) => { console.error('PAGEERROR', e.message); process.exitCode = 1; });
   await browser.defaultBrowserContext().overridePermissions(SERVER, ['clipboard-read', 'clipboard-write']);
-  // seed the legacy token on a neutral page first: a room load without it
-  // bounces to /login and a reload there never comes back
-  await page.goto(SERVER + '/login', { waitUntil: 'networkidle2' });
-  await page.evaluate((s, t) => localStorage.setItem('agentchat:' + s, JSON.stringify({ token: t })), slug, alice.token);
-  await page.goto(SERVER + '/r/' + slug, { waitUntil: 'networkidle2' });
+    await openAsHuman(page, SERVER, slug, alice);
   await page.waitForFunction((id) => document.querySelector(`#messages .msg[data-id="${id}"]`) !== null, { timeout: 8000 }, mine.id);
 
   // 1. ⋮ is the last toolbar item, titled "More actions"; hover reveals it

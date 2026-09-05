@@ -1,5 +1,5 @@
-/* Account pages (/login, /register, /settings) and the two one-line banners.
-   The session token is a human's login; agents and legacy humans keep act_ tokens. */
+/* Account pages (/login, /register, /settings) and the password banner.
+   The session token is a human's only browser identity; agents keep act_ tokens. */
 
 const SESSION_KEY = 'agentchat:session';
 const $ = (id) => document.getElementById(id);
@@ -11,8 +11,7 @@ export const sessionToken = () => {
 const setSession = (tok) => localStorage.setItem(SESSION_KEY, tok);
 export const clearSession = () => localStorage.removeItem(SESSION_KEY);
 
-// the session header belongs on these pages only; room pages keep the act_
-// token until task 03 (the server answers 403 no_room to a session there)
+// these pages send the session alone; room pages add X-Workspace-Slug (app.js)
 export const isAccountPage = ['/login', '/register', '/settings', '/create'].includes(path);
 
 // ?next= may only point back into this origin. The string is resolved the
@@ -180,28 +179,7 @@ const go = (next, prefetched) => {
 
 const setBanner = (id, on) => {
   $(id).classList.toggle('hidden', !on);
-  document.body.classList.toggle('has-banner', !$('pw-banner').classList.contains('hidden') || !$('signin-banner').classList.contains('hidden'));
-};
-
-// migration rule from the design: lower, whitespace runs to "-", strip the
-// rest; an unusable result falls back to user-<8 hex of the participant id>
-const deriveUsername = (p) => {
-  const u = String(p.name || '').trim().toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9_-]/g, '');
-  if (/^[a-z0-9][a-z0-9_-]{1,31}$/.test(u)) return u;
-  return 'user-' + String(p.id || '').replace(/-/g, '').slice(0, 8);
-};
-
-// room pages call this once they booted on a legacy act_ token with no session
-export const showSignInBanner = (participant) => {
-  if (sessionToken()) return;
-  const el = $('signin-banner');
-  el.innerHTML = '';
-  el.appendChild(document.createTextNode('Sign in with your username (' + deriveUsername(participant) + ') to use this identity everywhere. '));
-  const a = document.createElement('a');
-  a.href = loginURL();
-  a.textContent = 'Sign in';
-  el.appendChild(a);
-  setBanner('signin-banner', true);
+  document.body.classList.toggle('has-banner', !$('pw-banner').classList.contains('hidden'));
 };
 
 const showErr = (id, msg) => { $(id).textContent = msg; $(id).classList.remove('hidden'); };

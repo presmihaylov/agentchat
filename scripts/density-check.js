@@ -3,7 +3,7 @@
 // thread panel uses the same scale as the feed. Chrome (composer) stays 15px.
 // Run: NODE_PATH=<dir with puppeteer-core> node scripts/density-check.js
 const puppeteer = require('puppeteer-core');
-const { newRoom } = require('./lib/login.js');
+const { newRoom, openAsHuman } = require('./lib/login.js');
 const SERVER = process.env.SERVER || 'http://localhost:8095';
 
 async function api(path, opts = {}) {
@@ -32,11 +32,7 @@ const assert = (cond, msg) => { if (!cond) throw new Error(msg); };
     headless: 'new', args: ['--no-sandbox', '--disable-dev-shm-usage'],
   });
   const page = await browser.newPage();
-  // seed the legacy token on a neutral page first: a room load without it
-  // bounces to /login and a reload there never comes back
-  await page.goto(SERVER + '/login', { waitUntil: 'networkidle2' });
-  await page.evaluate((s, t) => localStorage.setItem('agentchat:' + s, JSON.stringify({ token: t })), slug, human.token);
-  await page.goto(SERVER + '/r/' + slug, { waitUntil: 'networkidle2' });
+    await openAsHuman(page, SERVER, slug, human);
   await page.waitForSelector('#chat-view:not(.hidden)', { timeout: 8000 });
   await page.waitForFunction(() => document.querySelectorAll('#messages .msg').length >= 1, { timeout: 8000 });
 

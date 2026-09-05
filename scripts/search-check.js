@@ -6,7 +6,7 @@
 // the Related section greys out with an "off" note; Direct still works.
 // Run: NODE_PATH=<dir with puppeteer-core> SERVER=http://localhost:8095 node scripts/search-check.js
 const puppeteer = require('puppeteer-core');
-const { newRoom } = require('./lib/login.js');
+const { newRoom, openAsHuman } = require('./lib/login.js');
 const SERVER = process.env.SERVER || 'http://localhost:8095';
 
 async function api(path, opts = {}) {
@@ -23,12 +23,8 @@ const launch = () => puppeteer.launch({
   executablePath: process.env.CHROME || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
   headless: 'new', args: ['--no-sandbox', '--disable-dev-shm-usage'],
 });
-async function seedLogin(page, slug, token) {
-  // seed the legacy token on a neutral page first: a room load without it
-  // bounces to /login and a reload there never comes back
-  await page.goto(SERVER + '/login', { waitUntil: 'networkidle2' });
-  await page.evaluate((s, t) => localStorage.setItem('agentchat:' + s, JSON.stringify({ token: t })), slug, token);
-  await page.goto(SERVER + '/r/' + slug, { waitUntil: 'networkidle2' });
+async function seedLogin(page, slug, joined) {
+  await openAsHuman(page, SERVER, slug, joined);
   await page.waitForSelector('#chat-view:not(.hidden)', { timeout: 6000 });
 }
 // collect the .search-hit-row snippets that sit under a given section label
@@ -60,7 +56,7 @@ const rowsUnder = (page, label) => page.evaluate((lab) => {
   const page = await browser.newPage();
   await page.setViewport({ width: 1000, height: 800 });
   page.on('pageerror', (e) => { console.error('PAGEERROR', e.message); process.exitCode = 1; });
-  await seedLogin(page, slug, human.token);
+  await seedLogin(page, slug, human);
 
   // A) open search, exact text query renders under "Direct matches"
   await page.evaluate(() => document.getElementById('open-search').click());
@@ -172,7 +168,7 @@ const rowsUnder = (page, label) => page.evaluate((lab) => {
     }
     req.continue();
   });
-  await seedLogin(p2, slug, human.token);
+  await seedLogin(p2, slug, human);
   await p2.evaluate(() => document.getElementById('open-search').click());
   await p2.waitForSelector('#search-modal:not(.hidden)', { timeout: 3000 });
   await p2.type('#search-input', 'budget');

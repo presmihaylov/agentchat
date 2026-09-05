@@ -3,7 +3,7 @@
 // accepts a drop on its header, and the strip drops a channel out of sections.
 // Run: NODE_PATH=<dir with puppeteer-core> node scripts/dnd-check.js
 const puppeteer = require('puppeteer-core');
-const { newRoom } = require('./lib/login.js');
+const { newRoom, openAsHuman } = require('./lib/login.js');
 const SERVER = process.env.SERVER || 'http://localhost:8095';
 
 async function api(path, opts = {}) {
@@ -36,11 +36,7 @@ const assert = (cond, msg) => { if (!cond) throw new Error(msg); };
   });
   const page = await browser.newPage();
   await page.setViewport({ width: 1280, height: 800 });
-  // seed the legacy token on a neutral page first: a room load without it
-  // bounces to /login and a reload there never comes back
-  await page.goto(SERVER + '/login', { waitUntil: 'networkidle2' });
-  await page.evaluate((s, t) => localStorage.setItem('agentchat:' + s, JSON.stringify({ token: t })), slug, me.token);
-  await page.goto(SERVER + '/r/' + slug, { waitUntil: 'networkidle2' });
+    await openAsHuman(page, SERVER, slug, me);
   await page.waitForSelector('#chat-view:not(.hidden)', { timeout: 8000 });
 
   const rows = () => page.$$eval('#channel-list li', (ns) => ns

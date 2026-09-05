@@ -1,9 +1,9 @@
 package models
 
 import (
-	"errors"
 	"context"
 	"encoding/json"
+	"errors"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgconn"

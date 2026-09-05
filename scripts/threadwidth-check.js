@@ -2,7 +2,7 @@
 // Run: NODE_PATH=<dir with puppeteer-core> node scripts/threadwidth-check.js
 // Needs a server on $SERVER (default :8095) backed by a live Postgres.
 const puppeteer = require('puppeteer-core');
-const { newRoom } = require('./lib/login.js');
+const { newRoom, openAsHuman } = require('./lib/login.js');
 const SERVER = process.env.SERVER || 'http://localhost:8095';
 
 async function api(path, opts = {}) {
@@ -33,10 +33,7 @@ async function api(path, opts = {}) {
   await page.setViewport({ width: 1400, height: 900, deviceScaleFactor: 1 });
   const fail = (m) => { console.error('FAIL: ' + m); process.exitCode = 1; };
   page.on('pageerror', (e) => fail('pageerror ' + e.message));
-
-  // seed the legacy token on a neutral page: a room load without it bounces to /login
-  await page.goto(SERVER + '/login', { waitUntil: 'networkidle2' });
-  await page.evaluate((s, t) => localStorage.setItem('agentchat:' + s, JSON.stringify({ token: t })), slug, viewer.token);
+  await openAsHuman(page, SERVER, slug, viewer);
   // the /t/<id> route auto-opens the thread panel on load
   await page.goto(SERVER + '/r/' + slug + '/c/general/t/' + root.id, { waitUntil: 'networkidle2' });
   await page.waitForSelector('#thread-panel:not(.hidden)', { timeout: 6000 });

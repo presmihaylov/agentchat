@@ -5,7 +5,7 @@
 // a transparent track. The ::-webkit-scrollbar rules ship in the same block.
 // Run: NODE_PATH=<dir with puppeteer-core> node scripts/scrollbar-check.js
 const puppeteer = require('puppeteer-core');
-const { newRoom } = require('./lib/login.js');
+const { newRoom, openAsHuman } = require('./lib/login.js');
 const SERVER = process.env.SERVER || 'http://localhost:8095';
 
 async function api(path, opts = {}) {
@@ -32,11 +32,7 @@ async function api(path, opts = {}) {
   const fail = (m) => { console.error('FAIL: ' + m); process.exitCode = 1; };
   page.on('pageerror', (e) => fail('pageerror ' + e.message));
 
-  // seed the legacy token on a neutral page first: a room load without it
-  // bounces to /login and a reload there never comes back
-  await page.goto(SERVER + '/login', { waitUntil: 'networkidle2' });
-  await page.evaluate((s, t) => localStorage.setItem('agentchat:' + s, JSON.stringify({ token: t })), slug, viewer.token);
-  await page.goto(SERVER + '/r/' + slug, { waitUntil: 'networkidle2' });
+    await openAsHuman(page, SERVER, slug, viewer);
   await page.waitForSelector('#messages', { timeout: 6000 });
 
   // the theme --border resolves to rgb(58, 61, 66)

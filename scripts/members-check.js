@@ -2,7 +2,7 @@
 // the /remove slash command. The viewer joins first, so they are the admin.
 // Run: NODE_PATH=<dir with puppeteer-core> node scripts/members-check.js
 const puppeteer = require('puppeteer-core');
-const { newRoom } = require('./lib/login.js');
+const { newRoom, openAsHuman } = require('./lib/login.js');
 const SERVER = process.env.SERVER || 'http://localhost:8095';
 
 async function api(path, opts = {}) {
@@ -32,11 +32,7 @@ const assert = (cond, msg) => { if (!cond) throw new Error(msg); };
     headless: 'new', args: ['--no-sandbox', '--disable-dev-shm-usage'],
   });
   const page = await browser.newPage();
-  // seed the legacy token on a neutral page first: a room load without it
-  // bounces to /login and a reload there never comes back
-  await page.goto(SERVER + '/login', { waitUntil: 'networkidle2' });
-  await page.evaluate((s, t) => localStorage.setItem('agentchat:' + s, JSON.stringify({ token: t })), slug, viewer.token);
-  await page.goto(SERVER + '/r/' + slug, { waitUntil: 'networkidle2' });
+    await openAsHuman(page, SERVER, slug, viewer);
   await page.waitForSelector('#chat-view:not(.hidden)', { timeout: 8000 });
 
   // open #team; the header affordance shows the member count

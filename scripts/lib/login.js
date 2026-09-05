@@ -107,4 +107,28 @@ async function switchTo(page, slug) {
   await page.waitForSelector('#chat-view:not(.hidden)', { timeout: 8000 });
 }
 
-module.exports = { call, registerAndLogin, createRoom, newRoom, loginPage, enterWithCode, enterAs, openWorkspace, switchTo, uniqUser, PASSWORD, sleep };
+// openAsHuman boots a page as an existing human participant (a /join with
+// is_human). Since 000027 the browser only knows sessions, so the participant
+// is linked to a fresh account, as the backfill did, and the page opens
+// /r/<slug> on that session. The act_ token keeps driving the API as the same
+// identity. Returns the ses_ token. The session key is per browser profile:
+// two humans on two pages need two browser contexts.
+const humanSessions = new Map();
+async function openAsHuman(page, base, slug, joined) {
+  const p = joined.participant;
+  if (!/^[0-9a-f-]{36}$/.test(p.id)) throw new Error('participant id: ' + p.id);
+  let session = humanSessions.get(p.id);
+  if (!session) {
+    const username = uniqUser();
+    session = await registerAndLogin(base, username, p.name);
+    execFileSync('psql', [DB_URL, '-q', '-v', 'ON_ERROR_STOP=1', '-c',
+      `UPDATE participants SET user_id = (SELECT id FROM users WHERE username = '${username}') WHERE id = '${p.id}'`], { stdio: ['ignore', 'ignore', 'inherit'] });
+    humanSessions.set(p.id, session);
+  }
+  await page.goto(base + '/login', { waitUntil: 'networkidle2' });
+  await page.evaluate((t) => localStorage.setItem('agentchat:session', t), session);
+  await page.goto(base + '/r/' + slug, { waitUntil: 'networkidle2' });
+  return session;
+}
+
+module.exports = { call, registerAndLogin, createRoom, newRoom, loginPage, enterWithCode, enterAs, openWorkspace, openAsHuman, switchTo, uniqUser, PASSWORD, sleep };

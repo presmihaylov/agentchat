@@ -980,3 +980,13 @@ rather than rewritten in place; the sections above stay as the plan of record.
 Fixed in the same pass, not divergences: `GET /api/v1/participants` and `/members` now
 carry `user_id` and `username` for linked humans, and `/me` carries `username` over a
 legacy `act_` token too (section 10).
+
+## 16 Task 08 shipped early (2026-09-04)
+
+Maya ordered deploy N+1 on the evening of 2026-09-04, the same day as deploy N, instead of
+the 7-day wait in section 7: this instance is not real prod, and the only invariant is the
+acme room with its humans and agents. `000027` ran as written in section 6. The SPA
+dropped the legacy boot path, the sign-in banner and the per-slug key read; a room page
+with a stale per-slug key scrubs it and goes to `/login?next=`. The browser checks that
+booted a `/join` human on its `act_` token now link that participant to a fresh account
+(`openAsHuman` in `scripts/lib/login.js`, the backfill's shape) and boot on a session.

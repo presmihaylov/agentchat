@@ -2,7 +2,7 @@
 // password, lockout, the must_change_password banner, changing the password
 // on /settings (clears the banner, signs the other tab out), a room page that
 // boots on the session (and forgets the legacy per-slug act_ token) and one
-// that still boots on the legacy act_ token when there is no session.
+// that bounces a legacy act_ token to sign in, since 000027 retired them.
 // Needs Postgres for agentchat-passwd (AGENTCHAT_DB_URL, default the dev db).
 const puppeteer = require('puppeteer-core');
 const { execFileSync } = require('child_process');
@@ -282,7 +282,6 @@ const userStatus = (page, tok) => page.evaluate(async (t) => {
   // and the legacy per-slug token is forgotten
   await openRoom();
   await visible(page, '#pw-banner');
-  if (!await hiddenNow(page, '#signin-banner')) throw new Error('sign-in banner shown while a session exists');
   if (await legacyKey() !== null) throw new Error('legacy per-slug token kept after the session worked');
   const meName = await page.evaluate(async () => (await (await fetch('/api/v1/me', { headers: { Authorization: 'Bearer ' + localStorage.getItem('agentchat:session'), 'X-Workspace-Slug': location.pathname.split('/')[2] } })).json()).name);
   if (meName !== 'Login Tester') throw new Error('room identity: ' + meName);
@@ -323,19 +322,16 @@ const userStatus = (page, tok) => page.evaluate(async (t) => {
   // the room page again on the new session: no 403, banner gone
   await openRoom();
   if (!await hiddenNow(page, '#pw-banner')) throw new Error('pw-banner still shown on the room page after the change');
-  if (!await hiddenNow(page, '#signin-banner')) throw new Error('sign-in banner shown while a session exists');
 
-  // the same room with no session: boots on the act_ token, one-line sign-in banner
+  // the same room with no session: the act_ token is dead since 000027, so the
+  // page goes to sign in with the room as next and scrubs the per-slug key
   await page.evaluate(() => localStorage.removeItem('agentchat:session'));
   await seedLegacy();
-  await page.reload({ waitUntil: 'networkidle2' });
-  await visible(page, '#chat-view');
-  await visible(page, '#signin-banner');
-  const bannerText = await page.$eval('#signin-banner', (el) => el.textContent);
-  if (!bannerText.includes('(legacy-tester)')) throw new Error('derived username: ' + bannerText);
-  const href = await page.$eval('#signin-banner a', (el) => el.getAttribute('href'));
-  if (!href.startsWith('/login?next=%2Fr%2F' + slug)) throw new Error('banner link: ' + href);
-  await shot(page, 'room-signin-banner.png');
+  await page.goto(SERVER + '/r/' + slug, { waitUntil: 'networkidle2' });
+  await page.waitForFunction(() => location.pathname === '/login', { timeout: 8000 });
+  if (!page.url().startsWith(SERVER + '/login?next=%2Fr%2F' + slug)) throw new Error('legacy token landed on ' + page.url());
+  if (await legacyKey() !== null) throw new Error('legacy per-slug token kept on the login bounce');
+  await shot(page, 'room-legacy-bounce.png');
 
   // expected failures (401 wrong password, 429 lockout, 401 revoked session) log as
   // console errors; Chrome's line does not carry the code, so the codes are checked

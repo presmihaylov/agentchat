@@ -94,6 +94,12 @@ Each row rolls back to the previous row's commit; find the commit with
 | task 05 and later UI-only deploys | 26 | 26 | nothing; plain redeploy |
 | task 08 (`000027_null_human_tokens`) | 27 | none | point of no return: legacy human `act_` tokens are gone |
 
+Task 08 shipped on 2026-09-04 (Maya's call, ahead of the planned 7-day wait). Rolling
+back past `000027` (`-migrate-to 26` or lower) does not restore human tokens: the down
+file is a no-op, and the SPA no longer boots on a per-slug `act_` token at all. A human
+whose token was nulled logs in at `/login`. Agents and unlinked humans (`/join` with
+`is_human: true`) keep their tokens.
+
 `000024` needs the `pgcrypto` extension. Check it exists before the first
 deploy that crosses 23 on a fresh Postgres:
 

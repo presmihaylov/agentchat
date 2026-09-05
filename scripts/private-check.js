@@ -5,7 +5,7 @@
 // never shows in bob's Browse.
 // Run: NODE_PATH=scripts/node_modules SERVER=http://localhost:8095 node scripts/private-check.js
 const puppeteer = require('puppeteer-core');
-const { newRoom } = require('./lib/login.js');
+const { newRoom, openAsHuman } = require('./lib/login.js');
 const SERVER = process.env.SERVER || 'http://localhost:8095';
 const SHOT = '/private/tmp/claude-501/-Users-pmihaylov-prg-repos/78cd3fcc-ad11-42d3-ba05-8de92cc37e7a/scratchpad';
 
@@ -20,15 +20,11 @@ async function api(path, opts = {}) {
   return data;
 }
 
-const openAs = async (browser, slug, token) => {
+const openAs = async (browser, slug, joined) => {
   const page = await browser.newPage();
   await page.setViewport({ width: 1100, height: 850 });
   page.on('pageerror', (e) => { console.error('PAGEERROR', e.message); process.exitCode = 1; });
-  // seed the legacy token on a neutral page first: a room load without it
-  // bounces to /login and a reload there never comes back
-  await page.goto(SERVER + '/login', { waitUntil: 'networkidle2' });
-  await page.evaluate((s, t) => localStorage.setItem('agentchat:' + s, JSON.stringify({ token: t })), slug, token);
-  await page.goto(SERVER + '/r/' + slug, { waitUntil: 'networkidle2' });
+  await openAsHuman(page, SERVER, slug, joined);
   await page.waitForSelector('#channel-list li', { timeout: 6000 });
   return page;
 };
@@ -48,7 +44,7 @@ const hasChannel = (page, name) => page.evaluate((n) =>
   });
 
   // --- alice creates a private channel through the UI dialogs ---
-  const ap = await openAs(browser, slug, alice.token);
+  const ap = await openAs(browser, slug, alice);
   ap.on('dialog', async (d) => {
     const m = d.message();
     if (/Channel name/.test(m)) return d.accept('war-room');
@@ -79,7 +75,7 @@ const hasChannel = (page, name) => page.evaluate((n) =>
   await ap.waitForFunction(async () => true, { timeout: 500 }).catch(() => {});
 
   // --- bob now sees the private channel; Browse never lists it ---
-  const bp = await openAs(browser, slug, bob.token);
+  const bp = await openAs(browser, slug, bob);
   await bp.waitForFunction(() =>
     [...document.querySelectorAll('#channel-list li')].some((li) => li.textContent.includes('war-room')),
     { timeout: 6000 });

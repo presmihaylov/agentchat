@@ -4,7 +4,7 @@
 // picker search finds :tada:, and the same pills show on the thread-panel copy.
 // Run: NODE_PATH=<puppeteer dir> SERVER=http://localhost:8095 node scripts/reactions-check.js
 const puppeteer = require('puppeteer-core');
-const { newRoom } = require('./lib/login.js');
+const { newRoom, openAsHuman } = require('./lib/login.js');
 const SERVER = process.env.SERVER || 'http://localhost:8095';
 const assert = (ok, msg) => { if (!ok) throw new Error(msg); };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -35,11 +35,7 @@ async function api(path, opts = {}) {
   const page = await browser.newPage();
   await page.setViewport({ width: 1280, height: 800 });
   page.on('pageerror', (e) => { console.error('PAGEERROR', e.message); process.exitCode = 1; });
-  // seed the legacy token on a neutral page first: a room load without it
-  // bounces to /login and a reload there never comes back
-  await page.goto(SERVER + '/login', { waitUntil: 'networkidle2' });
-  await page.evaluate((s, t) => localStorage.setItem('agentchat:' + s, JSON.stringify({ token: t })), slug, alice.token);
-  await page.goto(SERVER + '/r/' + slug, { waitUntil: 'networkidle2' });
+    await openAsHuman(page, SERVER, slug, alice);
   const msgSel = `#messages .msg[data-id="${root.id}"]`;
   await page.waitForSelector(msgSel, { timeout: 8000 });
 

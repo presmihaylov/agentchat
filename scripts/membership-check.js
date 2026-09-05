@@ -4,7 +4,7 @@
 // context menu (back out of the sidebar). #general has no Leave option.
 // Run: NODE_PATH=<puppeteer dir> SERVER=http://localhost:8095 node scripts/membership-check.js
 const puppeteer = require('puppeteer-core');
-const { newRoom } = require('./lib/login.js');
+const { newRoom, openAsHuman } = require('./lib/login.js');
 const SERVER = process.env.SERVER || 'http://localhost:8095';
 
 async function api(path, opts = {}) {
@@ -38,11 +38,7 @@ const chanNames = (page) => page.$$eval('#channel-list li', (lis) =>
   await page.setViewport({ width: 1100, height: 850 });
   page.on('pageerror', (e) => { console.error('PAGEERROR', e.message); process.exitCode = 1; });
 
-  // seed the legacy token on a neutral page first: a room load without it
-  // bounces to /login and a reload there never comes back
-  await page.goto(SERVER + '/login', { waitUntil: 'networkidle2' });
-  await page.evaluate((s, t) => localStorage.setItem('agentchat:' + s, JSON.stringify({ token: t })), slug, bob.token);
-  await page.goto(SERVER + '/r/' + slug, { waitUntil: 'networkidle2' });
+    await openAsHuman(page, SERVER, slug, bob);
   await page.waitForSelector('#channel-list li', { timeout: 6000 });
 
   // 1. bob's sidebar shows #general but NOT #secret.
