@@ -5,7 +5,7 @@
 // the setting persists on the server, and Off keeps everything pinned.
 // Run: NODE_PATH=<dir with puppeteer-core> node scripts/archive-check.js
 const puppeteer = require('puppeteer-core');
-const { newRoom, openAsHuman } = require('./lib/login.js');
+const { newRoom, openAsHuman, openSettings, backToRoom } = require('./lib/login.js');
 const SERVER = process.env.SERVER || 'http://localhost:8095';
 
 async function api(path, opts = {}) {
@@ -58,14 +58,13 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   // 1. live thread: pinned under #general
   await waitLeaves((l) => l.includes('alice topic'), 'live thread');
 
-  // 2. set the period to 15 minutes via the profile card; the server persists it
-  await page.click('#me-footer');
-  await page.waitForSelector('#notify-settings:not(.hidden)', { timeout: 5000 });
+  // 2. set the period to 15 minutes on /settings; the server persists it
+  await openSettings(page, SERVER);
   const initial = await page.$eval('#archive-after', (el) => el.value);
   assert(initial === '3600', 'default select must be 1h, got ' + initial);
   await page.select('#archive-after', '900');
   await sleep(500);
-  await page.click('#profile-close');
+  await backToRoom(page);
   let prefs = await api('/api/v1/me/notifications', { token: alice.token });
   assert(prefs.archive_after_secs === 900, 'server pref: ' + JSON.stringify(prefs));
 
@@ -129,17 +128,20 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   assert(notes.some((n) => n.why === 'mention'), 'mention must notify: ' + JSON.stringify(notes));
 
   // 8. Off keeps a stale thread pinned; the setting survives a reload
-  await page.evaluate(() => { window.__skew = 30 * 24 * 3600 * 1000; });
-  await page.click('#me-footer');
-  await page.waitForSelector('#notify-settings:not(.hidden)', { timeout: 5000 });
+  await openSettings(page, SERVER);
   await page.select('#archive-after', '0');
   await sleep(500);
-  await page.click('#profile-close');
+  await backToRoom(page);
+  // the settings trip was a navigation: skew the fresh page's clock again
+  await page.evaluate(() => {
+    const real = Date.now;
+    window.__skew = 30 * 24 * 3600 * 1000;
+    Date.now = () => real() + window.__skew;
+  });
   await waitLeaves((l) => l.includes('alice topic'), 'Off must keep it pinned');
   await page.reload({ waitUntil: 'networkidle2' });
   await page.waitForSelector('#chat-view:not(.hidden)', { timeout: 8000 });
-  await page.click('#me-footer');
-  await page.waitForSelector('#notify-settings:not(.hidden)', { timeout: 5000 });
+  await openSettings(page, SERVER);
   const persisted = await page.$eval('#archive-after', (el) => el.value);
   assert(persisted === '0', 'Off did not persist: ' + persisted);
   prefs = await api('/api/v1/me/notifications', { token: alice.token });

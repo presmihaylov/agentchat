@@ -131,4 +131,17 @@ async function openAsHuman(page, base, slug, joined) {
   return session;
 }
 
-module.exports = { call, registerAndLogin, createRoom, newRoom, loginPage, enterWithCode, enterAs, openWorkspace, openAsHuman, switchTo, uniqUser, PASSWORD, sleep };
+// the personal settings (notifications, theme, avatar) live on /settings since
+// task 09: a check goes there from the room and comes back through the Back link
+async function openSettings(page, base, tab = 'personal') {
+  const here = await page.evaluate(() => location.pathname + location.search);
+  await page.goto(base + '/settings?next=' + encodeURIComponent(here) + '&tab=' + tab, { waitUntil: 'networkidle2' });
+  await page.waitForSelector('#settings-view:not(.hidden)', { timeout: 8000 });
+  if (tab === 'personal') await page.waitForSelector('#notify-settings:not(.hidden)', { timeout: 8000 });
+}
+async function backToRoom(page) {
+  await Promise.all([page.waitForNavigation({ waitUntil: 'networkidle2' }), page.click('#settings-back')]);
+  await page.waitForSelector('#chat-view:not(.hidden)', { timeout: 8000 });
+}
+
+module.exports = { openSettings, backToRoom, call, registerAndLogin, createRoom, newRoom, loginPage, enterWithCode, enterAs, openWorkspace, openAsHuman, switchTo, uniqUser, PASSWORD, sleep };

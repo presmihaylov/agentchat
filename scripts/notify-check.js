@@ -4,7 +4,7 @@
 // participant across a reload.
 // Run: NODE_PATH=<dir with puppeteer-core> node scripts/notify-check.js
 const puppeteer = require('puppeteer-core');
-const { newRoom, openAsHuman } = require('./lib/login.js');
+const { newRoom, openAsHuman, openSettings, backToRoom } = require('./lib/login.js');
 const SERVER = process.env.SERVER || 'http://localhost:8095';
 
 async function api(path, opts = {}) {
@@ -113,33 +113,31 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   assert(got.length === 1 && got[0].why === 'broadcast', 'broadcast in muted channel must ping: ' + JSON.stringify(got));
 
   // 6. settings: sound off, then notifications off; both persist across a reload
-  await page.click('#me-footer');
-  await page.waitForSelector('#notify-settings:not(.hidden)', { timeout: 5000 });
+  await openSettings(page, SERVER);
   await page.click('#notify-sound');
   await page.waitForFunction(() => !document.querySelector('#notify-sound').checked, { timeout: 5000 });
   await sleep(300);
-  await page.click('#profile-close');
+  await backToRoom(page);
   await sleep(3200);
   await say('plaza', '@alice silent ping');
   await settle(() => window.__notes.length >= 1);
   got = await notes();
   assert(got.length === 1 && got[0].sound === false, 'sound off must ping silently: ' + JSON.stringify(got));
-  await page.click('#me-footer');
+  await openSettings(page, SERVER);
   await page.click('#notify-enabled');
   await page.waitForFunction(() => !document.querySelector('#notify-enabled').checked, { timeout: 5000 });
   await sleep(300);
-  await page.click('#profile-close');
+  await page.screenshot({ path: (process.env.OUT || '.') + '/notify-settings.png' });
+  await backToRoom(page);
   await sleep(3200);
   await say('plaza', '@alice nothing at all');
   await sleep(1500);
   got = await notes();
   assert(got.length === 0, 'notifications off must be silent: ' + JSON.stringify(got));
-  await page.screenshot({ path: (process.env.OUT || '.') + '/notify-settings.png' });
 
   await page.reload({ waitUntil: 'networkidle2' });
   await page.waitForSelector('#chat-view:not(.hidden)', { timeout: 8000 });
-  await page.click('#me-footer');
-  await page.waitForSelector('#notify-settings:not(.hidden)', { timeout: 5000 });
+  await openSettings(page, SERVER);
   const persisted = await page.evaluate(() => ({
     enabled: document.querySelector('#notify-enabled').checked,
     sound: document.querySelector('#notify-sound').checked,

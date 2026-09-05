@@ -1,6 +1,6 @@
 # 09 One settings place: Workspace settings and Personal settings
 
-Status: todo
+Status: in-progress
 
 Maya via Chief, root 948f9802 in #agentchat (2026-09-04). Process note 1a7ee18d.
 

@@ -1003,10 +1003,6 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
     slot.innerHTML = '';
     slot.appendChild(avatarEl(p, 'avatar-lg'));
     $('profile-name').textContent = p.name;
-    $('profile-actions').classList.toggle('hidden', p.id !== me.id);
-    $('notify-settings').classList.toggle('hidden', p.id !== me.id);
-    if (p.id === me.id) renderNotifySettings();
-    $('avatar-remove').classList.toggle('hidden', !p.avatar_attachment_id);
     $('profile-meta').textContent =
       `${p.role}${p.is_human ? ' · human' : ' · agent'} · ${p.online ? 'online' : 'offline'}`;
     $('profile-desc').innerHTML = p.description ? linkify(p.description) : 'No description.';
@@ -1612,44 +1608,8 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
     document.dispatchEvent(new CustomEvent('agentchat:notify', { detail: { key, why, sound, channel: ch ? ch.name : '' } }));
   };
 
-  const renderNotifySettings = () => {
-    $('notify-enabled').checked = !!notifyPrefs.enabled;
-    $('notify-sound').checked = !!notifyPrefs.sound;
-    $('notify-sound').disabled = !notifyPrefs.enabled;
-    $('archive-after').value = String(notifyPrefs.archive_after_secs ?? 3600);
-    const perm = $('notify-perm');
-    const state = window.Notification ? Notification.permission : 'unsupported';
-    perm.classList.toggle('hidden', !notifyPrefs.enabled || state === 'granted');
-    perm.textContent = state === 'denied' ? 'System notifications are blocked in this browser; you still get the badge and sound.'
-      : state === 'unsupported' ? 'This browser has no system notifications; you still get the badge and sound.'
-      : 'System notifications are off until you allow them in the browser prompt.';
-  };
-  const saveNotifyPrefs = async (patch) => {
-    try {
-      notifyPrefs = await api('/api/v1/me/notifications', { method: 'PATCH', body: patch });
-    } catch (e) { alert(e.message); }
-    renderNotifySettings();
-  };
-  $('notify-enabled').onchange = async (ev) => {
-    const enabled = ev.target.checked;
-    // ask on the toggle, never on page load, and only when the answer is open
-    if (enabled && window.Notification && Notification.permission === 'default') {
-      try { await Notification.requestPermission(); } catch { /* treated as denied */ }
-    }
-    await saveNotifyPrefs({ enabled });
-  };
-  $('notify-sound').onchange = (ev) => saveNotifyPrefs({ sound: ev.target.checked });
-  $('archive-after').onchange = async (ev) => {
-    await saveNotifyPrefs({ archive_after_secs: Number(ev.target.value) });
-    renderChannels();
-  };
-  // theme is a per-browser choice, not a participant pref: the head script owns it
-  $('theme-mode').value = document.documentElement.dataset.themeMode || 'system';
-  $('theme-mode').onchange = (ev) => {
-    try { localStorage.setItem('agentchat:theme', ev.target.value); } catch { /* storage blocked */ }
-    window.__applyTheme();
-  };
-
+  // the notification, archive and theme controls live on /settings (auth.js);
+  // notifyPrefs is loaded once at boot and read by the feed
   const applyEvent = async (ev) => {
     const t = ev.type;
     if (t === 'message.created') {
@@ -2187,27 +2147,6 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
     window.addEventListener('resize', () => { if (storedW > 0) applyThreadW(clampThreadW(parseFloat(localStorage.getItem(THREAD_W_KEY)) || storedW)); });
   })();
 
-  $('avatar-input').addEventListener('change', async () => {
-    const file = $('avatar-input').files[0];
-    if (!file) return;
-    const fd = new FormData();
-    fd.append('file', file);
-    try {
-      me = await api('/api/v1/me/avatar', { method: 'POST', body: fd });
-      await refreshRoom();
-      showProfile(me);
-    } catch (e) { alert(e.message); }
-    $('avatar-input').value = '';
-  });
-
-  $('avatar-remove').onclick = async () => {
-    try {
-      me = await api('/api/v1/me/avatar', { method: 'DELETE' });
-      await refreshRoom();
-      showProfile(me);
-    } catch (e) { alert(e.message); }
-  };
-
   $('lightbox').onclick = () => { $('lightbox').classList.add('hidden'); $('lightbox-img').removeAttribute('src'); };
 
   // ---------- search ----------
@@ -2422,6 +2361,7 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
     setTimeout(() => { btn.textContent = restore; }, ok ? 1500 : 2500);
   };
 
+  $('open-settings').href = '/settings?next=' + encodeURIComponent(location.pathname + location.search);
   $('copy-link').onclick = async () => {
     const link = joinURL || location.href;
     // the link alone can't join — include the code when the caller may share it

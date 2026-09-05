@@ -67,25 +67,80 @@
   </div>
 
   <div id="settings-view" class="auth-view hidden">
-    <form id="pw-form" class="auth-form">
+    <div class="auth-form settings-card">
       <a id="settings-back" class="back-link" href="/create">← Back</a>
       <h1>💬 Settings</h1>
-      <p class="hint">Signed in as <strong id="settings-username"></strong></p>
-      <h2>Change password</h2>
-      <p id="pw-error" class="error hidden"></p>
-      <p id="pw-ok" class="ok hidden">Password changed. Other devices were signed out. <a id="pw-continue" href="/create">Continue →</a></p>
-      <label>Current password <input id="pw-current" type="password" required autocomplete="current-password"></label>
-      <label>New password <input id="pw-new" type="password" required minlength="8" maxlength="72" autocomplete="new-password"></label>
-      <label>Confirm new password <input id="pw-confirm" type="password" required autocomplete="new-password"></label>
-      <button type="submit">Change password</button>
-    </form>
-  </div>
+      <div id="settings-tabs" role="tablist">
+        <button type="button" id="tab-workspace" role="tab" data-tab="workspace">Workspace</button>
+        <button type="button" id="tab-personal" role="tab" data-tab="personal">Personal</button>
+      </div>
 
-  <div id="settings-nopw" class="auth-view hidden">
-    <div class="auth-form">
-      <a id="settings-nopw-back" class="back-link" href="/create">← Back</a>
-      <h1>💬 Settings</h1>
-      <p class="hint">Signed in as <strong id="settings-nopw-username"></strong>. This sign-in method has no password to change.</p>
+      <section id="settings-workspace" class="settings-panel hidden">
+        <p id="ws-none" class="hint hidden">Open a workspace first: these settings belong to the workspace you came from.</p>
+        <div id="ws-panel" class="hidden">
+          <form id="ws-name-form">
+            <label>Name <input id="ws-name" type="text" required maxlength="100"></label>
+            <p id="ws-name-error" class="error hidden"></p>
+            <p id="ws-name-ok" class="ok hidden">Renamed.</p>
+            <button type="submit" id="ws-name-save">Rename workspace</button>
+          </form>
+          <label>Link <span class="row-copy"><input id="ws-slug" type="text" readonly><button type="button" id="ws-slug-copy" class="secondary">Copy</button></span></label>
+          <p class="hint">The link is fixed: agents and bookmarks point at it.</p>
+          <div id="ws-invite" class="hidden">
+            <h2>Invite code</h2>
+            <p class="hint">Only admins see it. Anyone with the code can enter the workspace.</p>
+            <span class="row-copy"><input id="ws-invite-code" type="text" readonly value="••••••••••••"><button type="button" id="ws-invite-show" class="secondary">Show</button><button type="button" id="ws-invite-copy" class="secondary">Copy</button></span>
+            <p id="ws-invite-ok" class="ok hidden">New code. The old one stopped working.</p>
+            <button type="button" id="ws-invite-regen" class="secondary">Regenerate code</button>
+          </div>
+        </div>
+      </section>
+
+      <section id="settings-personal" class="settings-panel hidden">
+        <p class="hint">Signed in as <strong id="settings-username"></strong>. Usernames do not change.</p>
+        <form id="pw-form">
+          <h2>Change password</h2>
+          <p id="pw-error" class="error hidden"></p>
+          <p id="pw-ok" class="ok hidden">Password changed. Other devices were signed out. <a id="pw-continue" href="/create">Continue →</a></p>
+          <label>Current password <input id="pw-current" type="password" required autocomplete="current-password"></label>
+          <label>New password <input id="pw-new" type="password" required minlength="8" maxlength="72" autocomplete="new-password"></label>
+          <label>Confirm new password <input id="pw-confirm" type="password" required autocomplete="new-password"></label>
+          <button type="submit">Change password</button>
+        </form>
+        <p id="settings-nopw" class="hint hidden">This sign-in method has no password to change.</p>
+        <div id="avatar-section" class="hidden">
+          <h2>Avatar in <span id="avatar-ws-name"></span></h2>
+          <div id="settings-avatar"></div>
+          <div id="profile-actions">
+            <label class="upload-btn">Upload photo<input type="file" id="avatar-input" accept="image/*" class="hidden"></label>
+            <button type="button" id="avatar-remove" class="hidden">Remove photo</button>
+          </div>
+        </div>
+        <div id="notify-settings" class="hidden">
+          <h2>Notifications</h2>
+          <label class="row-check"><input type="checkbox" id="notify-enabled"> Notify me about new messages</label>
+          <label class="row-check"><input type="checkbox" id="notify-sound"> Play a sound</label>
+          <p id="notify-perm" class="hint hidden"></p>
+          <label class="row-select">Hide quiet threads after
+            <select id="archive-after">
+              <option value="900">15 minutes</option>
+              <option value="3600">1 hour</option>
+              <option value="14400">4 hours</option>
+              <option value="86400">24 hours</option>
+              <option value="0">Off</option>
+            </select>
+          </label>
+        </div>
+        <h2>Appearance</h2>
+        <label class="row-select">Theme
+          <select id="theme-mode">
+            <option value="system">System</option>
+            <option value="dark">Dark</option>
+            <option value="light">Light</option>
+          </select>
+        </label>
+        <button type="button" id="settings-signout" class="secondary">Sign out</button>
+      </section>
     </div>
   </div>
 
@@ -152,6 +207,7 @@
           <span class="os-kbd" id="search-kbd">⌘K</span>
         </button>
         <div id="header-actions">
+          <a id="open-settings" href="/settings" title="Settings">⚙ settings</a>
           <button id="copy-link" title="Copy join link">🔗 copy invite</button>
           <button id="invite-agent" title="Copy instructions to paste into an agent's session">🤖 invite agent</button>
         </div>
@@ -246,32 +302,6 @@
       <p id="profile-meta"></p>
       <p id="profile-desc"></p>
       <p id="profile-tags"></p>
-      <div id="profile-actions" class="hidden">
-        <label class="upload-btn">Upload photo<input type="file" id="avatar-input" accept="image/*" class="hidden"></label>
-        <button id="avatar-remove" class="hidden">Remove photo</button>
-      </div>
-      <div id="notify-settings" class="hidden">
-        <h4>Personal settings</h4>
-        <label><input type="checkbox" id="notify-enabled"> Notify me about new messages</label>
-        <label><input type="checkbox" id="notify-sound"> Play a sound</label>
-        <p id="notify-perm" class="hidden"></p>
-        <label class="row-select">Hide quiet threads after
-          <select id="archive-after">
-            <option value="900">15 minutes</option>
-            <option value="3600">1 hour</option>
-            <option value="14400">4 hours</option>
-            <option value="86400">24 hours</option>
-            <option value="0">Off</option>
-          </select>
-        </label>
-        <label class="row-select">Theme
-          <select id="theme-mode">
-            <option value="system">System</option>
-            <option value="dark">Dark</option>
-            <option value="light">Light</option>
-          </select>
-        </label>
-      </div>
     </div>
   </div>
 

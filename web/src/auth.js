@@ -1,4 +1,5 @@
 /* Account pages (/login, /register, /settings) and the password banner.
+   /settings is the one settings place: a Workspace tab and a Personal tab.
    The session token is a human's only browser identity; agents keep act_ tokens. */
 
 const SESSION_KEY = 'agentchat:session';
@@ -11,7 +12,7 @@ export const sessionToken = () => {
 const setSession = (tok) => localStorage.setItem(SESSION_KEY, tok);
 export const clearSession = () => localStorage.removeItem(SESSION_KEY);
 
-// these pages send the session alone; room pages add X-Workspace-Slug (app.js)
+// login and register send the session alone; /settings (wsApi) and room pages (app.js) add X-Workspace-Slug
 export const isAccountPage = ['/login', '/register', '/settings', '/create'].includes(path);
 
 // ?next= may only point back into this origin. The string is resolved the
@@ -57,14 +58,16 @@ export const onSessionInvalid = () => {
   if (isAccountPage) location.replace(loginURL());
 };
 
-const authApi = async (apiPath, opts = {}) => {
-  const headers = { 'Content-Type': 'application/json' };
+const request = async (apiPath, opts = {}, extra = {}) => {
+  const headers = Object.assign({}, extra);
+  const multipart = opts.body instanceof FormData;
+  if (!multipart) headers['Content-Type'] = 'application/json';
   const tok = sessionToken();
   if (tok) headers['Authorization'] = 'Bearer ' + tok;
   const resp = await fetch(apiPath, {
     method: opts.method || 'GET',
     headers,
-    body: opts.body ? JSON.stringify(opts.body) : undefined,
+    body: multipart ? opts.body : (opts.body ? JSON.stringify(opts.body) : undefined),
   });
   let data = null;
   try { data = await resp.json(); } catch (e) { /* 204 */ }
@@ -75,6 +78,10 @@ const authApi = async (apiPath, opts = {}) => {
   if (resp.status === 401 && err.code === 'session_invalid') onSessionInvalid();
   throw err;
 };
+const authApi = (apiPath, opts) => request(apiPath, opts);
+// the session names a workspace through X-Workspace-Slug: how /settings reaches
+// the participant-scoped endpoints (room, me, avatar, notifications)
+const wsApi = (slug, apiPath, opts) => request(apiPath, opts, { 'X-Workspace-Slug': slug });
 
 // the account pages get the app bar; the username and sign out wait for a valid session
 const showHeader = (user) => {
@@ -289,21 +296,188 @@ const registerPage = async () => {
   });
 };
 
+// the workspace /settings talks about: the room in ?next= (the page the user
+// came from), else the last active one
+const settingsSlug = () => {
+  const fromNext = slugFromLink(backTarget());
+  if (fromNext) return fromNext;
+  const out = lastUserPayload || {};
+  const ws = (out.workspaces || []).find((w) => w.id === out.last_active_workspace_id) || (out.workspaces || [])[0];
+  return ws ? ws.slug : '';
+};
+
+const flash = (btn, text, done = 'Copied') => {
+  const was = text || btn.textContent;
+  btn.textContent = done;
+  setTimeout(() => { btn.textContent = was; }, 1200);
+};
+const copyText = async (btn, text) => {
+  try { await navigator.clipboard.writeText(text); flash(btn, null, 'Copied'); } catch (e) { flash(btn, null, 'Copy failed'); }
+};
+
+// The URL only changes on a click: the first paint keeps whatever query the
+// login redirect carried here (login-check asserts it survives verbatim).
+const showTab = (name, remember = true) => {
+  for (const b of document.querySelectorAll('#settings-tabs [role=tab]')) {
+    const on = b.dataset.tab === name;
+    b.setAttribute('aria-selected', on ? 'true' : 'false');
+    b.classList.toggle('active', on);
+  }
+  $('settings-workspace').classList.toggle('hidden', name !== 'workspace');
+  $('settings-personal').classList.toggle('hidden', name !== 'personal');
+  if (!remember) return;
+  const u = new URL(location.href);
+  u.searchParams.set('tab', name);
+  history.replaceState(null, '', u.pathname + u.search);
+};
+
+// Workspace tab: name, link, invite code. Admins edit; members read.
+const workspaceTab = async (slug) => {
+  let out;
+  try { out = await wsApi(slug, '/api/v1/room'); } catch (e) {
+    // a slug we cannot open (removed from the workspace, or the server is down): say why
+    $('ws-none').textContent = 'Cannot open the settings of ' + slug + ': ' + e.message;
+    $('ws-none').classList.remove('hidden');
+    return null;
+  }
+  const admin = !!out.invite_code;
+  let code = out.invite_code || '';
+  $('ws-panel').classList.remove('hidden');
+  $('ws-name').value = out.room.name;
+  $('ws-name').disabled = !admin;
+  $('ws-name-save').classList.toggle('hidden', !admin);
+  $('ws-slug').value = location.origin + '/w/' + out.room.slug;
+  $('ws-slug-copy').onclick = () => copyText($('ws-slug-copy'), $('ws-slug').value);
+  $('ws-invite').classList.toggle('hidden', !admin);
+  $('ws-name-form').addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    hideErr('ws-name-error');
+    $('ws-name-ok').classList.add('hidden');
+    const name = $('ws-name').value.trim();
+    if (!name) { showErr('ws-name-error', 'the name cannot be empty'); return; }
+    $('ws-name-save').disabled = true;
+    try {
+      const room = await wsApi(slug, '/api/v1/room', { method: 'PATCH', body: { name } });
+      $('ws-name').value = room.name;
+      $('avatar-ws-name').textContent = room.name;
+      $('ws-name-ok').classList.remove('hidden');
+    } catch (e) { showErr('ws-name-error', e.message); }
+    $('ws-name-save').disabled = false;
+  });
+  if (!admin) return out;
+  let shown = false;
+  const paintCode = () => { $('ws-invite-code').value = shown ? code : '••••••••••••'; $('ws-invite-show').textContent = shown ? 'Hide' : 'Show'; };
+  $('ws-invite-show').onclick = () => { shown = !shown; paintCode(); };
+  $('ws-invite-copy').onclick = () => copyText($('ws-invite-copy'), code);
+  $('ws-invite-regen').onclick = async () => {
+    if (!confirm('Regenerate the invite code? The current code stops working at once.')) return;
+    $('ws-invite-regen').disabled = true;
+    try {
+      const res = await wsApi(slug, '/api/v1/room/rotate-secret', { method: 'POST' });
+      code = res.invite_code;
+      shown = true;
+      paintCode();
+      $('ws-invite-ok').classList.remove('hidden');
+    } catch (e) { alert(e.message); }
+    $('ws-invite-regen').disabled = false;
+  };
+  return out;
+};
+
+// Personal tab, the workspace-scoped part: the participant's avatar and
+// notification prefs (both live on the participant, so they are per workspace)
+const personalWorkspaceBits = async (slug, roomName) => {
+  let me;
+  try { me = await wsApi(slug, '/api/v1/me'); } catch (e) { return; }
+  $('avatar-section').classList.remove('hidden');
+  $('avatar-ws-name').textContent = roomName;
+  const paintAvatar = async () => {
+    const slot = $('settings-avatar');
+    slot.innerHTML = '';
+    $('avatar-remove').classList.toggle('hidden', !me.avatar_attachment_id);
+    if (!me.avatar_attachment_id) {
+      const span = document.createElement('span');
+      span.className = 'avatar-lg avatar-emoji';
+      span.textContent = me.avatar || '👻';
+      slot.appendChild(span);
+      return;
+    }
+    const img = document.createElement('img');
+    img.className = 'avatar-lg avatar-img';
+    img.alt = me.name;
+    slot.appendChild(img);
+    try {
+      const resp = await fetch('/api/v1/attachments/' + me.avatar_attachment_id, { headers: { 'Authorization': 'Bearer ' + sessionToken(), 'X-Workspace-Slug': slug } });
+      if (resp.ok) img.src = URL.createObjectURL(await resp.blob());
+    } catch (e) { /* the alt text stands */ }
+  };
+  await paintAvatar();
+  $('avatar-input').addEventListener('change', async () => {
+    const file = $('avatar-input').files[0];
+    if (!file) return;
+    const fd = new FormData();
+    fd.append('file', file);
+    try { me = await wsApi(slug, '/api/v1/me/avatar', { method: 'POST', body: fd }); await paintAvatar(); } catch (e) { alert(e.message); }
+    $('avatar-input').value = '';
+  });
+  $('avatar-remove').onclick = async () => {
+    try { me = await wsApi(slug, '/api/v1/me/avatar', { method: 'DELETE' }); await paintAvatar(); } catch (e) { alert(e.message); }
+  };
+
+  let prefs = { enabled: true, sound: true, archive_after_secs: 3600 };
+  try { prefs = await wsApi(slug, '/api/v1/me/notifications'); } catch (e) { /* defaults stand */ }
+  $('notify-settings').classList.remove('hidden');
+  const paintPrefs = () => {
+    $('notify-enabled').checked = !!prefs.enabled;
+    $('notify-sound').checked = !!prefs.sound;
+    $('notify-sound').disabled = !prefs.enabled;
+    $('archive-after').value = String(prefs.archive_after_secs ?? 3600);
+    const perm = $('notify-perm');
+    const state = window.Notification ? Notification.permission : 'unsupported';
+    perm.classList.toggle('hidden', !prefs.enabled || state === 'granted');
+    perm.textContent = state === 'denied' ? 'System notifications are blocked in this browser; you still get the badge and sound.'
+      : state === 'unsupported' ? 'This browser has no system notifications; you still get the badge and sound.'
+      : 'System notifications are off until you allow them in the browser prompt.';
+  };
+  paintPrefs();
+  const save = async (patch) => {
+    try { prefs = await wsApi(slug, '/api/v1/me/notifications', { method: 'PATCH', body: patch }); } catch (e) { alert(e.message); }
+    paintPrefs();
+  };
+  $('notify-enabled').onchange = async (ev) => {
+    const enabled = ev.target.checked;
+    // ask on the toggle, never on page load, and only when the answer is open
+    if (enabled && window.Notification && Notification.permission === 'default') {
+      try { await Notification.requestPermission(); } catch (e) { /* treated as denied */ }
+    }
+    await save({ enabled });
+  };
+  $('notify-sound').onchange = (ev) => save({ sound: ev.target.checked });
+  $('archive-after').onchange = (ev) => save({ archive_after_secs: Number(ev.target.value) });
+};
+
 const settingsPage = async () => {
   if (!sessionToken()) { location.replace(loginURL('/settings')); return; }
   const user = await refreshUser();
   if (!user) { location.replace(loginURL('/settings')); return; }
   const provs = await providers();
   const back = backTarget();
-  if (!(provs.providers || []).includes('password')) {
-    $('settings-nopw-username').textContent = user.username;
-    $('settings-nopw-back').href = back;
-    $('settings-nopw').classList.remove('hidden');
-    return;
-  }
   $('settings-username').textContent = user.username;
   $('settings-back').href = back;
   $('pw-continue').href = back;
+  const hasPassword = (provs.providers || []).includes('password');
+  $('pw-form').classList.toggle('hidden', !hasPassword);
+  $('settings-nopw').classList.toggle('hidden', hasPassword);
+  for (const b of document.querySelectorAll('#settings-tabs [role=tab]')) b.onclick = () => showTab(b.dataset.tab);
+  const want = new URLSearchParams(location.search).get('tab');
+  showTab(want === 'workspace' ? 'workspace' : 'personal', false);
+  // theme is a per-browser choice, not a participant pref: the head script owns it
+  $('theme-mode').value = document.documentElement.dataset.themeMode || 'system';
+  $('theme-mode').onchange = (ev) => {
+    try { localStorage.setItem('agentchat:theme', ev.target.value); } catch (e) { /* storage blocked */ }
+    window.__applyTheme();
+  };
+  $('settings-signout').onclick = signOut;
   $('settings-view').classList.remove('hidden');
   $('pw-form').addEventListener('submit', async (ev) => {
     ev.preventDefault();
@@ -325,6 +499,10 @@ const settingsPage = async () => {
     }
     btn.disabled = false;
   });
+  const slug = settingsSlug();
+  if (!slug) { $('ws-none').classList.remove('hidden'); return; }
+  const out = await workspaceTab(slug);
+  if (out) await personalWorkspaceBits(slug, out.room.name);
 };
 
 const pages = { '/login': loginPage, '/register': registerPage, '/settings': settingsPage };

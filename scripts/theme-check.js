@@ -2,7 +2,7 @@
 // the choice survives a reload, and the highlight.js sheet swaps with the theme.
 // Run: NODE_PATH=<dir with puppeteer-core> node scripts/theme-check.js
 const puppeteer = require('puppeteer-core');
-const { newRoom, openAsHuman } = require('./lib/login.js');
+const { newRoom, openAsHuman, openSettings, backToRoom } = require('./lib/login.js');
 const SERVER = process.env.SERVER || 'http://localhost:8095';
 
 async function api(path, opts = {}) {
@@ -74,22 +74,24 @@ const assert = (cond, msg) => { if (!cond) throw new Error(msg); };
   assert(lum(s.bg) > 200 && lum(s.text) < 80, 'light palette: ' + JSON.stringify(s));
   assert(!s.hljsDark && s.hljsLight && s.scheme === 'light', 'light sheets: ' + JSON.stringify(s));
 
-  // 3. the settings select forces Dark even on a light OS
-  await page.click('#me-footer');
+  // 3. the settings select forces Dark even on a light OS (the settings page
+  //    is a fresh document, so the stubbed OS starts dark there; the select
+  //    must win regardless)
+  await openSettings(page, SERVER);
   await page.waitForSelector('#theme-mode', { visible: true, timeout: 5000 });
   assert((await page.$eval('#theme-mode', (el) => el.value)) === 'system', 'select did not show the current mode');
   await page.select('#theme-mode', 'dark');
   await page.waitForFunction(() => document.documentElement.dataset.theme === 'dark', { timeout: 5000 });
   s = await state();
   assert(s.mode === 'dark' && lum(s.bg) < 60 && s.hljsDark && !s.hljsLight, 'forced dark: ' + JSON.stringify(s));
-  await page.click('#profile-close');
+  await backToRoom(page);
 
   // 4. the choice persists across a reload and ignores the OS
   await page.reload({ waitUntil: 'networkidle2' });
   await page.waitForSelector('#chat-view:not(.hidden)', { timeout: 8000 });
   s = await state();
   assert(s.mode === 'dark' && s.theme === 'dark', 'dark did not persist: ' + JSON.stringify(s));
-  await page.click('#me-footer');
+  await openSettings(page, SERVER);
   await page.waitForSelector('#theme-mode', { visible: true, timeout: 5000 });
   assert((await page.$eval('#theme-mode', (el) => el.value)) === 'dark', 'select lost the persisted mode');
 
@@ -97,7 +99,8 @@ const assert = (cond, msg) => { if (!cond) throw new Error(msg); };
   await os('dark');
   await page.select('#theme-mode', 'light');
   await page.waitForFunction(() => document.documentElement.dataset.theme === 'light', { timeout: 5000 });
-  await page.click('#profile-close');
+  await backToRoom(page);
+  await os('dark');
   s = await state();
   assert(s.mode === 'light' && lum(s.bg) > 200 && s.hljsLight && !s.hljsDark, 'forced light: ' + JSON.stringify(s));
   const codeBg = await page.$eval('#messages .msg pre code', (el) => getComputedStyle(el).backgroundColor);
@@ -105,7 +108,7 @@ const assert = (cond, msg) => { if (!cond) throw new Error(msg); };
   await page.screenshot({ path: (process.env.OUT || '.') + '/theme-light.png' });
 
   // 6. back to System: follows the (dark) OS again
-  await page.click('#me-footer');
+  await openSettings(page, SERVER);
   await page.waitForSelector('#theme-mode', { visible: true, timeout: 5000 });
   await page.select('#theme-mode', 'system');
   await page.waitForFunction(() => document.documentElement.dataset.theme === 'dark', { timeout: 5000 });
