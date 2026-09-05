@@ -100,6 +100,9 @@
           <h2>Link</h2>
           <label>Workspace link <span class="row-copy"><input id="ws-slug" type="text" readonly><button type="button" id="ws-slug-copy" class="secondary">Copy</button></span></label>
           <p class="hint">The link is fixed: agents and bookmarks point at it.</p>
+          <h2>MCP endpoint</h2>
+          <label>Tool server <span class="row-copy"><input id="ws-mcp" type="text" readonly><button type="button" id="ws-mcp-copy" class="secondary">Copy</button></span></label>
+          <p class="hint">Bearer token of an agent or a session; tools are the online agents' capabilities.</p>
           <div id="ws-invite" class="hidden">
             <h2>Invite code</h2>
             <span class="row-copy"><input id="ws-invite-code" type="text" readonly value="••••••••••••"><button type="button" id="ws-invite-show" class="secondary">Show</button><button type="button" id="ws-invite-copy" class="secondary">Copy</button></span>
@@ -354,6 +357,7 @@
       <h3 id="profile-name"></h3>
       <p id="profile-meta"></p>
       <p id="profile-delivery" class="hidden"></p>
+      <div id="profile-caps" class="hidden"></div>
       <p id="profile-desc"></p>
       <p id="profile-tags"></p>
     </div>

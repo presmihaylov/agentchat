@@ -55,6 +55,18 @@ func writeStoreErr(w http.ResponseWriter, err error) {
 		writeErrCode(w, http.StatusConflict, "workspace_quota", err.Error())
 	case errors.Is(err, models.ErrInviteInvalid):
 		writeErrCode(w, http.StatusBadRequest, "invite_invalid", err.Error())
+	case errors.Is(err, models.ErrAgentOffline):
+		writeErrCode(w, http.StatusConflict, "agent_offline", err.Error())
+	case errors.Is(err, models.ErrCallFinished):
+		writeErrCode(w, http.StatusConflict, "call_finished", err.Error())
+	case errors.Is(err, models.ErrTooManyCalls):
+		writeErrCode(w, http.StatusTooManyRequests, "too_many_calls", err.Error())
+	case errors.Is(err, models.ErrNotTarget):
+		writeErrCode(w, http.StatusForbidden, "not_the_target", err.Error())
+	case errors.Is(err, models.ErrSelfCall):
+		writeErrCode(w, http.StatusBadRequest, "self_call", err.Error())
+	case errors.Is(err, models.ErrCapabilityQuota):
+		writeErrCode(w, http.StatusConflict, "capability_quota", err.Error())
 	default:
 		slog.Error("internal error", "err", err)
 		writeErr(w, http.StatusInternalServerError, "internal error")
@@ -62,7 +74,13 @@ func writeStoreErr(w http.ResponseWriter, err error) {
 }
 
 func readJSON(w http.ResponseWriter, r *http.Request, dst any) bool {
-	r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
+	return readJSONLimit(w, r, dst, maxBodyBytes)
+}
+
+// readJSONLimit is readJSON with its own body cap (capability schemas and
+// results are bigger than a message).
+func readJSONLimit(w http.ResponseWriter, r *http.Request, dst any, limit int64) bool {
+	r.Body = http.MaxBytesReader(w, r.Body, limit)
 	dec := json.NewDecoder(r.Body)
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(dst); err != nil {

@@ -150,6 +150,13 @@ body.has-banner.has-header .auth-view, body.has-banner.has-header #create-view, 
 #profile-meta { margin: 0 0 12px; color: var(--dim); font-size: 12px; }
 #profile-delivery { margin: -6px 0 12px; color: var(--dim); font-size: 12px; }
 #profile-desc { margin: 0 0 8px; font-size: 14px; overflow-wrap: break-word; }
+#profile-caps { margin: -4px 0 12px; font-size: 12px; text-align: left; }
+#profile-caps h4 { margin: 0 0 4px; font-size: 12px; color: var(--dim); font-weight: 600; }
+#profile-caps .cap-row { display: flex; gap: 6px; align-items: baseline; padding: 2px 0; }
+#profile-caps .cap-row code { font-size: 12px; }
+#profile-caps .cap-row span { flex: 1; min-width: 0; color: var(--dim); overflow-wrap: anywhere; }
+#profile-caps .cap-schema-toggle { background: none; border: 1px solid var(--border); color: var(--dim); border-radius: 4px; padding: 0 6px; font-size: 11px; cursor: pointer; }
+#profile-caps .cap-schema { margin: 2px 0 6px; padding: 6px; font-size: 11px; background: var(--panel2); border-radius: 6px; overflow: auto; max-height: 160px; }
 #profile-tags { margin: 0; color: var(--dim); font-size: 12px; }
 #profile-actions { display: flex; gap: 8px; align-items: center; flex: none; }
 /* a muted channel stays dark on unread (mentions still glow); the bell says it will not ping */

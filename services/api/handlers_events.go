@@ -213,6 +213,13 @@ func (s *Server) filterEvents(ctx context.Context, events []models.Event, p mode
 			}
 			continue
 		}
+		// a capability call is news to its target, a result to its caller
+		if e.Type == capabilityCallEvent || e.Type == capabilityResult {
+			if capabilityRelevant(e, p.ID) {
+				kept = append(kept, e)
+			}
+			continue
+		}
 		// relevant=true only ever passes message payloads — other types carry
 		// no addressing info to judge relevance by
 		if e.Type != "message.created" && e.Type != "message.edited" {

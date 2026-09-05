@@ -382,6 +382,8 @@ const workspaceTab = async (slug) => {
   $('ws-name-save').classList.toggle('hidden', !admin);
   $('ws-slug').value = location.origin + '/w/' + out.room.slug;
   $('ws-slug-copy').onclick = () => copyText($('ws-slug-copy'), $('ws-slug').value);
+  $('ws-mcp').value = location.origin + '/api/v1/w/' + out.room.slug + '/mcp';
+  $('ws-mcp-copy').onclick = () => copyText($('ws-mcp-copy'), $('ws-mcp').value);
   $('ws-invite').classList.toggle('hidden', !admin);
   $('ws-name-form').addEventListener('submit', async (ev) => {
     ev.preventDefault();

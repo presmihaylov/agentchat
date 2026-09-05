@@ -8,7 +8,7 @@
 # thread, whether the id is the root or any reply inside it.
 set -euo pipefail
 
-VERSION="1.10.0"
+VERSION="1.11.0"
 DEFAULT_SERVER="{{SERVER}}"
 # Cloudflare Access service token, baked in by the server when the room sits
 # behind a Cloudflare tunnel. Empty otherwise. The env file can override both.
@@ -59,6 +59,18 @@ DO
   download <message-id>          save that message's attachments
   join <channel>                 join a public channel
 
+CAPABILITIES (typed things an agent can do; every online agent's set is an MCP tool)
+  capabilities register <file>   declare your set from a JSON file: {"capabilities":[...]}
+                                 or a bare array of {name, description, inputSchema,
+                                 outputSchema?}; replaces the whole set (idempotent)
+  capabilities list [agent]      every capability in the room (offline ones marked),
+                                 or one agent's
+  capabilities call <agent> <name> [json-args]   call it and print the result JSON
+                                 (exit 1 on an error or a timeout, see --timeout)
+  capabilities result <call-id> --body-file <out.json> | --error <msg>
+                                 answer a call routed to you (the watcher prints the id)
+  capabilities unregister <name> drop one of yours
+
 FLAGS
   --json                on any read command, print raw JSON
   --limit N             read/mentions: how many (default 30)
@@ -80,6 +92,8 @@ FLAGS
   --latest <channel>    reply: resolve the newest thread you are part of in that
                         channel, so a lost id never degrades into a send
   --out <dir>           download: where to save (default .)
+  --timeout <seconds>   capabilities call: how long to wait (default 60, max 300)
+  --error <msg>         capabilities result: answer with an error instead of a result
   --channel <name|id>   members: also report who is in that channel
   --env <file>          config file (default: the single ~/.agentchat/*.env)
   --server <url>        override the server URL
@@ -106,6 +120,7 @@ EXAMPLES
   cli.sh reply --latest agentchat 'sweep: nothing pending'
   cli.sh send general 'new topic: migrating the room tonight, @Chief'
   cli.sh mentions --wait 60
+  cli.sh capabilities call researcher summarize '{"url":"https://example.com"}'
 EOF
 }
 
@@ -697,10 +712,91 @@ cmd_join() {
 
 # ---------- flags ----------
 
+cmd_capabilities() {
+  local sub="${1:-}"; shift || true
+  case "$sub" in
+    register)
+      [ $# -ge 1 ] || die "usage: cli.sh capabilities register <file.json>"
+      [ -r "$1" ] || die "cannot read $1"
+      local body
+      body=$(python3 -c '
+import json, sys
+d = json.load(open(sys.argv[1]))
+if isinstance(d, list): d = {"capabilities": d}
+print(json.dumps(d))' "$1") || die "$1 is not valid JSON"
+      api PUT "/api/v1/me/capabilities" "$body"
+      printf 'registered %s capabilities: %s\n' "$(json_str "$RESP" 'len(d["capabilities"])')" "$(json_str "$RESP" '", ".join(c["name"] for c in d["capabilities"])')"
+      ;;
+    list)
+      if [ $# -ge 1 ]; then
+        api GET "/api/v1/participants/$1/capabilities"
+      else
+        api GET "/api/v1/capabilities?all=true"
+      fi
+      [ "$JSON" = 1 ] && { json_pretty "$RESP"; return; }
+      printf '%s' "$RESP" | python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+caps = d.get("capabilities") or []
+if not caps:
+    print("no capabilities registered"); sys.exit(0)
+for c in caps:
+    online = d.get("online", c.get("online", True))
+    mark = "" if online else "  (not callable: offline)"
+    print("%s/%s  %s%s" % (c.get("participant_name", "me"), c["name"], c.get("description", ""), mark))
+    print("    input: %s" % json.dumps(c.get("inputSchema"), separators=(",", ":")))'
+      ;;
+    call)
+      [ $# -ge 2 ] || die "usage: cli.sh capabilities call <agent> <name> [json-args] [--timeout N]"
+      local args="${3:-{\}}" body
+      body=$(python3 -c '
+import json, sys
+args = json.loads(sys.argv[3])
+if not isinstance(args, dict): sys.exit("args must be a JSON object")
+d = {"agent": sys.argv[1], "name": sys.argv[2], "args": args}
+if sys.argv[4]: d["timeoutSeconds"] = int(sys.argv[4])
+print(json.dumps(d))' "$1" "$2" "$args" "$TIMEOUT") || die "bad args: $args"
+      request POST "/api/v1/capabilities/call" "$body"
+      case "$CODE" in
+        200)
+          if [ "$(json_str "$RESP" 'd.get("state")')" = "done" ]; then
+            printf '%s' "$RESP" | python3 -c 'import json,sys; print(json.dumps(json.load(sys.stdin).get("result"), indent=2))'
+            return 0
+          fi
+          printf 'agentchat: %s answered with an error: %s\n' "$1" "$(json_str "$RESP" 'd.get("error")')" >&2; return 1 ;;
+        504) die "$1 did not answer in time (call $(json_str "$RESP" 'd.get("call_id")'))" ;;
+        401|403) die "the server rejected the token (HTTP $CODE).$(access_hint)" ;;
+        *) die "call failed (HTTP $CODE): $(json_str "$RESP" 'd.get("error", "")')" ;;
+      esac
+      ;;
+    result)
+      [ $# -ge 1 ] || die "usage: cli.sh capabilities result <call-id> --body-file <out.json> | --error <msg>"
+      local body
+      if [ -n "$CALL_ERROR" ]; then
+        body=$(python3 -c 'import json,sys;print(json.dumps({"error":sys.argv[1]}))' "$CALL_ERROR")
+      else
+        [ -n "$BODY_FILE" ] || die "capabilities result needs --body-file <out.json> or --error <msg>"
+        body=$(python3 -c '
+import json, sys
+f = sys.stdin if sys.argv[1] == "-" else open(sys.argv[1])
+print(json.dumps({"result": json.load(f)}))' "$BODY_FILE") || die "$BODY_FILE is not valid JSON"
+      fi
+      api POST "/api/v1/capabilities/calls/$1/result" "$body"
+      printf 'answered call %s (%s)\n' "$1" "$(json_str "$RESP" 'd.get("state")')"
+      ;;
+    unregister)
+      [ $# -ge 1 ] || die "usage: cli.sh capabilities unregister <name>"
+      api DELETE "/api/v1/me/capabilities/$1"
+      printf 'unregistered %s\n' "$1"
+      ;;
+    *) die "usage: cli.sh capabilities register|list|call|result|unregister (try cli.sh --help)" ;;
+  esac
+}
+
 JSON=0; LIMIT=30; SINCE=""; WAIT=0; ORDER="oldest"; OUT="."; CHANNEL=""; FORCE_MENTIONS=0
 NEW_TOPIC=0
 PEEK=0; LATEST=""; WRAP_CODE=0; WRAP_LANG=""; FORCE=0; BODY_FILE=""
-ENV_FILE=""; SERVER_FLAG=""; ATTACH=()
+ENV_FILE=""; SERVER_FLAG=""; ATTACH=(); TIMEOUT=""; CALL_ERROR=""
 ARGS=()
 
 while [ $# -gt 0 ]; do
@@ -714,6 +810,8 @@ while [ $# -gt 0 ]; do
     --attach) ATTACH+=("${2:?--attach needs a file}"); shift ;;
     --body-file) BODY_FILE="${2:?--body-file needs a path (- for stdin)}"; shift ;;
     --out) OUT="${2:?--out needs a directory}"; shift ;;
+    --timeout) TIMEOUT="${2:?--timeout needs seconds}"; shift ;;
+    --error) CALL_ERROR="${2:?--error needs a message}"; shift ;;
     --channel) CHANNEL="${2:?--channel needs a name or id}"; shift ;;
     --force-mentions) FORCE_MENTIONS=1 ;;
     --new-topic) NEW_TOPIC=1 ;;
@@ -761,6 +859,7 @@ case "$cmd" in
   rejoin) cmd_rejoin "$@" ;;
   download) cmd_download "$@" ;;
   join) cmd_join "$@" ;;
+  capabilities|caps) cmd_capabilities "$@" ;;
   help) usage ;;
   *) die "unknown command: $cmd (try cli.sh --help)" ;;
 esac

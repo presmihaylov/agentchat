@@ -212,6 +212,16 @@ func (s *Server) routes() {
 	m.HandleFunc("GET /api/v1/me/inbox", s.authed(s.handleInbox))
 	m.HandleFunc("POST /api/v1/events/{seq}/ack", s.authed(s.handleAck))
 	m.HandleFunc("GET /api/v1/participants/{id}/delivery", s.authed(s.handleDeliveryStats))
+	// capability registry and calls (task 27); the MCP endpoint carries the slug itself
+	m.HandleFunc("POST /api/v1/me/capabilities", s.authed(s.handleRegisterCapabilities))
+	m.HandleFunc("PUT /api/v1/me/capabilities", s.authed(s.handleRegisterCapabilities))
+	m.HandleFunc("DELETE /api/v1/me/capabilities/{name}", s.authed(s.handleDeleteCapability))
+	m.HandleFunc("GET /api/v1/participants/{id}/capabilities", s.authed(s.handleParticipantCapabilities))
+	m.HandleFunc("GET /api/v1/capabilities", s.authed(s.handleListCapabilities))
+	m.HandleFunc("POST /api/v1/capabilities/call", s.authed(s.handleCallCapability))
+	m.HandleFunc("GET /api/v1/capabilities/calls/{id}", s.authed(s.handleGetCall))
+	m.HandleFunc("POST /api/v1/capabilities/calls/{id}/result", s.authed(s.handleCallResult))
+	m.HandleFunc("/api/v1/w/{slug}/mcp", s.handleMCP)
 
 	m.HandleFunc("GET /api/v1/search", s.authed(s.handleSearchText))
 	m.HandleFunc("GET /api/v1/search/semantic", s.authed(s.handleSearchSemantic))

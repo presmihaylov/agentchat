@@ -273,4 +273,51 @@ iseq=$("${B[@]}" inbox --peek --json | jq_ '[e["seq"] for e in d["events"] if e[
 [ "$(unacked)" = "$before" ] || fail "peek should show $before unacked after the ack, got $(unacked)"
 ok "inbox drain and ack"
 
+# 14. capabilities (task 27): bob registers, alice lists and calls, bob answers from
+# the inbox, the result comes back; an error answer exits 1; unregister empties the list.
+cat > "$WORK/caps.json" <<'JSON'
+[{"name":"echo","description":"echoes the question","inputSchema":{"type":"object","properties":{"q":{"type":"string"}},"required":["q"]},"outputSchema":{"type":"object","properties":{"text":{"type":"string"}},"required":["text"]}}]
+JSON
+"${B[@]}" capabilities register "$WORK/caps.json" | grep -q "registered 1 capabilities: echo" || fail "capabilities register output"
+"${A[@]}" capabilities list | grep -q "bob/echo" || fail "capabilities list did not show bob/echo"
+"${A[@]}" capabilities list bob --json | jq_ 'd["online"] and len(d["capabilities"]) == 1' | grep -q True || fail "capabilities list bob"
+# bob answers in the background: poll its relevant firehose for the call
+(
+  cur=$(curl -fsS "$SERVER/api/v1/events" -H "Authorization: Bearer $bob" | jq_ 'd["cursor"]')
+  for _ in $(seq 1 40); do
+    ev=$(curl -fsS "$SERVER/api/v1/events?after=$cur&relevant=true&timeout=1" -H "Authorization: Bearer $bob")
+    id=$(printf '%s' "$ev" | jq_ '([e["payload"]["call_id"] for e in d["events"] if e["type"] == "capability.call"] or [""])[0]')
+    if [ -n "$id" ]; then
+      printf '{"text":"pong"}' > "$WORK/out.json"
+      "${B[@]}" capabilities result "$id" --body-file "$WORK/out.json" > "$WORK/answer.log"
+      exit 0
+    fi
+    cur=$(printf '%s' "$ev" | jq_ 'd["cursor"]')
+  done
+  exit 1
+) &
+answerer=$!
+res=$("${A[@]}" capabilities call bob echo '{"q":"ping"}' --timeout 20) || fail "capabilities call failed: $res"
+printf '%s' "$res" | grep -q '"text": "pong"' || fail "call result: $res"
+wait "$answerer" || fail "bob's answerer never saw the call"
+grep -q "answered call" "$WORK/answer.log" || fail "result output"
+# an error answer surfaces as exit 1 with the message
+(
+  cur=$(curl -fsS "$SERVER/api/v1/events" -H "Authorization: Bearer $bob" | jq_ 'd["cursor"]')
+  for _ in $(seq 1 40); do
+    ev=$(curl -fsS "$SERVER/api/v1/events?after=$cur&relevant=true&timeout=1" -H "Authorization: Bearer $bob")
+    id=$(printf '%s' "$ev" | jq_ '([e["payload"]["call_id"] for e in d["events"] if e["type"] == "capability.call"] or [""])[0]')
+    if [ -n "$id" ]; then "${B[@]}" capabilities result "$id" --error "no can do" >/dev/null; exit 0; fi
+    cur=$(printf '%s' "$ev" | jq_ 'd["cursor"]')
+  done
+  exit 1
+) &
+answerer=$!
+if "${A[@]}" capabilities call bob echo '{"q":"ping"}' --timeout 20 2> "$WORK/callerr"; then fail "error answer should exit 1"; fi
+grep -q "no can do" "$WORK/callerr" || fail "error message missing: $(cat "$WORK/callerr")"
+wait "$answerer" || fail "bob's error answerer never saw the call"
+"${B[@]}" capabilities unregister echo | grep -q "unregistered echo" || fail "unregister output"
+"${A[@]}" capabilities list | grep -q "no capabilities registered" || fail "list after unregister"
+ok "capabilities register, call, result, unregister"
+
 echo CLI_E2E_OK

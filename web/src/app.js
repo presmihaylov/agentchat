@@ -1062,7 +1062,46 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
     const tags = (p.tags || []).map((t) => t.tag).join(', ');
     $('profile-tags').textContent = tags ? 'Tags: ' + tags : '';
     showDelivery(p);
+    showCapabilities(p);
     $('profile-modal').classList.remove('hidden');
+  };
+
+  // Capabilities (task 27): what an agent can be called for. Hidden for
+  // humans and for agents without any; offline agents are listed, not callable.
+  let profileCapsFor = null; // the agent whose profile is open, for live refresh
+  const showCapabilities = (p) => {
+    const box = $('profile-caps');
+    box.classList.add('hidden');
+    box.textContent = '';
+    profileCapsFor = p.is_human ? null : p;
+    if (p.is_human) return;
+    api('/api/v1/participants/' + encodeURIComponent(p.id) + '/capabilities').then((out) => {
+      if (profileCapsFor !== p) return; // another profile opened meanwhile
+      const caps = out.capabilities || [];
+      if (!caps.length) return;
+      const h = document.createElement('h4');
+      h.textContent = 'Capabilities' + (out.online ? '' : ' · not callable: offline');
+      box.appendChild(h);
+      caps.forEach((c) => {
+        const row = document.createElement('div');
+        row.className = 'cap-row';
+        const name = document.createElement('code');
+        name.textContent = c.name;
+        const desc = document.createElement('span');
+        desc.textContent = c.description || '';
+        const toggle = document.createElement('button');
+        toggle.type = 'button';
+        toggle.className = 'cap-schema-toggle';
+        toggle.textContent = 'schema';
+        const pre = document.createElement('pre');
+        pre.className = 'cap-schema hidden';
+        pre.textContent = JSON.stringify(c.inputSchema, null, 2);
+        toggle.onclick = () => pre.classList.toggle('hidden');
+        row.append(name, desc, toggle);
+        box.append(row, pre);
+      });
+      box.classList.remove('hidden');
+    }).catch(() => {});
   };
 
   // Delivery receipts (task 25): an agent's owner, an admin, or the agent
@@ -1747,6 +1786,14 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
     if (t === 'message.reaction') {
       reactionMap[ev.payload.message_id] = ev.payload.reactions || [];
       renderReactions(ev.payload.message_id);
+      return;
+    }
+    // a call and its result change no room structure; a refresh per call would
+    // hammer every open tab while an MCP client drives the agents
+    if (t === 'capability.call' || t === 'capability.result') return;
+    if (t === 'capability.registered') {
+      // only an open profile of that agent cares; the sidebar does not show capabilities
+      if (profileCapsFor && ev.payload.participant_id === profileCapsFor.id) showCapabilities(profileCapsFor);
       return;
     }
     // everything else changes room structure or people — refresh the sidebar
@@ -2575,9 +2622,9 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
     if (ev.key === 'Escape' && !$('browse-modal').classList.contains('hidden')) closeBrowse();
   });
 
-  $('profile-close').onclick = () => $('profile-modal').classList.add('hidden');
+  $('profile-close').onclick = () => { profileCapsFor = null; $('profile-modal').classList.add('hidden'); };
   $('profile-modal').onclick = (ev) => {
-    if (ev.target === $('profile-modal')) $('profile-modal').classList.add('hidden');
+    if (ev.target === $('profile-modal')) { profileCapsFor = null; $('profile-modal').classList.add('hidden'); }
   };
 
   // navigator.clipboard exists only in a secure context (https or localhost), so

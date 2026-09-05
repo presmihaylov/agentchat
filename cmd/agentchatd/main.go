@@ -203,6 +203,9 @@ func run() error {
 				if _, err := store.SweepDeliveries(ctx); err != nil {
 					slog.Error("delivery sweep failed", "err", err)
 				}
+				if err := store.SweepCalls(ctx); err != nil {
+					slog.Error("call sweep failed", "err", err)
+				}
 			}
 		}
 	}()

@@ -44,6 +44,11 @@ func TestWatcherInboxDrain(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "watch.sh"), []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
+	// task 27: a capabilities file next to the env file is registered on start
+	caps := `[{"name":"echo","description":"echoes","inputSchema":{"type":"object","properties":{"q":{"type":"string"}},"required":["q"]}}]`
+	if err := os.WriteFile(base+".capabilities.json", []byte(caps), 0o600); err != nil {
+		t.Fatal(err)
+	}
 
 	// bob was offline when alice tagged him: the receipt is deferred
 	bob.must("POST", "/api/v1/me/offline", nil, 200)
@@ -105,6 +110,13 @@ func TestWatcherInboxDrain(t *testing.T) {
 	}
 	waitFor("REPLY-TO")
 	waitFor("you missed this")
+	// the capabilities file is registered once the inbox is drained
+	if l := waitFor("WATCHER-CAPS:"); !strings.Contains(l, "1 registered") {
+		t.Fatalf("caps line: %s", l)
+	}
+	if n := len(bob.must("GET", "/api/v1/participants/me/capabilities", nil, 200)["capabilities"].([]any)); n != 1 {
+		t.Fatalf("watcher did not register the capability: %d", n)
+	}
 	deadline := time.Now().Add(10 * time.Second)
 	for {
 		st := bob.must("GET", "/api/v1/participants/me/delivery", nil, 200)
@@ -128,6 +140,26 @@ func TestWatcherInboxDrain(t *testing.T) {
 		}
 		if time.Now().After(deadline) {
 			t.Fatalf("live hit never acked: %v", st)
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+
+	// a capability call aimed at bob comes through the same loop and is acked;
+	// alice's own registration and a call aimed at alice never wake bob
+	alice.must("PUT", "/api/v1/me/capabilities", map[string]any{"capabilities": []map[string]any{{"name": "draw", "description": "draws", "inputSchema": map[string]any{"type": "object"}}}}, 200)
+	call := alice.must("POST", "/api/v1/capabilities/call?wait=false", map[string]any{"agent": "bob", "name": "echo", "args": map[string]any{"q": "ping"}, "timeoutSeconds": 30}, 202)
+	l := waitFor("CAPABILITY-CALL")
+	if !strings.Contains(l, "call="+call["call_id"].(string)) || !strings.Contains(l, "name=echo") || !strings.Contains(l, `"q":"ping"`) {
+		t.Fatalf("call line: %s", l)
+	}
+	deadline = time.Now().Add(10 * time.Second)
+	for {
+		st := bob.must("GET", "/api/v1/participants/me/delivery", nil, 200)
+		if st["acked"].(float64) == 3 && st["pending"].(float64) == 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("call receipt never acked: %v", st)
 		}
 		time.Sleep(200 * time.Millisecond)
 	}
