@@ -199,11 +199,14 @@ body.has-banner.has-header .auth-view, body.has-banner.has-header #create-view, 
 .date-divider.covered { visibility: hidden; }
 /* Thread leaves nest under their parent channel: indented, with a branch guide. */
 /* fully rounded, so a selected leaf reads as the same pill as a channel row */
-/* tree rows: a box-drawing elbow in the muted colour, aligned under the channel's # sigil */
+/* tree rows: a drawn guide, not text glyphs, so the line stays continuous at
+   any row height. The trunk runs the full row (into the 4px padding, rows sit
+   flush) and stops at the middle of the last leaf; the elbow is the tick. */
 #channel-list li.thread-leaf { margin-left: 14px; padding-left: 6px; border-radius: 6px; font-size: 13px; }
-#channel-list li.thread-leaf .t-icon { flex: none; width: 12px; font-size: 13px; line-height: 1; color: var(--dim); font-family: ui-monospace, Menlo, monospace; }
-#channel-list li.thread-leaf .t-icon::before { content: '\251C'; }
-#channel-list li.thread-leaf.last .t-icon::before { content: '\2514'; }
+#channel-list li.thread-leaf .t-icon { flex: none; width: 12px; align-self: stretch; position: relative; color: var(--dim); }
+#channel-list li.thread-leaf .t-icon::before { content: ''; position: absolute; left: 5px; top: -4px; bottom: -4px; border-left: 1px solid currentColor; }
+#channel-list li.thread-leaf.last .t-icon::before { bottom: 50%; }
+#channel-list li.thread-leaf .t-icon::after { content: ''; position: absolute; left: 5px; right: 0; top: 50%; border-top: 1px solid currentColor; }
 #channel-list li.thread-leaf .t-snippet { overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1; color: var(--dim); }
 #channel-list li.thread-leaf.unread .t-snippet { color: var(--hot); }
 #channel-list li.thread-leaf.active .t-snippet { color: var(--hot); }

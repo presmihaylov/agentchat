@@ -1,6 +1,8 @@
 // E2E: Discord-style thread tree. Threads the viewer is involved in nest as
 // leaves under their parent channel in the sidebar. Each leaf glows on unread
 // and shows a numeric badge only for unread @mentions (mention-only rule).
+// The leaves hang off a drawn tree guide: a continuous trunk with an elbow on
+// the last leaf (Maya, 2026-09-05), checked by geometry and computed style.
 // Run: NODE_PATH=<dir with puppeteer-core> node scripts/threadtree-check.js
 // Needs a server on $SERVER (default :8095) backed by a live Postgres.
 const puppeteer = require('puppeteer-core');
@@ -36,6 +38,10 @@ async function api(path, opts = {}) {
   const rootA = await api('/api/v1/channels/general/messages', { method: 'POST', token: sender.token, body: { body: 'topic A ping' } });
   await post('general', 'vv:on it', rootA.id);
   await post('general', 'hey @viewer look', rootA.id);
+  // thread C in general too, so #general carries two leaves and the tree guide
+  // has a trunk to draw between them
+  const rootC = await api('/api/v1/channels/general/messages', { method: 'POST', token: sender.token, body: { body: 'topic C later' } });
+  await post('general', 'vv:noted', rootC.id);
   // thread B in proj: viewer replies, sender plain follow-up -> unread, no mention
   const rootB = await api('/api/v1/channels/proj/messages', { method: 'POST', token: sender.token, body: { body: 'topic B plans' } });
   await post('proj', 'vv:sure', rootB.id);
@@ -46,6 +52,7 @@ async function api(path, opts = {}) {
     headless: 'new', args: ['--no-sandbox', '--disable-dev-shm-usage'],
   });
   const page = await browser.newPage();
+  await page.setViewport({ width: 1280, height: 800 }); // the sidebar folds away on a narrow default viewport
   const fail = (m) => { console.error('FAIL: ' + m); process.exitCode = 1; };
   page.on('pageerror', (e) => fail('pageerror ' + e.message));
 
@@ -87,6 +94,45 @@ async function api(path, opts = {}) {
   }
   // a thread must not leak under the wrong channel
   if (leafIn('general', 'topic B') || leafIn('proj', 'topic A')) fail('a thread nested under the wrong channel');
+
+  // the tree guide is drawn, not glyphs: one continuous trunk from the first
+  // leaf down to the middle of the last one, an elbow tick on every row
+  const guide = await page.evaluate(() => {
+    const leaves = [...document.querySelectorAll('#channel-list li.thread-leaf')];
+    const rows = leaves.map((li) => {
+      const icon = li.querySelector('.t-icon');
+      const r = li.getBoundingClientRect(), ir = icon.getBoundingClientRect();
+      const trunk = getComputedStyle(icon, '::before'), tick = getComputedStyle(icon, '::after');
+      return {
+        last: li.classList.contains('last'), top: r.top, bottom: r.bottom, iconTop: ir.top, iconBottom: ir.bottom,
+        glyph: trunk.content, trunkStyle: trunk.borderLeftStyle, trunkTop: trunk.top, trunkBottom: trunk.bottom,
+        tickStyle: tick.borderTopStyle, tickTop: tick.top, color: trunk.borderLeftColor,
+      };
+    });
+    // #general's two leaves are the first two rows of the list
+    return { rows, gap: rows.length > 1 ? rows[1].top - rows[0].bottom : null };
+  });
+  const rows = guide.rows;
+  if (rows.length < 3) fail('expected three leaves, got ' + rows.length);
+  for (const r of rows) {
+    if (r.glyph !== '""') fail('a leaf still carries a text glyph: ' + r.glyph);
+    if (r.trunkStyle !== 'solid' || r.tickStyle !== 'solid') fail('guide not drawn with borders: ' + JSON.stringify(r));
+    // percentages resolve to px once laid out: the middle is half the icon column
+    const half = (r.iconBottom - r.iconTop) / 2, near = (v) => Math.abs(parseFloat(v) - half) < 0.6;
+    if (!near(r.tickTop)) fail('elbow tick not at the row middle: ' + r.tickTop + ' vs ' + half);
+    if (Math.abs(r.iconTop - (r.top + 4)) > 0.6 || Math.abs(r.iconBottom - (r.bottom - 4)) > 0.6) fail('icon column does not span the row: ' + JSON.stringify(r));
+    // the trunk reaches 4px past the icon on both ends, i.e. the row edges, so two
+    // flush rows join with no gap; the last leaf stops at its middle (the elbow)
+    if (r.trunkTop !== '-4px') fail('trunk does not start at the row top: ' + r.trunkTop);
+    if (!r.last && r.trunkBottom !== '-4px') fail('trunk does not reach the row bottom: ' + r.trunkBottom);
+    if (r.last && !near(r.trunkBottom)) fail('last leaf trunk should stop at the middle: ' + r.trunkBottom + ' vs ' + half);
+  }
+  if (rows[0].last) fail('the first of two leaves is marked last');
+  if (!rows[1].last) fail('the second leaf under #general is not marked last');
+  if (guide.gap !== 0) fail('leaf rows are not flush, the trunk would break: gap=' + guide.gap);
+  const fs = require('fs'); fs.mkdirSync('tmp', { recursive: true });
+  const side = await page.$('#sidebar');
+  await side.screenshot({ path: 'tmp/threadtree-guide.png' });
 
   await browser.close();
   if (!process.exitCode) console.log('THREADTREE_CHECK_OK');

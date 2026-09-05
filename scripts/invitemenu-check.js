@@ -61,7 +61,7 @@ const noOldButtons = async (page) => {
   await bob.waitForSelector('#ws-menu:not(.hidden)', { timeout: 5000 });
   const items = await bob.$$eval('#ws-menu .ws-item', (els) => els.map((e) => e.textContent.trim()));
   assert(!items.includes('Invite member'), 'member sees Invite member: ' + JSON.stringify(items));
-  assert(items.includes('Create workspace') && items.includes('Settings'), 'member menu: ' + JSON.stringify(items));
+  assert(!items.includes('Create workspace') && items.includes('Settings'), 'member menu: ' + JSON.stringify(items));
   assert(!(await bob.$('#ws-invite-member')), 'member has the invite item in the DOM');
 
   await browser.close();

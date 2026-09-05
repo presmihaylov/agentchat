@@ -689,8 +689,8 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
     const active = t.root_id === openThreadRoot;
     if (active) li.classList.add('active');
     const snippet = t.body.replace(/\s+/g, ' ').slice(0, 30) || '(attachment)';
-    // the connector glyph comes from CSS (├, or └ on the last leaf); a muted
-    // thread shows the same bell-slash as a muted channel
+    // the tree guide is drawn by CSS on .t-icon (a trunk, an elbow on the last
+    // leaf); a muted thread shows the same bell-slash as a muted channel
     li.innerHTML = `<span class="t-icon" aria-hidden="true"></span>
       <span class="t-snippet">${esc(snippet)}</span>`;
     if (t.muted) li.classList.add('muted');
@@ -1907,12 +1907,12 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
     const here = location.pathname + location.search;
     // without the list (fetch failed) the rail still gets the current mark and "+"
     if (!out) { mountRail([], here); return; }
-    // the rail is the switcher; this menu holds only the workspace actions (Maya, msg c61adc39)
+    // the rail is the switcher; this menu holds only the workspace actions (Maya,
+    // msg c61adc39); Create workspace lives on the rail's + alone (Maya, 2026-09-05)
     const menu = $('ws-menu');
     menu.innerHTML = '';
     // only admins get the code from /room, and only they may hand it out
     if (inviteCode) menu.appendChild(wsMenuItem('Invite member', { id: 'ws-invite-member', icon: '✉', onclick: () => { setMenuOpen(false); openInviteModal(); } }));
-    menu.appendChild(wsMenuItem('Create workspace', { icon: '+', href: '/create?next=' + encodeURIComponent(here) }));
     menu.appendChild(wsMenuItem('Join with invite code', { id: 'ws-join', icon: '→', onclick: () => { setMenuOpen(false); openJoinModal(); } }));
     menu.appendChild(wsMenuItem('Settings', { icon: '⚙', href: '/settings?next=' + encodeURIComponent(here) }));
     $('ws-current').textContent = room.name;
