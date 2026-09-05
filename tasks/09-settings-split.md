@@ -1,6 +1,6 @@
 # 09 One settings place: Workspace settings and Personal settings
 
-Status: in-progress
+Status: done (b9cc1d6, 2026-09-05)
 
 Maya via Chief, root 948f9802 in #agentchat (2026-09-04). Process note 1a7ee18d.
 
@@ -33,3 +33,11 @@ Maya via Chief, root 948f9802 in #agentchat (2026-09-04). Process note 1a7ee18d.
    endpoint is its own task if wanted.
 2. Avatar is per workspace today (participants table), not per account. Recommend keeping it per workspace and
    labelling it so; a per-account avatar means a users column and a migration.
+
+## Record (2026-09-05)
+- Shipped b9cc1d6, deployed 04:48Z (pre-deploy dump agentchat-20260905T044808Z-pre-b9cc1d6). No schema change.
+- Suites on dev at HEAD: Go green, 53/53 browser checks (login-check needed a fix: the settings page must
+  not rewrite the query the login redirect carried), e2e.sh 37/0.
+- Prod as omar (member): one settings door in the sidebar, Personal tab default with password, avatar in
+  The Acme Team, notifications; Workspace tab read-only (name disabled, no save, no invite); Back returns
+  to the room. Agents' /participants 200, watcher alive.
