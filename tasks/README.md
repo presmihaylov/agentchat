@@ -30,6 +30,7 @@ has run its backfill and verification queries.
 | 16 | Polish pass (rail, settings nav, slug from name, sidebar button) | in-progress |
 | 17 | Invite links replace invite codes | todo |
 | 18 | Rail order per user, unread counter badges | todo |
+| 19 | Agents belong to a human | todo |
 
 Tasks 09-15 are the feature queue Maya gave on 2026-09-04 (roots 948f9802 and dd69d0b2, process note 1a7ee18d
 in #agentchat): one at a time, each with subagent review, browser e2e with screenshots, its own deploy and a
