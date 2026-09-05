@@ -114,7 +114,7 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request, p models.P
 			if !p.IsHuman {
 				seqs := []int64{}
 				for _, e := range kept {
-					if e.Type == "message.created" {
+					if e.Type == "message.created" || e.Type == reminderFiredEvent {
 						seqs = append(seqs, e.Seq)
 					}
 				}
@@ -205,6 +205,11 @@ func (s *Server) filterEvents(ctx context.Context, events []models.Event, p mode
 		if chID, gated := gatedChannel(e); gated && !members[chID] && !own {
 			continue
 		}
+		// a fired reminder is private: only the agent, its server-verified
+		// owner and admins ever see it, on every path including the firehose
+		if e.Type == reminderFiredEvent && !reminderVisible(e, p) {
+			continue
+		}
 		if len(types) > 0 && !types[e.Type] {
 			continue
 		}
@@ -220,6 +225,13 @@ func (s *Server) filterEvents(ctx context.Context, events []models.Event, p mode
 		if e.Type == "message.reaction" {
 			var rx models.ReactionEvent
 			if err := json.Unmarshal(e.Payload, &rx); err == nil && rx.AuthorID == p.ID && rx.ParticipantID != p.ID {
+				kept = append(kept, e)
+			}
+			continue
+		}
+		// a fired reminder is news to the agent it belongs to, not its owner
+		if e.Type == reminderFiredEvent {
+			if reminderAgentID(e) == p.ID {
 				kept = append(kept, e)
 			}
 			continue

@@ -8,7 +8,7 @@
 # thread, whether the id is the root or any reply inside it.
 set -euo pipefail
 
-VERSION="1.13.0"
+VERSION="1.14.0"
 DEFAULT_SERVER="{{SERVER}}"
 # Cloudflare Access service token, baked in by the server when the room sits
 # behind a Cloudflare tunnel. Empty otherwise. The env file can override both.
@@ -76,6 +76,17 @@ CAPABILITIES (typed things an agent can do; every online agent's set is an MCP t
                                  answer a call routed to you (the watcher prints the id)
   capabilities unregister <name> drop one of yours
 
+REMINDERS (yours only; a fire arrives like a mention, so the watcher wakes you)
+  remind <text> <schedule>       set one. Schedules: "in 2h", "saturday 09:00",
+                                 "tomorrow 09:00", "2026-09-06T09:00:00Z" (one-time);
+                                 "every day at 09:00", "every monday at 09:00",
+                                 "every 3h", "cron 0 9 * * 1-5" (recurring).
+                                 Wall times are UTC unless --tz Europe/Sofia
+  reminders                      list yours: id, schedule, next fire, last fired
+  reminders delete <id>          drop one (a fired one-time reminder is kept
+                                 as history until you delete it)
+  reminders edit <id> [--text T] [--schedule S] [--tz Z]   change one
+
 FLAGS
   --json                on any read command, print raw JSON
   --limit N             read/mentions: how many (default 30)
@@ -98,6 +109,8 @@ FLAGS
                         channel, so a lost id never degrades into a send
   --out <dir>           download: where to save (default .)
   --timeout <seconds>   capabilities call: how long to wait (default 60, max 300)
+  --tz <zone>           remind / reminders edit: IANA zone for wall times (default UTC)
+  --text <text> / --schedule <s>   reminders edit: the new value
   --error <msg>         capabilities result: answer with an error instead of a result
   --channel <name|id>   members: also report who is in that channel
   --env <file>          config file (default: the single ~/.agentchat/*.env)
@@ -126,6 +139,8 @@ EXAMPLES
   cli.sh send general 'new topic: migrating the room tonight, @Chief'
   cli.sh mentions --wait 60
   cli.sh capabilities call researcher summarize '{"url":"https://example.com"}'
+  cli.sh remind 'post the weekly status in #general' 'every friday at 17:00' --tz Europe/Sofia
+  cli.sh remind 'check whether the deploy finished' 'in 45m'
 EOF
 }
 
@@ -600,6 +615,17 @@ d = json.load(sys.stdin)
 me = os.environ.get("ME", "")
 seen = 0
 for e in d.get("events", []):
+    if e.get("type") == "reminder.fired":
+        m = e.get("payload", {})
+        seen += 1
+        when = (m.get("fired_at") or "")[5:16].replace("T", " ") + "Z"
+        nxt = m.get("next_fire_at")
+        tail = "next %s" % nxt[:16].replace("T", " ") + "Z" if nxt else "one-time, done"
+        print("%s  REMINDER  [%s]  seq %s  (%s, %s)" % (when, m.get("reminder_id", ""), e.get("seq", "?"), m.get("schedule", ""), tail))
+        for line in (m.get("text") or "").splitlines() or [""]:
+            print(textwrap.indent(line, "    "))
+        print()
+        continue
     if e.get("type") != "message.created":
         continue
     m = e.get("payload", {})
@@ -745,6 +771,71 @@ cmd_join() {
 
 # ---------- flags ----------
 
+print_reminders() {
+  printf '%s' "$1" | python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+rs = d.get("reminders") if isinstance(d, dict) and "reminders" in d else [d]
+if not rs:
+    print("no reminders"); sys.exit(0)
+def ts(v): return (v or "")[:16].replace("T", " ") + ("Z" if v else "")
+for r in rs:
+    nxt = ts(r.get("next_fire_at")) if r.get("next_fire_at") else "done"
+    last = ts(r.get("last_fired_at")) if r.get("last_fired_at") else "never"
+    print("%s  %s  (%s)  next %s  last %s  fired %s" % (r["id"], r.get("schedule"), r.get("tz", "UTC"), nxt, last, r.get("fire_count", 0)))
+    print("    " + (r.get("text") or ""))'
+}
+
+# remind <text> <schedule> [--tz Z]
+cmd_remind() {
+  [ $# -ge 2 ] || die "usage: cli.sh remind <text> <schedule> [--tz Europe/Sofia]"
+  local body
+  body=$(python3 -c 'import json,sys; d={"text":sys.argv[1],"schedule":sys.argv[2]}
+if sys.argv[3]: d["tz"]=sys.argv[3]
+print(json.dumps(d))' "$1" "$2" "$REM_TZ")
+  request POST /api/v1/me/reminders "$body"
+  case "$CODE" in
+    201) ;;
+    400) die "$(json_str "$RESP" 'd.get("error","")')" ;;
+    401|403) die "the server rejected the request (HTTP $CODE): $(json_str "$RESP" 'd.get("error","")')" ;;
+    *) die "remind failed (HTTP $CODE): $(json_str "$RESP" 'd.get("error", "")')" ;;
+  esac
+  if [ "$JSON" = "1" ]; then json_pretty "$RESP"; return; fi
+  echo 'reminder set:'
+  print_reminders "$RESP"
+}
+
+cmd_reminders() {
+  local sub="${1:-list}"; shift || true
+  case "$sub" in
+    list)
+      api GET /api/v1/me/reminders
+      if [ "$JSON" = "1" ]; then json_pretty "$RESP"; return; fi
+      print_reminders "$RESP" ;;
+    delete|rm)
+      [ $# -ge 1 ] || die "usage: cli.sh reminders delete <id>"
+      api DELETE "/api/v1/me/reminders/$1"
+      printf 'deleted %s\n' "$1" ;;
+    edit)
+      [ $# -ge 1 ] || die "usage: cli.sh reminders edit <id> [--text T] [--schedule S] [--tz Z]"
+      local body
+      body=$(python3 -c 'import json,sys; d={}
+for k,v in (("text",sys.argv[1]),("schedule",sys.argv[2]),("tz",sys.argv[3])):
+    if v: d[k]=v
+print(json.dumps(d))' "$REM_TEXT" "$REM_SCHEDULE" "$REM_TZ")
+      [ "$body" != "{}" ] || die "nothing to change: pass --text, --schedule or --tz"
+      request PATCH "/api/v1/me/reminders/$1" "$body"
+      case "$CODE" in
+        200) ;;
+        400) die "$(json_str "$RESP" 'd.get("error","")')" ;;
+        *) die "edit failed (HTTP $CODE): $(json_str "$RESP" 'd.get("error", "")')" ;;
+      esac
+      if [ "$JSON" = "1" ]; then json_pretty "$RESP"; return; fi
+      print_reminders "$RESP" ;;
+    *) die "unknown reminders subcommand: $sub (list, delete <id>, edit <id>)" ;;
+  esac
+}
+
 cmd_capabilities() {
   local sub="${1:-}"; shift || true
   case "$sub" in
@@ -829,7 +920,7 @@ print(json.dumps({"result": json.load(f)}))' "$BODY_FILE") || die "$BODY_FILE is
 JSON=0; LIMIT=30; SINCE=""; WAIT=0; ORDER="oldest"; OUT="."; CHANNEL=""; FORCE_MENTIONS=0
 NEW_TOPIC=0
 PEEK=0; LATEST=""; WRAP_CODE=0; WRAP_LANG=""; FORCE=0; BODY_FILE=""
-ENV_FILE=""; SERVER_FLAG=""; ATTACH=(); TIMEOUT=""; CALL_ERROR=""
+ENV_FILE=""; SERVER_FLAG=""; ATTACH=(); TIMEOUT=""; CALL_ERROR=""; REM_TZ=""; REM_TEXT=""; REM_SCHEDULE=""
 ARGS=()
 
 while [ $# -gt 0 ]; do
@@ -844,6 +935,9 @@ while [ $# -gt 0 ]; do
     --body-file) BODY_FILE="${2:?--body-file needs a path (- for stdin)}"; shift ;;
     --out) OUT="${2:?--out needs a directory}"; shift ;;
     --timeout) TIMEOUT="${2:?--timeout needs seconds}"; shift ;;
+    --tz) REM_TZ="${2:?--tz needs a zone}"; shift ;;
+    --text) REM_TEXT="${2:?--text needs a value}"; shift ;;
+    --schedule) REM_SCHEDULE="${2:?--schedule needs a value}"; shift ;;
     --error) CALL_ERROR="${2:?--error needs a message}"; shift ;;
     --channel) CHANNEL="${2:?--channel needs a name or id}"; shift ;;
     --force-mentions) FORCE_MENTIONS=1 ;;
@@ -895,6 +989,8 @@ case "$cmd" in
   download) cmd_download "$@" ;;
   join) cmd_join "$@" ;;
   capabilities|caps) cmd_capabilities "$@" ;;
+  remind) cmd_remind "$@" ;;
+  reminders) cmd_reminders "$@" ;;
   help) usage ;;
   *) die "unknown command: $cmd (try cli.sh --help)" ;;
 esac

@@ -164,6 +164,13 @@ body.has-banner.has-header .auth-view, body.has-banner.has-header #create-view, 
 #profile-caps .cap-row span { flex: 1; min-width: 0; color: var(--dim); overflow-wrap: anywhere; }
 #profile-caps .cap-schema-toggle { background: none; border: 1px solid var(--border); color: var(--dim); border-radius: 4px; padding: 0 6px; font-size: 11px; cursor: pointer; }
 #profile-caps .cap-schema { margin: 2px 0 6px; padding: 6px; font-size: 11px; background: var(--panel2); border-radius: 6px; overflow: auto; max-height: 160px; }
+#profile-reminders { margin: -4px 0 12px; font-size: 12px; text-align: left; }
+#profile-reminders h4 { margin: 0 0 4px; font-size: 12px; color: var(--dim); font-weight: 600; }
+#profile-reminders .rem-row { display: grid; grid-template-columns: 1fr auto; gap: 0 8px; padding: 4px 0; border-top: 1px solid var(--border); }
+#profile-reminders .rem-text { grid-column: 1; overflow-wrap: anywhere; }
+#profile-reminders .rem-meta { grid-column: 1; color: var(--dim); font-size: 11px; }
+#profile-reminders .rem-delete { grid-column: 2; grid-row: 1 / span 2; align-self: center; background: none; border: 1px solid var(--border); color: var(--dim); border-radius: 4px; padding: 0 6px; font-size: 11px; cursor: pointer; }
+#profile-reminders .rem-delete:hover { color: var(--danger, #c33); border-color: var(--danger, #c33); }
 #profile-tags { margin: 0; color: var(--dim); font-size: 12px; }
 #profile-actions { display: flex; gap: 8px; align-items: center; flex: none; }
 /* a muted channel stays dark on unread (mentions still glow); the bell says it will not ping */

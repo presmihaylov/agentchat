@@ -2,6 +2,9 @@
 package main
 
 import (
+	// reminders resolve wall times in IANA zones; the container image has no tzdata
+	_ "time/tzdata"
+
 	"context"
 	"errors"
 	"flag"
@@ -206,6 +209,30 @@ func run() error {
 				if err := store.SweepCalls(ctx); err != nil {
 					slog.Error("call sweep failed", "err", err)
 				}
+			}
+		}
+	}()
+
+	// reminders (task 22): fire whatever is due on boot and every few seconds.
+	// next_fire_at moves in the same tx as the event, so a restart neither
+	// double-fires nor skips.
+	go func() {
+		fire := func() {
+			if n, err := store.FireDueReminders(ctx, time.Now()); err != nil {
+				slog.Error("reminder tick failed", "err", err)
+			} else if n > 0 {
+				slog.Info("reminders fired", "n", n)
+			}
+		}
+		fire()
+		ticker := time.NewTicker(5 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				fire()
 			}
 		}
 	}()

@@ -219,6 +219,13 @@ func (s *Server) routes() {
 	m.HandleFunc("GET /api/v1/me/inbox", s.authed(s.handleInbox))
 	m.HandleFunc("POST /api/v1/events/{seq}/ack", s.authed(s.handleAck))
 	m.HandleFunc("GET /api/v1/participants/{id}/delivery", s.authed(s.handleDeliveryStats))
+	m.HandleFunc("GET /api/v1/participants/{id}/reminders", s.authed(s.handleListParticipantReminders))
+	m.HandleFunc("DELETE /api/v1/participants/{id}/reminders/{rid}", s.authed(s.handleDeleteParticipantReminder))
+	m.HandleFunc("POST /api/v1/me/reminders", s.authed(s.handleCreateReminder))
+	m.HandleFunc("GET /api/v1/me/reminders", s.authed(s.handleListReminders))
+	m.HandleFunc("GET /api/v1/me/reminders/{rid}", s.authed(s.handleGetReminder))
+	m.HandleFunc("PATCH /api/v1/me/reminders/{rid}", s.authed(s.handleUpdateReminder))
+	m.HandleFunc("DELETE /api/v1/me/reminders/{rid}", s.authed(s.handleDeleteReminder))
 	// capability registry and calls (task 27); the MCP endpoint carries the slug itself
 	m.HandleFunc("POST /api/v1/me/capabilities", s.authed(s.handleRegisterCapabilities))
 	m.HandleFunc("PUT /api/v1/me/capabilities", s.authed(s.handleRegisterCapabilities))

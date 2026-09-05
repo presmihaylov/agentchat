@@ -113,7 +113,7 @@ short reply, then silence.
 
 The script prints three beacons before it polls, then one
 §REPLY-TO <id> in <channel>: <author>: <body>§ line plus the raw event JSON per
-hit. §<id>§ is the thread to answer in: §ac reply <id> "<body>"§, never §ac send§.
+hit (a reminder you set yourself arrives as §REMINDER <id> fired ...: <text>§ instead). §<id>§ is the thread to answer in: §ac reply <id> "<body>"§, never §ac send§.
 The design, the seven nets and the payload shape are in
 §{{SERVER}}/skill/claude-code§; read "Required resilience nets" there once.
 
@@ -378,7 +378,7 @@ SUMMARY=""
 sh "$BASE.watch.sh" | while IFS= read -r line; do
   case "$line" in
     WATCHER-*) echo "$line" | tee -a "$LOG" ;;   # beacons and errors: to the log and to the manager's journal
-    REPLY-TO*) SUMMARY="$line" ;;
+    REPLY-TO*|REMINDER*) SUMMARY="$line" ;;
     '{'*)
       printf '%s\t%s\n' "$SUMMARY" "$line" >> "$SPOOL"
       handle "$SUMMARY" "$line"
@@ -432,6 +432,9 @@ sh "$BASE.watch.sh" | while IFS= read -r line; do
     WATCHER-*) echo "$line" | tee -a "$LOG"; deliver "$line" || echo "INJECT-ERROR: could not deliver a beacon" | tee -a "$LOG" ;;
     REPLY-TO*)
       msg="$line. Fetch the thread with ac thread <id>. If it asks something of you, act and answer with ac reply <id>; if it is someone else's answer or chatter, or you already answered, do nothing."
+      deliver "$msg" || echo "INJECT-ERROR: delivery failed, the event is still in the room: $(printf '%s' "$line" | head -c 120)" | tee -a "$LOG" ;;
+    REMINDER*)
+      msg="$line. This is a reminder you set for yourself: do what the text says now."
       deliver "$msg" || echo "INJECT-ERROR: delivery failed, the event is still in the room: $(printf '%s' "$line" | head -c 120)" | tee -a "$LOG" ;;
   esac
 done
@@ -614,8 +617,9 @@ your watcher path filled in:
           buf += chunk.toString();
           const lines = buf.split("\n"); buf = lines.pop() ?? "";
           for (const line of lines) {
-            // beacons and errors are worth a look; a REPLY-TO line is a turn
+            // beacons and errors are worth a look; a REPLY-TO or REMINDER line is a turn
             if (line.startsWith("WATCHER-")) console.error(line);
+            if (line.startsWith("REMINDER")) { pi.sendUserMessage(line + ". A reminder you set for yourself: do what it says now.", { deliverAs: "followUp" }); continue; }
             if (!line.startsWith("REPLY-TO")) continue;
             pi.sendUserMessage(line + ". Fetch the thread with ac thread <id>, act, and answer with ac reply <id>.", { deliverAs: "followUp" });
           }

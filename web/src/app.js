@@ -1067,6 +1067,7 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
     $('profile-tags').textContent = tags ? 'Tags: ' + tags : '';
     showDelivery(p);
     showCapabilities(p);
+    showReminders(p);
     $('profile-modal').classList.remove('hidden');
   };
 
@@ -1103,6 +1104,58 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
         toggle.onclick = () => pre.classList.toggle('hidden');
         row.append(name, desc, toggle);
         box.append(row, pre);
+      });
+      box.classList.remove('hidden');
+    }).catch(() => {});
+  };
+
+  // Reminders (task 22): an agent's owner (or an admin) sees what the agent
+  // scheduled for itself and can delete one; everyone else sees nothing.
+  let profileRemindersFor = null;
+  const fmtFire = (iso) => {
+    if (!iso) return 'never';
+    const d = new Date(iso);
+    return d.toLocaleDateString([], { month: 'short', day: 'numeric' }) + ' ' + fmtTime(iso);
+  };
+  const showReminders = (p) => {
+    const box = $('profile-reminders');
+    box.classList.add('hidden');
+    box.textContent = '';
+    const canSee = me && !p.is_human && (me.role === 'admin' || p.owner_id === me.id);
+    profileRemindersFor = canSee ? p : null;
+    if (!canSee) return;
+    api('/api/v1/participants/' + encodeURIComponent(p.id) + '/reminders').then((out) => {
+      if (profileRemindersFor !== p) return;
+      const list = out.reminders || [];
+      const h = document.createElement('h4');
+      h.textContent = 'Reminders' + (list.length ? '' : ' · none');
+      box.appendChild(h);
+      list.forEach((r) => {
+        const row = document.createElement('div');
+        row.className = 'rem-row';
+        row.dataset.id = r.id;
+        const text = document.createElement('div');
+        text.className = 'rem-text';
+        text.textContent = r.text;
+        const meta = document.createElement('div');
+        meta.className = 'rem-meta';
+        const next = r.next_fire_at ? 'next ' + fmtFire(r.next_fire_at) : 'done';
+        meta.textContent = r.schedule + (r.tz && r.tz !== 'UTC' ? ' (' + r.tz + ')' : '') +
+          ' · ' + next + ' · last fired ' + fmtFire(r.last_fired_at);
+        const del = document.createElement('button');
+        del.type = 'button';
+        del.className = 'rem-delete';
+        del.title = 'Delete this reminder';
+        del.textContent = '✕';
+        del.onclick = async () => {
+          if (!confirm('Delete this reminder?\n\n' + r.text)) return;
+          try {
+            await api('/api/v1/participants/' + encodeURIComponent(p.id) + '/reminders/' + encodeURIComponent(r.id), { method: 'DELETE' });
+            showReminders(p);
+          } catch (e) { alert(e.message); }
+        };
+        row.append(text, meta, del);
+        box.appendChild(row);
       });
       box.classList.remove('hidden');
     }).catch(() => {});
@@ -1866,6 +1919,11 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
     // a call and its result change no room structure; a refresh per call would
     // hammer every open tab while an MCP client drives the agents
     if (t === 'capability.call' || t === 'capability.result') return;
+    // a fired reminder only moves an open profile's next/last fire columns
+    if (t === 'reminder.fired') {
+      if (profileRemindersFor && ev.payload.participant_id === profileRemindersFor.id) showReminders(profileRemindersFor);
+      return;
+    }
     if (t === 'capability.registered') {
       // only an open profile of that agent cares; the sidebar does not show capabilities
       if (profileCapsFor && ev.payload.participant_id === profileCapsFor.id) showCapabilities(profileCapsFor);

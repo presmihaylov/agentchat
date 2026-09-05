@@ -341,4 +341,49 @@ curl -fsS "$SERVER/api/v1/participants" -H "Authorization: Bearer $alice" \
 "${B[@]}" mentions | grep -q 'after a crash' || fail "online while online must not move the cursor past an unread mention"
 ok "offline, queued mention, online prints it once, stale cursor kept"
 
+# 16. reminders (task 22): bob sets, lists, edits and deletes his own; a fire
+# (backdated through the db when AGENTCHAT_DB_URL and psql are here, else skipped)
+# shows in mentions as a REMINDER line and, while offline, in the online batch.
+out=$("${B[@]}" remind 'check the build' 'in 2h')
+grep -q '^reminder set:' <<<"$out" || fail "remind did not confirm: $out"
+rid=$(sed -n '2p' <<<"$out" | awk '{print $1}')
+[ ${#rid} -eq 36 ] || fail "remind printed no id: $out"
+"${B[@]}" remind 'standup' 'every day at 09:00' --tz Europe/Sofia | grep -q 'every day at 09:00  (Europe/Sofia)' || fail "recurring remind"
+# the cli exits 1 here, so capture instead of piping (pipefail)
+bad=$("${B[@]}" remind 'never' 'whenever' 2>&1 || true)
+grep -qi 'invalid schedule' <<<"$bad" && ok "bad schedule refused" || fail "bad schedule accepted: $bad"
+"${B[@]}" reminders | grep -c 'next ' | grep -qx 2 || fail "reminders list should show 2"
+"${B[@]}" reminders edit "$rid" --text 'check the build again' | grep -q 'check the build again' || fail "reminders edit"
+"${A[@]}" reminders | grep -q 'no reminders' || fail "alice must not see bob's reminders"
+notmine=$("${A[@]}" reminders delete "$rid" 2>&1 || true)
+grep -q 'HTTP 404' <<<"$notmine" || fail "alice deleting bob's reminder should 404: $notmine"
+if command -v psql >/dev/null 2>&1 && [ -n "${AGENTCHAT_DB_URL:-}" ]; then
+  "${B[@]}" mentions --limit 50 >/dev/null
+  psql "$AGENTCHAT_DB_URL" -q -v ON_ERROR_STOP=1 -c "UPDATE reminders SET next_fire_at = now() WHERE id = '$rid'"
+  fired=""
+  for _ in 1 2 3 4 5 6; do
+    sleep 3
+    fired=$("${B[@]}" mentions --limit 50) && grep -q "REMINDER  \[$rid\]" <<<"$fired" && break
+  done
+  grep -q "REMINDER  \[$rid\]" <<<"$fired" || fail "fired reminder missing from mentions: $fired"
+  grep -q 'check the build again' <<<"$fired" || fail "fired reminder text: $fired"
+  grep -q 'one-time, done' <<<"$fired" || fail "one-time fire should say done: $fired"
+  "${B[@]}" reminders | grep "$rid" | grep -q 'next done' || fail "fired one-time should show next done"
+  # offline: the fire queues and online prints it
+  sid=$("${B[@]}" reminders | grep 'every day' | awk '{print $1}')
+  "${B[@]}" offline >/dev/null
+  psql "$AGENTCHAT_DB_URL" -q -v ON_ERROR_STOP=1 -c "UPDATE reminders SET next_fire_at = now() WHERE id = '$sid'"
+  sleep 8
+  "${B[@]}" mentions | grep -q 'nothing new' || fail "offline poll leaked the fire"
+  out=$("${B[@]}" online)
+  grep -q "REMINDER  \[$sid\]" <<<"$out" || fail "online batch missing the fired reminder: $out"
+  grep -q 'standup' <<<"$out" || fail "online batch reminder text: $out"
+  ok "one-time fires once into mentions, recurring fire waits for online"
+else
+  echo "  skip fire check (needs psql and AGENTCHAT_DB_URL)"
+fi
+"${B[@]}" reminders delete "$rid" | grep -q "deleted $rid" || fail "reminders delete"
+"${B[@]}" reminders | grep -c 'next ' | grep -qx 1 || fail "one reminder should remain"
+ok "remind, reminders list/edit/delete, other agents locked out"
+
 echo CLI_E2E_OK

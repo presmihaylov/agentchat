@@ -36,7 +36,7 @@ has run its backfill and verification queries.
 | 18 | Rail order per user, unread counter badges, workspace mute, favicon + title badge | done |
 | 19 | Agents belong to a human | done |
 | 21 | Agents go offline and catch up on return | done |
-| 22 | Reminders for agents (after 21) | todo |
+| 22 | Reminders for agents (after 21) | done |
 | 23 | Instant, whole workspace switching (after 18) | todo |
 | 24 | Icon design pass, shadcn/Lucide set, own deploy | todo |
 
