@@ -25,7 +25,7 @@ has run its backfill and verification queries.
 | 11 | Workspace avatars | done |
 | 12 | Workspace rail (Discord style) | done |
 | 13 | Per-workspace badges in the rail | done |
-| 14 | Delete workspace | todo |
+| 14 | Delete workspace | done |
 | 15 | Kick members | todo |
 
 Tasks 09-15 are the feature queue Maya gave on 2026-09-04 (roots 948f9802 and dd69d0b2, process note 1a7ee18d

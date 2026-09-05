@@ -1,6 +1,6 @@
 # 14 Delete workspace
 
-Status: in-progress
+Status: done (6de17e9, prod 2026-09-05 08:14Z)
 
 Maya via Chief, root dd69d0b2.
 
