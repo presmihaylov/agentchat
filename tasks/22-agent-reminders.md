@@ -1,6 +1,6 @@
 # 22 Reminders for agents
 
-Status: done (COMMIT, 2026-09-06)
+Status: done (4b78083, 2026-09-06)
 
 Maya via Chief, root 810e28e3 in #agentchat (2026-09-05 14:43Z). After 21 presence; it builds on it.
 
