@@ -60,9 +60,9 @@ const assert = (cond, msg) => { if (!cond) throw new Error(msg); };
   // lock icon lands in the sidebar and the open header immediately
   await page.waitForFunction(() => {
     const li = [...document.querySelectorAll('#channel-list li')].find((l) => l.textContent.includes('pub'));
-    return li && li.textContent.includes('🔒');
+    return li && !!li.querySelector('.sigil-lock');
   }, { timeout: 8000 }).catch(() => { throw new Error('sidebar lock icon did not appear'); });
-  await page.waitForFunction(() => document.querySelector('#channel-title').textContent.includes('🔒'), { timeout: 8000 })
+  await page.waitForFunction(() => !!document.querySelector('#channel-title .sigil-lock'), { timeout: 8000 })
     .catch(() => { throw new Error('header lock icon did not appear'); });
 
   // once private: no Make private offer, Add people appears instead

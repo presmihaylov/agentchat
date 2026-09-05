@@ -122,7 +122,7 @@ func testDB(t *testing.T) *pgx.Conn {
 func createRoom(t *testing.T, base, name string) map[string]any {
 	t.Helper()
 	creator, _ := register(t, base, uniqUser(), "correct horse")
-	out := creator.must("POST", "/api/v1/rooms", map[string]any{"name": name}, 201)
+	out := creator.must("POST", "/api/v1/rooms", roomBody(name), 201)
 	roomID := out["room"].(map[string]any)["id"].(string)
 	if _, err := testDB(t).Exec(context.Background(),
 		`DELETE FROM participants WHERE room_id = $1 AND user_id IS NOT NULL`, roomID); err != nil {

@@ -63,7 +63,7 @@ const MentionHighlight = (getMentionOptions, getMeName, getChannelOptions) => Ex
 // createComposer replaces one textarea. The contenteditable element gets the
 // old textarea's id plus a `.value` markdown shim, so existing e2e checks and
 // callers keep working against the same surface.
-export const createComposer = ({ mount, id, placeholder, onSubmit, getMentionOptions, getMeName, getChannelOptions, slashCommands, browseChannels, onImageFile }) => {
+export const createComposer = ({ mount, id, placeholder, onSubmit, onChange, getMentionOptions, getMeName, getChannelOptions, slashCommands, browseChannels, onImageFile }) => {
   let editor = null;
 
   const getMarkdown = () => editor.getMarkdown();
@@ -129,7 +129,11 @@ export const createComposer = ({ mount, id, placeholder, onSubmit, getMentionOpt
     }
   }, applyMention);
   const renderChan = () => renderList(chanBox, chan, (d, it) => {
-    d.innerHTML = (it.private ? '🔒 ' : '#') + esc(it.name)
+    // same monochrome lock as the sidebar, so the picker carries no emoji colour either
+    const sigil = it.private
+      ? '<span class="sigil sigil-lock" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M4 7V5a4 4 0 1 1 8 0v2h1v8H3V7h1zm2 0h4V5a2 2 0 1 0-4 0v2z"/></svg></span> '
+      : '#';
+    d.innerHTML = sigil + esc(it.name)
       + '<span class="slash-hint">' + esc(it.topic || '') + '</span>';
   }, applyChan);
   const renderEmoji = () => renderList(emojiBox, emoji, (d, it) => {
@@ -440,7 +444,7 @@ export const createComposer = ({ mount, id, placeholder, onSubmit, getMentionOpt
         return false;
       },
     },
-    onUpdate: () => { updateMention(); updateChan(); updateSlash(); updateEmoji(); },
+    onUpdate: () => { updateMention(); updateChan(); updateSlash(); updateEmoji(); if (onChange) onChange(); },
     onSelectionUpdate: () => { updateMention(); updateChan(); updateSlash(); updateEmoji(); },
     onBlur: () => setTimeout(() => { closeMention(); closeChan(); closeSlash(); closeEmoji(); }, 100),
   });
@@ -458,6 +462,7 @@ export const createComposer = ({ mount, id, placeholder, onSubmit, getMentionOpt
   const api = {
     editor, dom,
     getMarkdown, setMarkdown, getPlain,
+    isEmpty: () => editor.isEmpty,
     clear: () => editor.commands.clearContent(true),
     focus: () => editor.commands.focus('end'),
   };

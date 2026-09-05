@@ -55,7 +55,7 @@ const hasChannel = (page, name) => page.evaluate((n) =>
   await ap.click('#new-channel');
   // the 🔒 lock sigil marks the private channel in the sidebar.
   await ap.waitForFunction(() =>
-    [...document.querySelectorAll('#channel-list li')].some((li) => li.textContent.includes('🔒') && li.textContent.includes('war-room')),
+    [...document.querySelectorAll('#channel-list li')].some((li) => !!li.querySelector('.sigil-lock') && li.textContent.includes('war-room')),
     { timeout: 5000 });
   await ap.screenshot({ path: SHOT + '/private-created.png' });
 
@@ -79,7 +79,7 @@ const hasChannel = (page, name) => page.evaluate((n) =>
   await bp.waitForFunction(() =>
     [...document.querySelectorAll('#channel-list li')].some((li) => li.textContent.includes('war-room')),
     { timeout: 6000 });
-  if (!(await hasChannel(bp, '🔒'))) throw new Error("bob's sidebar missing the lock sigil");
+  if (!(await bp.$('#channel-list li .sigil-lock'))) throw new Error("bob's sidebar missing the lock sigil");
   await bp.screenshot({ path: SHOT + '/private-bob.png' });
 
   await bp.click('#browse-channels');

@@ -58,7 +58,7 @@ async function api(path, opts = {}) {
     const out = {}; let cur = null;
     document.querySelectorAll('#channel-list li').forEach((li) => {
       if (!li.classList.contains('thread-leaf')) {
-        cur = (li.childNodes[0].textContent || '').replace(/^#\s*/, '').trim().split(' ')[0];
+        cur = ((li.querySelector('.chan-name') || {}).textContent || '').trim().split(' ')[0];
         out[cur] = [];
         return;
       }

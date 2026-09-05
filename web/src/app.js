@@ -1,8 +1,9 @@
+import { ICON } from './icons.js';
 import { wsAvatarEl } from './wsavatar.js';
 /* AgentChat human web client — vanilla JS, talks to the same REST API as agents. */
 import { createComposer } from './composer.js';
 import { emojify, searchEmoji, rememberEmoji, shortcodeOf } from './emoji.js';
-import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fetchWorkspaces, signOut, authApi, slugFromLink, noWorkspaceError } from './auth.js';
+import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fetchWorkspaces, signOut, authApi, slugFromLink, noWorkspaceError, wireSlugPreview } from './auth.js';
 
 (() => {
   'use strict';
@@ -65,7 +66,6 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
   };
   const paintRoomMark = () => {
     $('room-avatar').replaceChildren(wsAvatarEl(room, 'ws-avatar-sm', wsHeaders(room.slug)));
-    $('ws-current-avatar').replaceChildren(wsAvatarEl(room, 'ws-avatar-sm', wsHeaders(room.slug)));
   };
 
   // One verdict on an auth failure, shared by api(), the event loop and the
@@ -462,18 +462,18 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
     const canEdit = m.author_id === me.id;
     const canDelete = canEdit || me.role === 'admin';
     const actions = [];
-    actions.push(`<button data-act="react" title="Add reaction" aria-label="Add reaction">${ADD_REACTION_ICON}</button>`);
-    if (!inThread && !m.thread_root_id) actions.push('<button data-act="thread" title="Reply in thread">💬</button>');
-    if (canEdit) actions.push('<button data-act="edit" title="Edit">✏️</button>');
-    if (canDelete) actions.push('<button data-act="delete" title="Delete">🗑</button>');
+    actions.push(`<button data-act="react" title="Add reaction" aria-label="Add reaction">${ICON.smilePlus}</button>`);
+    if (!inThread && !m.thread_root_id) actions.push(`<button data-act="thread" title="Reply in thread" aria-label="Reply in thread">${ICON.messageSquare}</button>`);
+    if (canEdit) actions.push(`<button data-act="edit" title="Edit" aria-label="Edit">${ICON.pencilL}</button>`);
+    if (canDelete) actions.push(`<button data-act="delete" title="Delete" aria-label="Delete">${ICON.trash2}</button>`);
     // last item: every message action in one menu, reachable by keyboard and touch
-    actions.push('<button data-act="more" title="More actions" aria-label="More actions" aria-haspopup="menu">⋮</button>');
+    actions.push(`<button data-act="more" title="More actions" aria-label="More actions" aria-haspopup="menu">${ICON.moreVertical}</button>`);
 
     // fetch-with-header + blob keeps the token out of URLs (logs, history, referrers)
     const atts = (m.attachments || []).map((a) =>
       (a.content_type || '').startsWith('image/')
         ? `<img class="inline-img" data-att="${esc(a.id)}" data-name="${esc(a.filename)}" alt="${esc(a.filename)}">`
-        : `<button class="attachment" data-att="${esc(a.id)}" data-name="${esc(a.filename)}">📄 ${esc(a.filename)}</button>`).join(' ');
+        : `<button class="attachment" data-att="${esc(a.id)}" data-name="${esc(a.filename)}">${ICON.doc} ${esc(a.filename)}</button>`).join(' ');
 
     const replyBar = (!inThread && m.reply_count > 0)
       ? '<button class="reply-bar" data-act="thread"></button>' : '';
@@ -484,9 +484,9 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
         <div class="meta"><span class="author">${esc(m.author_name)}</span>${(() => {
           const a = participants.find((x) => x.id === m.author_id);
           return a && a.owner_name ? `<span class="owner-badge" title="server-verified owner">${esc(a.owner_name)}'s agent</span>` : '';
-        })()}${fmtTime(m.created_at)}
+        })()}<span class="time">${fmtTime(m.created_at)}</span>
           ${m.edited_at ? '<span class="edited"> (edited)</span>' : ''}
-          ${m.is_broadcast ? ' 📣' : ''}</div>
+          ${m.is_broadcast ? ' <span class="bcast" title="broadcast">' + ICON.megaphone + '</span>' : ''}</div>
         <div class="content">${renderMarkdown(m.body)}</div>
         ${atts}<div class="msg-reactions"></div>${replyBar}
       </div>
@@ -689,7 +689,9 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
     const active = t.root_id === openThreadRoot;
     if (active) li.classList.add('active');
     const snippet = t.body.replace(/\s+/g, ' ').slice(0, 30) || '(attachment)';
-    li.innerHTML = `<span class="t-icon">${t.muted ? '🔇' : '🧵'}</span>
+    // the connector glyph comes from CSS (├, or └ on the last leaf); a muted
+    // thread shows the same bell-slash as a muted channel
+    li.innerHTML = `<span class="t-icon" aria-hidden="true"></span>
       <span class="t-snippet">${esc(snippet)}</span>`;
     if (t.muted) li.classList.add('muted');
     if (t.unread_count > 0 && !t.muted && !active) {
@@ -822,11 +824,30 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
     };
   };
 
+  // monochrome sigils: a text # for public, an inline lock for private, both
+  // in the row's own colour so the list carries no emoji colour
+  const LOCK_SVG = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 7V5a4 4 0 1 1 8 0v2h1v8H3V7h1zm2 0h4V5a2 2 0 1 0-4 0v2z"/></svg>';
+  const sigilEl = (priv) => {
+    const el = document.createElement('span');
+    el.className = 'sigil' + (priv ? ' sigil-lock' : '');
+    el.setAttribute('aria-hidden', 'true');
+    if (priv) el.innerHTML = LOCK_SVG;
+    if (!priv) el.textContent = '#';
+    return el;
+  };
+  const setChannelTitle = (ch) => {
+    $('channel-title').replaceChildren(sigilEl(ch.private), ' ' + ch.name);
+  };
+
   // One channel row (with its nested thread leaves appended right beneath it).
   const appendChannel = (ul, ch, groupID) => {
     const li = document.createElement('li');
-    const sigil = ch.private ? '🔒 ' : '# ';
-    li.textContent = sigil + ch.name + (ch.archived ? ' (archived)' : '');
+    // sigil first, name in its own span: the checks read .chan-name
+    li.append(sigilEl(ch.private), ' ');
+    const nameEl = document.createElement('span');
+    nameEl.className = 'chan-name';
+    nameEl.textContent = ch.name + (ch.archived ? ' (archived)' : '');
+    li.appendChild(nameEl);
     if (ch.archived) li.classList.add('archived');
     if (ch.muted) li.classList.add('muted');
     if (current && ch.id === current.id) li.classList.add('active');
@@ -863,7 +884,9 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
     };
     makeDragRow(li, ch, groupID);
     ul.appendChild(li);
-    threads.filter((t) => t.channel_id === ch.id && !isQuiet(t)).forEach((t) => ul.appendChild(threadLeafLi(t)));
+    const leaves = threads.filter((t) => t.channel_id === ch.id && !isQuiet(t)).map(threadLeafLi);
+    leaves.forEach((li) => ul.appendChild(li));
+    if (leaves.length) leaves[leaves.length - 1].classList.add('last');
   };
 
   // A thread you hid by hand never reaches the client (the server drops it
@@ -912,7 +935,7 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
       const unread = members.some((c) => c.unread_count > 0 && (!c.muted || c.unread_mentions > 0) && !(current && current.id === c.id));
       const mentions = members.reduce((n, c) => n + (c.unread_mentions || 0), 0);
       if (g.collapsed && unread) header.classList.add('unread');
-      header.innerHTML = `<span class="sec-chevron">${g.collapsed ? '▸' : '▾'}</span><span class="sec-name">${esc(g.name)}</span>`;
+      header.innerHTML = `<span class="sec-chevron">${g.collapsed ? ICON.chevronRight : ICON.chevronDown}</span><span class="sec-name">${esc(g.name)}</span>`;
       if (g.collapsed && mentions > 0) {
         const b = document.createElement('span');
         b.className = 'unread-badge';
@@ -1030,7 +1053,7 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
   // leaf=true renders the row as an owned-agent child (indented). Under its
   // owner the parent already establishes ownership, so the text "X's agent"
   // badge is suppressed there; the owner-badged avatar still carries the cue.
-  // opts (parents only): hasKids, collapsed, kidCount, rollup, onToggle.
+  // opts (parents only): hasKids, collapsed, kidCount, kidOnline, rollup, onToggle.
   // Non-leaf rows always reserve the toggle column so avatars stay aligned;
   // only a parent with nested agents gets a real chevron.
   const participantLi = (p, leaf, opts) => {
@@ -1042,9 +1065,9 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
     const tags = (p.tags || []).map((t) => t.tag).join(', ');
     const owner = (!leaf && p.owner_name) ? `<span class="owner-badge" title="server-verified owner">${esc(p.owner_name)}'s agent</span>` : '';
     const toggle = leaf ? '' :
-      `<span class="p-toggle${opts.hasKids ? '' : ' spacer'}">${opts.hasKids ? (opts.collapsed ? '▸' : '▾') : ''}</span>`;
+      `<span class="p-toggle${opts.hasKids ? '' : ' spacer'}" data-state="${opts.hasKids ? (opts.collapsed ? 'collapsed' : 'open') : ''}">${opts.hasKids ? (opts.collapsed ? ICON.chevronRight : ICON.chevronDown) : ''}</span>`;
     const count = (opts.hasKids && opts.collapsed) ?
-      `<span class="p-agentcount" title="${opts.kidCount} agent${opts.kidCount === 1 ? '' : 's'} hidden">${opts.kidCount}</span>` : '';
+      `<span class="p-agentcount${opts.kidOnline ? '' : ' all-off'}" title="${opts.kidOnline} of ${opts.kidCount} agent${opts.kidCount === 1 ? '' : 's'} online"><span class="on">${opts.kidOnline}</span>/${opts.kidCount}</span>` : '';
     li.innerHTML = `${toggle}<span class="dot${p.online ? ' online' : ''}"></span>
       <span class="av-slot"></span>
       <span class="pname">${esc(p.name)}</span>${owner}
@@ -1092,7 +1115,7 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
     const offlineDivider = (key, count, leaf) => {
       const t = document.createElement('li');
       t.className = 'offline-toggle' + (leaf ? ' participant-leaf' : '');
-      t.textContent = `${offlineOpen.has(key) ? '▾' : '▸'} offline (${count})`;
+      t.innerHTML = `${offlineOpen.has(key) ? ICON.chevronDown : ICON.chevronRight} offline (${count})`;
       t.onclick = () => {
         offlineOpen.has(key) ? offlineOpen.delete(key) : offlineOpen.add(key);
         renderParticipants();
@@ -1122,7 +1145,7 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
       const collapsed = hasKids && !expanded.has(h.id);
       const rollup = collapsed && kids.some((a) => a.online); // hidden child's green dot, surfaced
       ul.appendChild(participantLi(h, false, {
-        hasKids, collapsed, kidCount: kids.length, rollup,
+        hasKids, collapsed, kidCount: kids.length, kidOnline: kids.filter((a) => a.online).length, rollup,
         onToggle: hasKids ? () => toggleHuman(h.id) : null,
       }));
       if (!collapsed) renderKids(h.id, kids);
@@ -1174,11 +1197,7 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
     $('room-name').textContent = room.name;
     $('ws-current').textContent = room.name;
     paintRoomMark();
-    const foot = $('me-footer');
-    foot.innerHTML = '';
-    foot.appendChild(avatarEl(me, 'avatar-sm'));
-    foot.appendChild(document.createTextNode(`${me.name} (${me.role})`));
-    foot.onclick = () => showProfile(me);
+    renderMeFooter();
     renderChannels();
     renderParticipants();
     setTitle();
@@ -1263,7 +1282,7 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
     if (changed) talkedAt = new Map();
     current = ch;
     syncURL(changed && !fromURL); // refreshes replace, real navigation pushes
-    $('channel-title').textContent = (ch.private ? '🔒 ' : '# ') + ch.name;
+    setChannelTitle(ch);
     $('channel-topic').innerHTML = ch.topic ? linkify(ch.topic) : '';
     refreshHeaderMembers(ch); // header member count, not worth blocking the feed on
     renderChannels();
@@ -1715,7 +1734,7 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
       const ch = channels.find((c) => c.id === current.id);
       if (ch) {
         current = ch;
-        $('channel-title').textContent = (ch.private ? '🔒 ' : '# ') + ch.name;
+        setChannelTitle(ch);
       }
     }
     // profile changes (avatar, name) must also repaint already-rendered messages
@@ -1831,26 +1850,49 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
     const here = location.pathname + location.search;
     // the current room is known locally, so the rail still gets its mark and "+"
     try { out = await fetchWorkspaces(); } catch (e) { console.error('switcher', e); mountRail([], here); return; }
+    // the rail is the switcher; this menu holds only the workspace actions (Maya, msg c61adc39)
     const menu = $('ws-menu');
     menu.innerHTML = '';
-    menu.appendChild(wsMenuItem(room.name, { current: true, avatar: wsAvatarEl(room, 'ws-avatar-sm', wsHeaders(room.slug)) }));
-    for (const ws of (out.workspaces || []).filter((w) => w.slug !== room.slug)) {
-      menu.appendChild(wsMenuItem(ws.name, { href: '/w/' + encodeURIComponent(ws.slug), avatar: wsAvatarEl(ws, 'ws-avatar-sm', wsHeaders(ws.slug)) }));
-    }
-    const sep = document.createElement('div');
-    sep.className = 'ws-sep';
-    menu.appendChild(sep);
     // only admins get the code from /room, and only they may hand it out
     if (inviteCode) menu.appendChild(wsMenuItem('Invite member', { id: 'ws-invite-member', icon: '✉', onclick: () => { setMenuOpen(false); openInviteModal(); } }));
     menu.appendChild(wsMenuItem('Create workspace', { icon: '+', href: '/create?next=' + encodeURIComponent(here) }));
     menu.appendChild(wsMenuItem('Join with invite code', { id: 'ws-join', icon: '→', onclick: () => { setMenuOpen(false); openJoinModal(); } }));
     menu.appendChild(wsMenuItem('Settings', { icon: '⚙', href: '/settings?next=' + encodeURIComponent(here) }));
-    menu.appendChild(wsMenuItem('Sign out', { icon: '↪', onclick: () => { setMenuOpen(false); signOut(); } }));
     $('ws-current').textContent = room.name;
     paintRoomMark();
     $('room-head').classList.add('hidden');
     $('ws-switcher-wrap').classList.remove('hidden');
     mountRail(out.workspaces || [], here);
+  };
+
+  // the profile row at the foot of the sidebar: avatar with a status dot, the
+  // name; the hover background says it is clickable, a click opens the personal menu
+  const setMeMenuOpen = (open) => {
+    $('me-menu').classList.toggle('hidden', !open);
+    $('me-footer').setAttribute('aria-expanded', open ? 'true' : 'false');
+    // the menu sits above the button in the DOM, so Tab would leave it; land on the first item
+    if (open) { const first = $('me-menu').querySelector('.ws-item'); if (first) first.focus(); }
+  };
+  const renderMeFooter = () => {
+    const foot = $('me-footer');
+    foot.replaceChildren();
+    const wrap = document.createElement('span');
+    wrap.className = 'me-avatar';
+    wrap.append(avatarEl(me, 'avatar-me'));
+    const dot = document.createElement('span');
+    dot.className = 'me-dot' + (me.online === false ? '' : ' online');
+    dot.title = me.online === false ? 'offline' : 'online';
+    wrap.append(dot);
+    const name = document.createElement('span');
+    name.className = 'me-name';
+    name.textContent = me.name; // the role lives in Members and settings
+    foot.append(wrap, name);
+    const here = location.pathname + location.search;
+    const menu = $('me-menu');
+    menu.replaceChildren();
+    menu.appendChild(wsMenuItem('View profile', { id: 'me-profile', onclick: () => { setMeMenuOpen(false); showProfile(me); } }));
+    menu.appendChild(wsMenuItem('Settings', { id: 'me-settings', href: '/settings?tab=personal&next=' + encodeURIComponent(here) }));
+    menu.appendChild(wsMenuItem('Sign out', { id: 'me-signout', onclick: () => { setMeMenuOpen(false); signOut(); } }));
   };
 
   // the rail: one round mark per workspace, the current one marked; a click is
@@ -1962,15 +2004,24 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
 
   $('ws-switcher').addEventListener('click', (ev) => {
     ev.stopPropagation();
+    setMeMenuOpen(false);
     setMenuOpen($('ws-menu').classList.contains('hidden'));
   });
   $('ws-menu').addEventListener('click', (ev) => ev.stopPropagation());
-  document.addEventListener('click', () => setMenuOpen(false));
+  document.addEventListener('click', () => { setMenuOpen(false); setMeMenuOpen(false); });
   document.addEventListener('keydown', (ev) => {
-    if (ev.key !== 'Escape' || $('ws-menu').classList.contains('hidden')) return;
+    if (ev.key !== 'Escape') return;
+    if (!$('me-menu').classList.contains('hidden')) { setMeMenuOpen(false); $('me-footer').focus(); }
+    if ($('ws-menu').classList.contains('hidden')) return;
     setMenuOpen(false);
     $('ws-switcher').focus();
   });
+  $('me-footer').addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    setMenuOpen(false);
+    setMeMenuOpen($('me-menu').classList.contains('hidden'));
+  });
+  $('me-menu').addEventListener('click', (ev) => ev.stopPropagation());
 
   $('composer').addEventListener('submit', async (ev) => {
     ev.preventDefault();
@@ -2036,10 +2087,13 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
     } catch (e) { alert(e.message); }
   };
 
+  // the send button is muted while the editor is empty (Maya, msg 42e8199f)
+  const syncEmpty = (form, box) => () => form.querySelector('.composer-main').classList.toggle('empty', box.isEmpty());
   const composerBox = createComposer({
     mount: $('composer-mount'), id: 'composer-input',
     placeholder: 'Message… (@name to mention, #channel to link, markdown ok)',
     onSubmit: () => $('composer').requestSubmit(),
+    onChange: () => syncEmpty($('composer'), composerBox)(),
     getMentionOptions: mentionOptions,
     getMeName: () => (me ? me.name : ''),
     getChannelOptions: channelOptions,
@@ -2051,6 +2105,7 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
     mount: $('thread-mount'), id: 'thread-input',
     placeholder: 'Reply…',
     onSubmit: () => $('thread-composer').requestSubmit(),
+    onChange: () => syncEmpty($('thread-composer'), threadBox)(),
     getMentionOptions: mentionOptions,
     getMeName: () => (me ? me.name : ''),
     getChannelOptions: channelOptions,
@@ -2058,6 +2113,7 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
     browseChannels: async () => ((await api('/api/v1/channels/browse')).channels || []).filter((c) => !c.member),
     onImageFile: (f) => uploadPending('thread', new File([f], f.name || 'pasted-image.png', { type: f.type })),
   });
+  syncEmpty($('composer'), composerBox)(); syncEmpty($('thread-composer'), threadBox)();
 
   // inline confirmation / error in the composer area, auto-fades
   const slashStatus = (form, text, isErr) => {
@@ -2498,8 +2554,6 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
     setTimeout(() => { btn.textContent = restore; }, ok ? 1500 : 2500);
   };
 
-  $('open-settings').href = '/settings?next=' + encodeURIComponent(location.pathname + location.search);
-
   // ---------- invite modal (workspace menu > Invite member, admins only) ----------
   const openInviteModal = () => {
     $('invite-link').value = joinURL || location.href;
@@ -2546,7 +2600,7 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
     } catch (e) { code = inviteCode; }
     const codeLine = `Invite code: ${code}\n`;
     const ok = await copyText(agentInviteText(origin, link, codeLine, access));
-    flashCopy($('invite-agent-copy'), ok, '🤖 Copy agent instructions');
+    flashCopy($('invite-agent-copy'), ok, 'Copy agent instructions');
   };
 
   $('new-channel').onclick = async () => {
@@ -2585,7 +2639,7 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
       await refreshRoom(); // lock icon in the sidebar right away
       if (current && current.id === ch.id) {
         current = channels.find((c) => c.id === ch.id) || current;
-        $('channel-title').textContent = '🔒 ' + current.name;
+        setChannelTitle(current);
       }
     } catch (e) { alert('Make private failed: ' + e.message); }
   };
@@ -2669,7 +2723,8 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
       im.src = URL.createObjectURL(file);
       pend.appendChild(im);
     }
-    pend.appendChild(document.createTextNode('📎 ' + pendingAtt[which].filename));
+    pend.insertAdjacentHTML('beforeend', ICON.clip + ' ');
+    pend.appendChild(document.createTextNode(pendingAtt[which].filename));
     const clear = document.createElement('button');
     clear.type = 'button';
     clear.className = 'pending-clear';
@@ -2713,13 +2768,14 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
     if (!sessionToken()) { location.replace(loginURL('/create')); return; }
     $('create-back').href = backTarget();
     $('create-view').classList.remove('hidden');
+    wireSlugPreview($('create-room-name'), $('create-room-slug'));
     $('create-form').addEventListener('submit', async (ev) => {
       ev.preventDefault();
       const btn = $('create-form').querySelector('button[type=submit]');
       btn.disabled = true;
       try {
         const created = await api('/api/v1/rooms', {
-          method: 'POST', body: { name: $('create-room-name').value.trim() },
+          method: 'POST', body: { name: $('create-room-name').value.trim(), slug: $('create-room-slug').value.trim() },
         });
         location.href = '/w/' + encodeURIComponent(created.room.slug);
       } catch (e) {

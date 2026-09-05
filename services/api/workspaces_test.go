@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"github.com/presmihaylov/agentchat/pkg/slug"
 	"net/http"
 	"sort"
 	"strings"
@@ -17,10 +18,16 @@ import (
 
 // sessionRoom registers a user and creates a room with the session; the
 // returned client already names the room with X-Workspace-Slug.
+// roomBody: a create body with a slug unique across test runs, since the
+// derived slug of a repeated name would collide on the shared dev db
+func roomBody(name string) map[string]any {
+	return map[string]any{"name": name, "slug": slug.From(name) + "-" + uniqUser()}
+}
+
 func sessionRoom(t *testing.T, base, name string) (creator *testClient, user, room map[string]any) {
 	t.Helper()
 	creator, reg := register(t, base, uniqUser(), "correct horse")
-	out := creator.must("POST", "/api/v1/rooms", map[string]any{"name": name}, 201)
+	out := creator.must("POST", "/api/v1/rooms", roomBody(name), 201)
 	room = out["room"].(map[string]any)
 	room["invite_code"] = out["invite_code"]
 	creator.slug = room["slug"].(string)
@@ -42,11 +49,11 @@ func registerAs(t *testing.T, base, displayName string) (*testClient, map[string
 func TestRoomCreateRequiresSession(t *testing.T) {
 	srv, _ := newTestServer(t)
 	anon := &testClient{t: t, base: srv.URL}
-	if st, out := anon.do("POST", "/api/v1/rooms", map[string]any{"name": "nope"}); st != 401 || out["code"] != "session_required" {
+	if st, out := anon.do("POST", "/api/v1/rooms", roomBody("nope")); st != 401 || out["code"] != "session_required" {
 		t.Fatalf("anonymous create: %d %v", st, out)
 	}
 	_, alice, _ := setupRoom(t, srv.URL)
-	if st, out := alice.do("POST", "/api/v1/rooms", map[string]any{"name": "nope"}); st != 401 || out["code"] != "session_required" {
+	if st, out := alice.do("POST", "/api/v1/rooms", roomBody("nope")); st != 401 || out["code"] != "session_required" {
 		t.Fatalf("act_ create: %d %v", st, out)
 	}
 
@@ -98,7 +105,7 @@ func TestRoomCreateInvalidDisplayNameUsesUsername(t *testing.T) {
 		"display_name": "a display name that is far too long to be a participant name 🎉",
 	}, 201)
 	c.token = out["token"].(string)
-	room := c.must("POST", "/api/v1/rooms", map[string]any{"name": "long"}, 201)["room"].(map[string]any)
+	room := c.must("POST", "/api/v1/rooms", roomBody("long"), 201)["room"].(map[string]any)
 	c.slug = room["slug"].(string)
 	if me := c.must("GET", "/api/v1/me", nil, 200); me["name"] != name {
 		t.Fatalf("want participant name %q, got %v", name, me["name"])
@@ -109,14 +116,14 @@ func TestRoomQuota(t *testing.T) {
 	srv, _ := newTestServer(t)
 	c, _ := register(t, srv.URL, uniqUser(), "correct horse")
 	for i := 0; i < models.RoomQuota; i++ {
-		c.must("POST", "/api/v1/rooms", map[string]any{"name": "room"}, 201)
+		c.must("POST", "/api/v1/rooms", roomBody("room"), 201)
 	}
-	if st, out := c.do("POST", "/api/v1/rooms", map[string]any{"name": "one too many"}); st != 409 || out["code"] != "workspace_quota" {
+	if st, out := c.do("POST", "/api/v1/rooms", roomBody("one too many")); st != 409 || out["code"] != "workspace_quota" {
 		t.Fatalf("sixth create: %d %v", st, out)
 	}
 	// the cap is per creator, not global
 	other, _ := register(t, srv.URL, uniqUser(), "correct horse")
-	other.must("POST", "/api/v1/rooms", map[string]any{"name": "room"}, 201)
+	other.must("POST", "/api/v1/rooms", roomBody("room"), 201)
 }
 
 // participantsColumns is the participants table before task 03 plus user_id.
@@ -243,7 +250,7 @@ func TestSessionAuthResolvesParticipant(t *testing.T) {
 	}
 
 	// opening a second workspace moves the last-active pointer
-	second := creator.must("POST", "/api/v1/rooms", map[string]any{"name": "second"}, 201)["room"].(map[string]any)
+	second := creator.must("POST", "/api/v1/rooms", roomBody("second"), 201)["room"].(map[string]any)
 	creator.slug = second["slug"].(string)
 	creator.must("GET", "/api/v1/me", nil, 200)
 	if got := creator.must("GET", "/api/v1/user", nil, 200)["user"].(map[string]any)["last_active_workspace_id"]; got != second["id"] {
@@ -622,7 +629,7 @@ func TestRoomAvatar(t *testing.T) {
 func TestUserWorkspacesUnreadAndMentions(t *testing.T) {
 	srv, _ := newTestServer(t)
 	ann, _ := registerAs(t, srv.URL, "annie")
-	ann.must("POST", "/api/v1/rooms", map[string]any{"name": "room a"}, 201)
+	ann.must("POST", "/api/v1/rooms", roomBody("room a"), 201)
 	bob, _, roomB := sessionRoom(t, srv.URL, "room b")
 	annB := &testClient{t: t, base: srv.URL, token: ann.token, slug: roomB["slug"].(string)}
 	annB.must("POST", "/api/v1/workspaces/"+annB.slug+"/enter", map[string]any{"invite_code": roomB["invite_code"]}, 200)
@@ -798,5 +805,34 @@ func TestKickMembers(t *testing.T) {
 		if id := p.(map[string]any)["id"]; id == humanPID || id == agentPID {
 			t.Fatalf("kicked row still listed: %v", id)
 		}
+	}
+}
+
+func TestCreateRoomSlug(t *testing.T) {
+	srv, _ := newTestServer(t)
+	c, _ := register(t, srv.URL, uniqUser(), "correct horse")
+	tag := uniqUser()
+	// derived from the name: folded, lowercased, hyphenated
+	out := c.must("POST", "/api/v1/rooms", map[string]any{"name": "Café Crème " + tag}, 201)
+	if got := out["room"].(map[string]any)["slug"]; got != "cafe-creme-"+tag {
+		t.Fatalf("derived slug = %v", got)
+	}
+	// a taken slug is a 409 with its own code, no suffixing
+	if st, out := c.do("POST", "/api/v1/rooms", map[string]any{"name": "cafe creme " + tag}); st != 409 || out["code"] != "slug_taken" {
+		t.Fatalf("taken slug: %d %v", st, out)
+	}
+	// an explicit slug wins over the name
+	out = c.must("POST", "/api/v1/rooms", map[string]any{"name": "Whatever", "slug": "custom-" + tag}, 201)
+	if got := out["room"].(map[string]any)["slug"]; got != "custom-"+tag {
+		t.Fatalf("custom slug = %v", got)
+	}
+	for _, bad := range []string{"Bad Slug", "-x", "a--b", "日本"} {
+		if st, out := c.do("POST", "/api/v1/rooms", map[string]any{"name": "n", "slug": bad}); st != 400 || out["code"] != "slug_invalid" {
+			t.Fatalf("slug %q: %d %v", bad, st, out)
+		}
+	}
+	// a name with nothing to derive from is invalid too
+	if st, out := c.do("POST", "/api/v1/rooms", map[string]any{"name": "日本"}); st != 400 || out["code"] != "slug_invalid" {
+		t.Fatalf("underivable name: %d %v", st, out)
 	}
 }

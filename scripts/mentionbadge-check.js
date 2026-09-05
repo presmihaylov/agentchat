@@ -63,8 +63,8 @@ async function api(path, opts = {}) {
   const rows = await page.evaluate(() => {
     const out = {};
     document.querySelectorAll('#channel-list li').forEach((li) => {
-      // name lives in the li's first text node; the badge is a separate <span>
-      const name = (li.childNodes[0].textContent || '').replace(/^#\s*/, '').trim().split(' ')[0];
+      // name lives in .chan-name; the badge is a separate <span>
+      const name = ((li.querySelector('.chan-name') || {}).textContent || '').trim().split(' ')[0];
       const badge = li.querySelector('.unread-badge');
       out[name] = { glow: li.classList.contains('unread'), badge: badge ? badge.textContent : null };
     });

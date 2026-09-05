@@ -56,6 +56,7 @@ node scripts/railbadge-check.js             # RAILBADGE_CHECK_OK
 node scripts/wsdelete-check.js             # WSDELETE_CHECK_OK
 node scripts/fleetroom-check.js            # FLEETROOM_CHECK_OK (no browser, no db)
 node scripts/kick-check.js                 # KICK_CHECK_OK
+node scripts/slug-check.js                 # SLUG_CHECK_OK
 node scripts/reactions-check.js             # REACTIONS_CHECK_OK
 node scripts/codeblock-check.js             # CODEBLOCK_CHECK_OK
 node scripts/docpreview-check.js           # DOCPREVIEW_CHECK_OK
@@ -64,6 +65,7 @@ node scripts/settings-nav-check.js         # SETTINGS_NAV_CHECK_OK (same)
 node scripts/enter-check.js                # ENTER_CHECK_OK
 node scripts/dateseps-check.js             # DATESEPS_CHECK_OK
 node scripts/switcher-check.js             # SWITCHER_CHECK_OK (same)
+node scripts/composer-check.js             # COMPOSER_CHECK_OK
 ```
 
 ## Conventions

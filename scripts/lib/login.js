@@ -41,7 +41,14 @@ async function registerAndLogin(base, username = uniqUser(), displayName = '') {
 }
 
 // createRoom is POST /api/v1/rooms with a session: {room, join_url, invite_code}
-const createRoom = (base, session, name) => call(base, '/api/v1/rooms', { method: 'POST', token: session, body: { name } });
+// the slug is unique per call: a repeated name would collide on the dev db
+// a unique slug per create (the server rejects a taken one), kept under the 60-char cap
+const uniqSlug = (name) => {
+  const tag = uniqUser();
+  const base = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 59 - tag.length).replace(/-+$/, '');
+  return base + '-' + tag;
+};
+const createRoom = (base, session, name, slug) => call(base, '/api/v1/rooms', { method: 'POST', token: session, body: { name, slug: slug || uniqSlug(name) } });
 
 // newRoom makes a workspace under a throwaway account and then vacates the
 // creator's seat, so the first joiner becomes admin and the roster starts
@@ -95,14 +102,13 @@ async function openWorkspace(page, base, session, slug) {
   await page.waitForSelector('#chat-view:not(.hidden)', { timeout: 8000 });
 }
 
-// switchTo picks slug in the workspace switcher; the switch is a full load of /w/<slug>
+// switchTo picks slug in the workspace rail (the header menu no longer lists
+// workspaces); the switch is a full load of /w/<slug>
 async function switchTo(page, slug) {
-  await page.waitForSelector('#ws-switcher-wrap:not(.hidden)', { timeout: 8000 });
-  await page.click('#ws-switcher');
-  await page.waitForSelector('#ws-menu:not(.hidden)', { timeout: 4000 });
+  await page.waitForSelector('#rail-list .rail-item[href="/w/' + slug + '"]', { timeout: 8000 });
   await Promise.all([
     page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 8000 }),
-    page.click('#ws-menu a[href="/w/' + slug + '"]'),
+    page.click('#rail-list .rail-item[href="/w/' + slug + '"]'),
   ]);
   await page.waitForSelector('#chat-view:not(.hidden)', { timeout: 8000 });
 }

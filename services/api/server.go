@@ -85,6 +85,8 @@ func (s *Server) routes() {
 	}
 	m.Handle("GET /assets/", http.FileServerFS(dist))
 	m.Handle("GET /vendor/", http.FileServerFS(dist))
+	m.Handle("GET /brand/", http.FileServerFS(dist)) // logo, favicons
+	m.HandleFunc("GET /favicon.ico", func(w http.ResponseWriter, r *http.Request) { http.ServeFileFS(w, r, dist, "brand/favicon.ico") })
 	serveApp := func(w http.ResponseWriter, r *http.Request) {
 		page, err := web.Dist.ReadFile("dist/index.html")
 		if err != nil {

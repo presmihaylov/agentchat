@@ -68,8 +68,8 @@ const iconFirst = (page, sel) => page.$$eval(sel, (els) => els.map((el) => {
     return { railLeft: rail.left, railRight: rail.right, sbLeft: sb.left, avatars };
   });
   assert(geo.railLeft === 0 && geo.railRight <= geo.sbLeft, 'rail is not left of the sidebar: ' + JSON.stringify(geo));
-  assert(geo.avatars.every((a) => a.w === 44 && a.h === 44), 'rail marks are not 44px: ' + JSON.stringify(geo.avatars));
-  assert(geo.avatars[0].radius === '50%' && geo.avatars[1].radius === '14px', 'round others, squared current: ' + JSON.stringify(geo.avatars));
+  assert(geo.avatars.every((a) => a.w === 32 && a.h === 32), 'rail marks are not 32px: ' + JSON.stringify(geo.avatars));
+  assert(geo.avatars[0].radius === '50%' && geo.avatars[1].radius === '10px', 'round others, squared current: ' + JSON.stringify(geo.avatars));
   // keyboard: the marks are links in order, then the "+"
   await page.focus('#rail-list .rail-item');
   await page.keyboard.press('Tab');
@@ -115,7 +115,7 @@ const iconFirst = (page, sel) => page.$$eval(sel, (els) => els.map((el) => {
   await page.click('#ws-switcher');
   await visible(page, '#ws-menu');
   const wsRows = await iconFirst(page, '#ws-menu .ws-item');
-  assert(wsRows.map((r) => r.text).join('|') === 'second place|first place|third place|Invite member|Create workspace|Join with invite code|Settings|Sign out', 'ws menu rows: ' + JSON.stringify(wsRows));
+  assert(wsRows.map((r) => r.text).join('|') === 'Invite member|Create workspace|Join with invite code|Settings', 'ws menu rows: ' + JSON.stringify(wsRows));
   assert(wsRows.every((r) => r.hasIcon && r.iconFirst), 'ws menu icon not first: ' + JSON.stringify(wsRows));
   await shot(page, 'ws-menu.png');
   await page.click('#ws-join');

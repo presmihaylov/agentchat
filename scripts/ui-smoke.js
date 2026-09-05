@@ -96,6 +96,8 @@ async function api(path, opts = {}) {
   await page.goto(SERVER + '/create', { waitUntil: 'networkidle2' });
   await page.waitForSelector('#create-view:not(.hidden)', { timeout: 5000 });
   await page.type('#create-room-name', 'smoke onboarding');
+  // the slug derives from the fixed name; a rerun would collide, so override it as a user could
+  await page.$eval('#create-room-slug', (el, v) => { el.value = v; }, 'smoke-onboarding-' + uniqUser().slice(-8));
   await page.click('#create-form button[type=submit]');
   await page.waitForSelector('#chat-view:not(.hidden)', { timeout: 8000 });
   // refreshRoom fills the header async after the view unhides
@@ -103,6 +105,7 @@ async function api(path, opts = {}) {
   const newRoomName = await page.$eval('#room-name', (el) => el.textContent);
   if (newRoomName !== 'smoke onboarding') throw new Error('onboarding room name: ' + newRoomName);
   if (!page.url().startsWith(SERVER + '/w/')) throw new Error('onboarding did not land on /w/<slug>: ' + page.url());
+  if (!(await page.$eval('#splash', (el) => getComputedStyle(el).display === 'none'))) throw new Error('splash still shown over the room');
 
   const realErrors = errors.filter((e) => !e.includes('favicon'));
   if (realErrors.length) throw new Error('page errors: ' + realErrors.join(' | '));

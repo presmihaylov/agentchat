@@ -43,8 +43,13 @@ const menuLabels = (page) => page.$$eval('.context-menu .ctx-item', (bs) => bs.m
 
   // 1. ⋮ is the last toolbar item, titled "More actions"; hover reveals it
   const more = (id) => `#messages .msg[data-id="${id}"] .msg-actions button:last-child`;
-  const title = await page.$eval(more(root.id), (b) => b.title + '|' + b.textContent);
-  assert(title === 'More actions|⋮', 'last toolbar button is ' + title);
+  const title = await page.$eval(more(root.id), (b) => b.title + '|' + (b.querySelector('svg[data-icon]') || {}).dataset?.icon + '|' + b.textContent.trim());
+  assert(title === 'More actions|more-vertical|', 'last toolbar button is ' + title);
+  // the other toolbar buttons hold a monochrome SVG, never literal template text
+  const icons = await page.$$eval(`#messages .msg[data-id="${root.id}"] .msg-actions button:not(:last-child)`, (bs) => bs.map((b) => b.dataset.act + ':' + ((b.querySelector('svg.lucide') || {}).dataset || {}).icon + ':' + b.textContent.trim()));
+  assert(icons.every((i) => /^(react:smile-plus|thread:message-square|edit:pencil|delete:trash-2):$/.test(i)), 'toolbar icons: ' + JSON.stringify(icons));
+  // the toolbar never joins a text selection
+  assert(await page.$eval(`#messages .msg[data-id="${root.id}"] .msg-actions`, (el) => getComputedStyle(el).userSelect === 'none'), 'toolbar is selectable');
   await page.hover(`#messages .msg[data-id="${root.id}"]`);
   const visible = await page.$eval(more(root.id), (b) => getComputedStyle(b.parentElement).opacity === '1');
   assert(visible, 'toolbar not revealed on hover');

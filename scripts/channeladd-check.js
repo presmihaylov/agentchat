@@ -18,11 +18,11 @@ async function api(path, opts = {}) {
   return data;
 }
 
-// rows read "# name" or "🔒 name"; the sigil is whatever precedes the first space
+// the name sits in .chan-name; the sigil (# or the lock) is a separate span
 const chanNames = (page) => page.$$eval('#channel-list li', (lis) =>
-  lis.map((li) => li.textContent.trim().split(/\s+/)[1] || ''));
+  lis.map((li) => (li.querySelector('.chan-name') || {}).textContent || ''));
 const waitSidebar = (page, pred, what) => page.waitForFunction((src) => {
-  const names = [...document.querySelectorAll('#channel-list li')].map((li) => li.textContent.trim().split(/\s+/)[1] || '');
+  const names = [...document.querySelectorAll('#channel-list li')].map((li) => (li.querySelector('.chan-name') || {}).textContent || '');
   return new Function('names', 'return ' + src)(names);
 }, { timeout: 5000 }, pred).catch(() => { throw new Error('sidebar never ' + what); });
 

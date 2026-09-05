@@ -28,9 +28,14 @@ has run its backfill and verification queries.
 | 14 | Delete workspace | done |
 | 15 | Kick members | done |
 | 16 | Polish pass (rail, settings nav, slug from name, sidebar button) | in-progress |
+| 20 | Channel rename (admins) with a system entry | todo |
 | 17 | Invite links replace invite codes | todo |
-| 18 | Rail order per user, unread counter badges | todo |
+| 18 | Rail order per user, unread counter badges, workspace mute, favicon + title badge | todo |
 | 19 | Agents belong to a human | todo |
+| 21 | Agents go offline and catch up on return | todo |
+| 22 | Reminders for agents (after 21) | todo |
+| 23 | Instant, whole workspace switching (after 18) | todo |
+| 24 | Icon design pass, shadcn/Lucide set, own deploy | todo |
 
 Tasks 09-15 are the feature queue Maya gave on 2026-09-04 (roots 948f9802 and dd69d0b2, process note 1a7ee18d
 in #agentchat): one at a time, each with subagent review, browser e2e with screenshots, its own deploy and a

@@ -64,6 +64,8 @@ const roomApi = (p, session, slug, opts = {}) => call(SERVER, p, Object.assign({
   await visible(pageA, '#create-view');
   if (await pageA.$('#create-user-name')) throw new Error('the create form still asks for a name');
   await pageA.type('#create-room-name', 'enter check');
+  // the slug derives from the fixed name; a rerun would collide, so override it as a user could
+  await pageA.$eval('#create-room-slug', (el, v) => { el.value = v; }, 'enter-check-' + uniqUser().slice(-8));
   await shot(pageA, 'create.png');
   await pageA.click('#create-form button[type=submit]');
   await pageA.waitForFunction(() => location.pathname.startsWith('/w/'), { timeout: 8000 });

@@ -19,7 +19,7 @@ async function api(path, opts = {}) {
 }
 
 const chanNames = (page) => page.$$eval('#channel-list li', (lis) =>
-  lis.map((li) => li.textContent.replace(/^#\s*/, '').split(' ')[0]));
+  lis.map((li) => ((li.querySelector('.chan-name') || {}).textContent || '').split(' ')[0]));
 
 (async () => {
   const created = await newRoom(SERVER, 'membership check');
@@ -64,20 +64,20 @@ const chanNames = (page) => page.$$eval('#channel-list li', (lis) =>
   });
   // after join, #secret appears in the sidebar.
   await page.waitForFunction(() =>
-    [...document.querySelectorAll('#channel-list li')].some((li) => li.textContent.replace(/^#\s*/, '').startsWith('secret')),
+    [...document.querySelectorAll('#channel-list li')].some((li) => ((li.querySelector('.chan-name') || {}).textContent || '').startsWith('secret')),
     { timeout: 4000 });
   await page.screenshot({ path: '/private/tmp/claude-501/-Users-pmihaylov-prg-repos/78cd3fcc-ad11-42d3-ba05-8de92cc37e7a/scratchpad/membership-joined.png' });
 
   // bob can now read the earlier message.
   await page.evaluate(() => {
-    const li = [...document.querySelectorAll('#channel-list li')].find((l) => l.textContent.replace(/^#\s*/, '').startsWith('secret'));
+    const li = [...document.querySelectorAll('#channel-list li')].find((l) => ((l.querySelector('.chan-name') || {}).textContent || '').startsWith('secret'));
     li.click();
   });
   await page.waitForFunction(() => /classified/.test(document.querySelector('#messages')?.textContent || ''), { timeout: 4000 });
 
   // 4. leave #secret via the row context menu.
   await page.evaluate(() => {
-    const li = [...document.querySelectorAll('#channel-list li')].find((l) => l.textContent.replace(/^#\s*/, '').startsWith('secret'));
+    const li = [...document.querySelectorAll('#channel-list li')].find((l) => ((l.querySelector('.chan-name') || {}).textContent || '').startsWith('secret'));
     li.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 60, clientY: 200 }));
   });
   await page.waitForSelector('.context-menu, #context-menu, .ctx-menu', { timeout: 2000 }).catch(() => {});
@@ -90,12 +90,12 @@ const chanNames = (page) => page.$$eval('#channel-list li', (lis) =>
   });
   if (!clickedLeave) throw new Error('no "Leave channel" menu item found');
   await page.waitForFunction(() =>
-    ![...document.querySelectorAll('#channel-list li')].some((li) => li.textContent.replace(/^#\s*/, '').startsWith('secret')),
+    ![...document.querySelectorAll('#channel-list li')].some((li) => ((li.querySelector('.chan-name') || {}).textContent || '').startsWith('secret')),
     { timeout: 4000 });
 
   // 5. #general offers no Leave option (pinned).
   await page.evaluate(() => {
-    const li = [...document.querySelectorAll('#channel-list li')].find((l) => l.textContent.replace(/^#\s*/, '').startsWith('general'));
+    const li = [...document.querySelectorAll('#channel-list li')].find((l) => ((l.querySelector('.chan-name') || {}).textContent || '').startsWith('general'));
     li.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 60, clientY: 120 }));
   });
   const generalHasLeave = await page.evaluate(() =>

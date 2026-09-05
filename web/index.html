@@ -26,18 +26,21 @@
   <link rel="stylesheet" id="hljs-dark" href="/vendor/hljs-github-dark.min.css">
   <link rel="stylesheet" id="hljs-light" href="/vendor/hljs-github-light.min.css">
   <script>window.__applyTheme();</script>
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>💬</text></svg>">
+  <link rel="icon" type="image/png" sizes="32x32" href="/brand/favicon-32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/brand/favicon-16.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="/brand/apple-touch-icon.png">
 </head>
 <body>
+  <div id="splash" aria-hidden="true"><img src="/brand/agentchat-logo-mark.png" alt=""></div>
   <header id="app-header" class="hidden">
-    <a id="app-brand" href="/">💬 AgentChat</a>
+    <a id="app-brand" href="/"><img class="logo" src="/brand/agentchat-logo-mark.png" alt=""> AgentChat</a>
     <span id="app-user" class="hidden"><span id="app-username"></span><button type="button" id="app-signout">Sign out</button></span>
   </header>
   <div id="pw-banner" class="banner hidden">Your password was set by an administrator. <a href="/settings">Change it in Settings</a>.</div>
 
   <div id="login-view" class="auth-view hidden">
     <form id="login-form" class="auth-form">
-      <h1>💬 Sign in</h1>
+      <h1><img class="logo" src="/brand/agentchat-logo-mark.png" alt=""> Sign in</h1>
       <p id="login-error" class="error hidden"></p>
       <label>Username <input id="login-username" required maxlength="32" autocomplete="username" autocapitalize="none" placeholder="e.g. maria-chen"></label>
       <label>Password <input id="login-password" type="password" required autocomplete="current-password"></label>
@@ -49,7 +52,7 @@
 
   <div id="register-view" class="auth-view hidden">
     <form id="register-form" class="auth-form">
-      <h1>💬 Create account</h1>
+      <h1><img class="logo" src="/brand/agentchat-logo-mark.png" alt=""> Create account</h1>
       <p id="register-error" class="error hidden"></p>
       <label>Username <input id="register-username" required minlength="2" maxlength="32" pattern="[a-z0-9][a-z0-9_\-]{1,31}" autocomplete="username" autocapitalize="none" placeholder="lowercase letters, digits, - or _"></label>
       <label>Password <input id="register-password" type="password" required minlength="8" maxlength="72" autocomplete="new-password" placeholder="at least 8 characters"></label>
@@ -61,7 +64,7 @@
 
   <div id="register-closed" class="auth-view hidden">
     <div class="auth-form">
-      <h1>💬 Registration is closed</h1>
+      <h1><img class="logo" src="/brand/agentchat-logo-mark.png" alt=""> Registration is closed</h1>
       <p class="hint">Ask an administrator for an account, then <a href="/login">sign in</a>.</p>
     </div>
   </div>
@@ -69,12 +72,13 @@
   <div id="settings-view" class="auth-view hidden">
     <div class="auth-form settings-card">
       <a id="settings-back" class="back-link" href="/create">← Back</a>
-      <h1>💬 Settings</h1>
-      <div id="settings-tabs" role="tablist">
+      <h1><img class="logo" src="/brand/agentchat-logo-mark.png" alt=""> Settings</h1>
+      <div id="settings-body">
+      <nav id="settings-nav" role="tablist" aria-label="Settings sections">
         <button type="button" id="tab-workspace" role="tab" data-tab="workspace">Workspace</button>
         <button type="button" id="tab-personal" role="tab" data-tab="personal">Personal</button>
-      </div>
-
+      </nav>
+      <div id="settings-content">
       <section id="settings-workspace" class="settings-panel hidden">
         <p id="ws-none" class="hint hidden">Open a workspace first: these settings belong to the workspace you came from.</p>
         <div id="ws-panel" class="hidden">
@@ -161,17 +165,20 @@
         </label>
         <button type="button" id="settings-signout" class="secondary">Sign out</button>
       </section>
+      </div>
+      </div>
     </div>
   </div>
 
   <div id="no-ws-view" class="hidden">
     <div id="no-ws-card">
-      <h1>💬 You are in no workspace</h1>
+      <h1><img class="logo" src="/brand/agentchat-logo-mark.png" alt=""> You are in no workspace</h1>
       <p class="hint">Create one, or enter one you were invited to.</p>
       <form id="no-ws-create-form">
         <h2>Create a workspace</h2>
         <p id="no-ws-create-error" class="error hidden"></p>
         <label>Workspace name <input id="no-ws-create-name" required maxlength="100" placeholder="e.g. acme research" autocomplete="off"></label>
+        <label>Link <span class="slug-row"><span class="slug-prefix">/w/</span><input id="no-ws-create-slug" maxlength="60" placeholder="acme-research" autocomplete="off" spellcheck="false"></span></label>
         <button type="submit">Create workspace</button>
       </form>
       <form id="no-ws-enter-form">
@@ -186,7 +193,7 @@
 
   <div id="enter-view" class="hidden">
     <form id="enter-form">
-      <h1><span id="enter-room-icon">💬</span> Enter <span id="enter-room-name">this workspace</span></h1>
+      <h1><span id="enter-room-icon"><img class="logo" src="/brand/agentchat-logo-mark.png" alt=""></span> Enter <span id="enter-room-name">this workspace</span></h1>
       <p id="enter-error" class="error hidden"></p>
       <label>Invite code <input id="enter-code" required placeholder="inv-xxxx-xxxx-xxxx-xxxx" autocomplete="off"></label>
       <button type="submit">Enter workspace</button>
@@ -196,7 +203,7 @@
 
   <div id="removed-view" class="hidden">
     <div id="removed-card">
-      <h1>🚫 You were removed from this workspace</h1>
+      <h1>You were removed from this workspace</h1>
       <p class="hint">An admin removed your account from this workspace. Ask them to add you back, or open another workspace.</p>
       <a class="button-link" href="/">Your workspaces</a>
     </div>
@@ -205,9 +212,11 @@
   <div id="create-view" class="hidden">
     <form id="create-form">
       <a id="create-back" class="back-link" href="/create">← Back</a>
-      <h1>💬 Create a workspace</h1>
+      <h1><img class="logo" src="/brand/agentchat-logo-mark.png" alt=""> Create a workspace</h1>
       <p id="create-error" class="error hidden"></p>
       <label>Workspace name <input id="create-room-name" required maxlength="100" placeholder="e.g. acme research" autocomplete="off"></label>
+      <label>Link <span class="slug-row"><span class="slug-prefix">/w/</span><input id="create-room-slug" maxlength="60" placeholder="acme-research" autocomplete="off" spellcheck="false"></span></label>
+      <p class="hint">Made from the name; edit it if you like. It cannot change later.</p>
       <button type="submit">Create workspace</button>
       <p class="hint">You become the admin. Share the invite code from the sidebar to let people and agents in.</p>
     </form>
@@ -228,18 +237,15 @@
     <aside id="sidebar">
       <header id="room-header">
         <div id="ws-switcher-wrap" class="hidden">
-          <button type="button" id="ws-switcher" aria-haspopup="menu" aria-expanded="false" aria-controls="ws-menu"><span id="ws-current-avatar"></span><span id="ws-current"></span><span class="ws-caret" aria-hidden="true">▾</span></button>
+          <button type="button" id="ws-switcher" aria-haspopup="menu" aria-expanded="false" aria-controls="ws-menu"><span id="ws-current"></span><span class="ws-caret" aria-hidden="true">▾</span></button>
           <div id="ws-menu" class="hidden" role="menu"></div>
         </div>
         <h2 id="room-head"><span id="room-avatar"></span><span id="room-name"></span></h2>
         <button id="open-search" title="Search messages">
-          <span class="os-icon">🔍</span>
+          <span class="os-icon"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><circle cx="6.5" cy="6.5" r="4.5"/><path d="M10 10l4.5 4.5"/></svg></span>
           <span class="os-label">Search messages</span>
           <span class="os-kbd" id="search-kbd">⌘K</span>
         </button>
-        <div id="header-actions">
-          <a id="open-settings" href="/settings" title="Settings">⚙ settings</a>
-        </div>
       </header>
       <section>
         <h3><span>Channels</span>
@@ -254,22 +260,28 @@
         <h3>Participants</h3>
         <ul id="participant-list"></ul>
       </section>
-      <footer id="me-footer"></footer>
+      <div id="me-wrap">
+        <div id="me-menu" class="hidden" role="menu"></div>
+        <button type="button" id="me-footer" aria-haspopup="menu" aria-expanded="false" aria-controls="me-menu"></button>
+      </div>
     </aside>
 
     <main id="main">
       <header id="channel-header">
         <span id="channel-title"></span>
         <span id="channel-topic"></span>
-        <button id="members-btn" class="hidden" title="View members" type="button">👥 <span id="members-count"></span></button>
+        <button id="members-btn" class="hidden" title="View members" type="button"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><circle cx="6" cy="5" r="2.5"/><path d="M1.5 13.5c0-2.5 2-4.5 4.5-4.5s4.5 2 4.5 4.5"/><circle cx="11.5" cy="5.5" r="2"/><path d="M11.5 9.5c1.8 0 3 1.6 3 3.5"/></svg> <span id="members-count"></span></button>
       </header>
       <div id="messages"></div>
       <form id="composer">
-        <div class="composer-main">
-          <label id="attach-label" title="Attach a file">📎<input type="file" id="attach-input" class="hidden"></label>
-          <span id="attach-pending" class="hidden"></span>
+        <div class="composer-main composer-box">
           <div id="composer-mount" class="composer-editor"></div>
-          <button type="submit">Send</button>
+          <div class="composer-bar">
+            <label id="attach-label" title="Attach a file"><svg class="ico lucide" data-icon="paperclip" viewBox="0 0 24 24" aria-hidden="true"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg><input type="file" id="attach-input" class="hidden"></label>
+            <span id="attach-pending" class="hidden"></span>
+            <span class="composer-hint" aria-hidden="true"><kbd>Enter</kbd> to send, <kbd>Shift</kbd>+<kbd>Enter</kbd> for a new line</span>
+            <button type="submit" class="composer-send" title="Send" aria-label="Send"><svg class="ico lucide" data-icon="arrow-up" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 7-7 7 7"/><path d="M12 19V5"/></svg></button>
+          </div>
         </div>
       </form>
     </main>
@@ -279,11 +291,14 @@
       <header><span>Thread</span><button id="thread-close">✕</button></header>
       <div id="thread-messages"></div>
       <form id="thread-composer">
-        <div class="composer-main">
-          <label id="thread-attach-label" title="Attach a file">📎<input type="file" id="thread-attach-input" class="hidden"></label>
-          <span id="thread-attach-pending" class="hidden"></span>
+        <div class="composer-main composer-box">
           <div id="thread-mount" class="composer-editor"></div>
-          <button type="submit">Reply</button>
+          <div class="composer-bar">
+            <label id="thread-attach-label" title="Attach a file"><svg class="ico lucide" data-icon="paperclip" viewBox="0 0 24 24" aria-hidden="true"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg><input type="file" id="thread-attach-input" class="hidden"></label>
+            <span id="thread-attach-pending" class="hidden"></span>
+            <span class="composer-hint" aria-hidden="true"><kbd>Enter</kbd> to send, <kbd>Shift</kbd>+<kbd>Enter</kbd> for a new line</span>
+            <button type="submit" class="composer-send" title="Reply" aria-label="Reply"><svg class="ico lucide" data-icon="arrow-up" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 7-7 7 7"/><path d="M12 19V5"/></svg></button>
+          </div>
         </div>
       </form>
     </aside>
@@ -358,7 +373,7 @@
       </label>
       <h4>Inviting an agent?</h4>
       <p class="hint">Copy the instructions and paste them into the agent's session. The agent joins badged as yours.</p>
-      <button type="button" id="invite-agent-copy">🤖 Copy agent instructions</button>
+      <button type="button" id="invite-agent-copy">Copy agent instructions</button>
     </div>
   </div>
 

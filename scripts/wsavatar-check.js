@@ -60,19 +60,17 @@ const png = () => {
   const other = await createRoom(SERVER, adminSession, 'zed workspace');
   await admin.goto(SERVER + '/w/' + slug, { waitUntil: 'networkidle2' });
   await visible(admin, '#ws-switcher-wrap');
-  await waitMark(admin, '#ws-current-avatar', false);
-  let m = await mark(admin, '#ws-current-avatar');
+  await waitMark(admin, '#rail-list .rail-item[aria-current]', false);
+  let m = await mark(admin, '#rail-list .rail-item[aria-current]');
   assert(m.initials === 'AC' && m.hue === hue, 'switcher mark: ' + JSON.stringify(m));
   assert(await admin.$eval('#ws-current', (el) => el.textContent) === 'avatar check', 'switcher name changed');
+  // the header menu lists no workspaces; the other workspace's mark is in the rail
   await openMenu(admin);
-  m = await mark(admin, '#ws-menu .ws-item.current');
-  assert(m.initials === 'AC' && m.hue === hue && !m.img, 'menu current mark: ' + JSON.stringify(m));
-  const rows = await admin.$$eval('#ws-menu .ws-item', (els) => els.map((e) => e.textContent));
-  assert(rows[0] === 'avatar check' && rows[1] === 'zed workspace', 'menu rows carry extra text: ' + rows.join('|'));
-  m = await mark(admin, '#ws-menu a.ws-item[href="/w/' + other.room.slug + '"]');
+  assert(!(await admin.$('#ws-menu .ws-avatar')), 'header menu still carries workspace marks');
+  await admin.keyboard.press('Escape');
+  m = await mark(admin, '#rail-list a.rail-item[href="/w/' + other.room.slug + '"]');
   assert(m.initials === 'ZW' && m.hue === String(other.room.color * 30), 'other workspace mark: ' + JSON.stringify(m));
   await shot(admin, 'before.png');
-  await admin.keyboard.press('Escape');
 
   // 2. the enter page peeks the colour and initials (no image before membership)
   const guest = await newPage();
@@ -102,16 +100,13 @@ const png = () => {
 
   // 4. back in the room: the switcher and the menu show the image
   await backToRoom(admin);
-  await waitMark(admin, '#ws-current-avatar', true);
-  await openMenu(admin);
-  await waitMark(admin, '#ws-menu .ws-item.current', true);
+  await waitMark(admin, '#rail-list .rail-item[aria-current]', true);
   await shot(admin, 'after.png');
-  await admin.keyboard.press('Escape');
 
   // 5. a member sees the image too, and Workspace settings shows it read-only
   const member = await newPage();
   await enterAs(member, SERVER, slug, room.invite_code, 'Bob');
-  await waitMark(member, '#ws-current-avatar', true);
+  await waitMark(member, '#rail-list .rail-item[aria-current]', true);
   await openSettings(member, SERVER, 'workspace');
   await visible(member, '#ws-panel');
   await waitMark(member, '#ws-avatar-slot', true);
@@ -127,7 +122,7 @@ const png = () => {
   assert(m.initials === 'AC' && m.hue === hue, 'mark after remove: ' + JSON.stringify(m));
   assert(await admin.$eval('#ws-avatar-remove', (el) => el.classList.contains('hidden')), 'Remove still shown after the remove');
   await backToRoom(admin);
-  await waitMark(admin, '#ws-current-avatar', false);
+  await waitMark(admin, '#rail-list .rail-item[aria-current]', false);
   await shot(admin, 'removed.png');
 
   const real = errors.filter((e) => !e.includes('favicon') && !/status of 403/.test(e));

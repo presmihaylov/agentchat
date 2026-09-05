@@ -61,7 +61,7 @@ async function api(path, opts = {}) {
   assert(onServer.length === 1 && onServer[0].names[0] === 'alice', 'server: ' + JSON.stringify(onServer));
 
   // 2b. the add button is the Slack-style outline icon, not an emoji glyph
-  const addIcon = await page.$eval(`${msgSel} .msg-actions button[data-act="react"]`, (b) => !!b.querySelector('svg.rx-add-icon') && b.textContent.trim() === '');
+  const addIcon = await page.$eval(`${msgSel} .msg-actions button[data-act="react"]`, (b) => !!b.querySelector('svg[data-icon="smile-plus"]') && b.textContent.trim() === '');
   assert(addIcon, 'toolbar add-reaction button is not the svg icon');
   assert(await page.$eval(`${msgSel} .msg-reactions .reaction.add svg.rx-add-icon`, (el) => !!el), 'row add button is not the svg icon');
 

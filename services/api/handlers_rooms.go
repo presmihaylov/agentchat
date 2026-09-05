@@ -7,10 +7,13 @@ import (
 
 	"github.com/presmihaylov/agentchat/models"
 	"github.com/presmihaylov/agentchat/pkg/secrets"
+	"github.com/presmihaylov/agentchat/pkg/slug"
 )
 
 type createRoomReq struct {
 	Name string `json:"name"`
+	// optional: the URL segment; derived from the name when empty
+	Slug string `json:"slug"`
 }
 
 // handleCreateRoom: only a logged-in human creates a workspace; the creator
@@ -26,7 +29,19 @@ func (s *Server) handleCreateRoom(w http.ResponseWriter, r *http.Request, u mode
 		return
 	}
 
-	room, _, err := s.store.CreateRoomAs(r.Context(), req.Name, secrets.RoomSlug(), secrets.InviteCode(), u)
+	req.Slug = strings.TrimSpace(req.Slug)
+	if req.Slug == "" {
+		req.Slug = slug.From(req.Name)
+	}
+	if !slug.Valid(req.Slug) {
+		writeErrCode(w, http.StatusBadRequest, "slug_invalid", "the workspace URL needs lowercase letters, digits and hyphens, 1-60 characters")
+		return
+	}
+	room, _, err := s.store.CreateRoomAs(r.Context(), req.Name, req.Slug, secrets.InviteCode(), u)
+	if errors.Is(err, models.ErrConflict) {
+		writeErrCode(w, http.StatusConflict, "slug_taken", "that workspace URL is taken, pick another name or edit the slug")
+		return
+	}
 	if err != nil {
 		writeStoreErr(w, err)
 		return

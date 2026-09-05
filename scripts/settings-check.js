@@ -40,12 +40,15 @@ const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR
   page.on('dialog', (d) => d.accept());
   const adminSession = await enterAs(page, SERVER, slug, room.invite_code, 'Alice');
 
-  // 1. the room page has exactly two doors into settings: the sidebar entry and the menu item
+  // 1. the room page has two doors into settings: the workspace menu item and the
+  // personal menu under the profile row; nothing else (the old sidebar button is gone)
   await page.waitForSelector('#ws-switcher-wrap:not(.hidden)', { timeout: 8000 });
   // the hidden password banner also links to /settings; it is not a door
   const doors = await page.$$eval('a[href^="/settings"]', (els) => els.filter((el) => !el.closest('#pw-banner')).map((el) => el.id || el.className));
-  assert(doors.length === 2 && doors.includes('open-settings') && doors.includes('ws-item'), 'settings doors: ' + JSON.stringify(doors));
-  await Promise.all([page.waitForNavigation({ waitUntil: 'networkidle2' }), page.click('#open-settings')]);
+  assert(doors.length === 2 && doors.includes('ws-item') && doors.includes('me-settings'), 'settings doors: ' + JSON.stringify(doors));
+  await page.click('#ws-switcher');
+  await page.waitForSelector('#ws-menu:not(.hidden)', { timeout: 4000 });
+  await Promise.all([page.waitForNavigation({ waitUntil: 'networkidle2' }), page.click('#ws-menu a[href^="/settings"]')]);
   await page.waitForSelector('#settings-view:not(.hidden)', { timeout: 8000 });
   assert(await page.$eval('#tab-personal', (el) => el.classList.contains('active')), 'Personal is the default tab');
 
@@ -120,6 +123,10 @@ const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR
   // 6. the profile modal carries no settings any more
   await backToRoom(page);
   await page.click('#me-footer');
+  await page.waitForSelector('#me-menu:not(.hidden)', { timeout: 5000 });
+  const meItems = await page.$$eval('#me-menu .ws-item', (els) => els.map((e) => e.textContent.trim()));
+  assert(meItems.join(',') === 'View profile,Settings,Sign out', 'personal menu items: ' + meItems.join(','));
+  await page.click('#me-profile');
   await page.waitForSelector('#profile-modal:not(.hidden)', { timeout: 5000 });
   const leftovers = await page.$$eval('#profile-card #notify-settings, #profile-card #profile-actions, #profile-card select, #profile-card input', (els) => els.length);
   assert(leftovers === 0, 'profile modal still has settings controls: ' + leftovers);

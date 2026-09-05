@@ -39,7 +39,7 @@ async function api(path, opts = {}) {
     await openAsHuman(page, SERVER, slug, viewer);
   await page.waitForSelector('.thread-leaf', { timeout: 6000 });
 
-  // right-click the leaf: menu opens, mute state unchanged (still the 🧵 icon)
+  // right-click the leaf: menu opens, mute state unchanged (no .muted class)
   const leaf = await page.$('.thread-leaf');
   const box = await leaf.boundingBox();
   await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2, { button: 'right' });
@@ -49,8 +49,8 @@ async function api(path, opts = {}) {
   if (!items.some((t) => /mute/i.test(t))) fail('no Mute item in menu: ' + JSON.stringify(items));
   if (!items.some((t) => /hide/i.test(t))) fail('no Hide item in menu: ' + JSON.stringify(items));
 
-  const iconAfterOpen = await page.$eval('.thread-leaf .t-icon', (e) => e.textContent);
-  if (iconAfterOpen === '🔇') fail('right-click instantly muted (icon changed) instead of opening a menu');
+  const mutedAfterOpen = await page.$eval('.thread-leaf', (e) => e.classList.contains('muted'));
+  if (mutedAfterOpen) fail('right-click instantly muted (row changed) instead of opening a menu');
 
   // Esc dismisses the menu
   await page.keyboard.press('Escape');

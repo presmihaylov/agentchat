@@ -30,7 +30,7 @@ const state = (page) => page.evaluate(() => {
   const kidVisible = lis.some((li) => li.classList.contains('participant-leaf') &&
     li.querySelector('.pname') && /^infra-/.test(li.querySelector('.pname').textContent));
   return {
-    chevron: maya.querySelector('.p-toggle').textContent,
+    chevron: { collapsed: '▸', open: '▾' }[maya.querySelector('.p-toggle').dataset.state] || maya.querySelector('.p-toggle').textContent,
     count: (maya.querySelector('.p-agentcount') || {}).textContent || null,
     rollup: maya.classList.contains('rollup'),
     kidVisible,
@@ -72,7 +72,7 @@ const clickToggle = (page) => page.evaluate(() => {
   let s = await state(page);
   if (!s) throw new Error('Maya parent row not found');
   if (s.chevron !== '▸') throw new Error('expected collapsed chevron, got ' + JSON.stringify(s));
-  if (s.count !== '2') throw new Error('expected hidden-agent count 2, got ' + JSON.stringify(s));
+  if (!/^[12]\/2$/.test(s.count || '')) throw new Error('expected hidden-agent count 1/2 or 2/2, got ' + JSON.stringify(s));
   if (s.kidVisible) throw new Error('agents should be hidden by default');
   if (!s.rollup) throw new Error('online hidden agent should roll up a glow, got ' + JSON.stringify(s));
 

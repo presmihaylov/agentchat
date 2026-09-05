@@ -109,6 +109,18 @@ export const fetchWorkspaces = () => authApi('/api/v1/user');
 
 // the slug out of a pasted workspace link (/r/<slug> or /w/<slug>), or the
 // bare slug the user typed
+// slugify mirrors pkg/slug on the server: ASCII-folded, lowercase, hyphens
+export const slugify = (name) => String(name || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+  .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60).replace(/-+$/, '');
+
+// wireSlugPreview keeps the slug input following the name until the user
+// edits the slug by hand; clearing it hands control back to the name
+export const wireSlugPreview = (nameEl, slugEl) => {
+  let manual = false;
+  nameEl.addEventListener('input', () => { if (!manual) slugEl.value = slugify(nameEl.value); });
+  slugEl.addEventListener('input', () => { manual = slugEl.value !== ''; });
+};
+
 export const slugFromLink = (raw) => {
   const text = String(raw || '').trim();
   if (!text) return '';
@@ -145,8 +157,9 @@ const showNoWorkspace = () => {
       }
     });
   };
+  wireSlugPreview($('no-ws-create-name'), $('no-ws-create-slug'));
   wire('no-ws-create-form', 'no-ws-create-error', async () => {
-    const out = await authApi('/api/v1/rooms', { method: 'POST', body: { name: $('no-ws-create-name').value.trim() } });
+    const out = await authApi('/api/v1/rooms', { method: 'POST', body: { name: $('no-ws-create-name').value.trim(), slug: $('no-ws-create-slug').value.trim() } });
     location.href = '/w/' + encodeURIComponent(out.room.slug);
   });
   wire('no-ws-enter-form', 'no-ws-enter-error', async () => {
@@ -320,7 +333,7 @@ const copyText = async (btn, text) => {
 // The URL only changes on a click: the first paint keeps whatever query the
 // login redirect carried here (login-check asserts it survives verbatim).
 const showTab = (name, remember = true) => {
-  for (const b of document.querySelectorAll('#settings-tabs [role=tab]')) {
+  for (const b of document.querySelectorAll('#settings-nav [role=tab]')) {
     const on = b.dataset.tab === name;
     b.setAttribute('aria-selected', on ? 'true' : 'false');
     b.classList.toggle('active', on);
@@ -575,7 +588,7 @@ const settingsPage = async () => {
   const hasPassword = (provs.providers || []).includes('password');
   $('pw-form').classList.toggle('hidden', !hasPassword);
   $('settings-nopw').classList.toggle('hidden', hasPassword);
-  for (const b of document.querySelectorAll('#settings-tabs [role=tab]')) b.onclick = () => showTab(b.dataset.tab);
+  for (const b of document.querySelectorAll('#settings-nav [role=tab]')) b.onclick = () => showTab(b.dataset.tab);
   const want = new URLSearchParams(location.search).get('tab');
   showTab(want === 'workspace' ? 'workspace' : 'personal', false);
   // theme is a per-browser choice, not a participant pref: the head script owns it

@@ -20,11 +20,16 @@ const shot = async (page, name) => { lastStep = 'shot ' + name; await page.scree
 const visible = (page, sel) => { lastStep = 'wait ' + sel; return page.waitForSelector(sel + ':not(.hidden)', { timeout: 8000 }); };
 const hiddenNow = (page, sel) => page.$eval(sel, (el) => el.classList.contains('hidden'));
 const text = (page, sel) => page.$eval(sel, (el) => el.textContent);
+// a browser create derives its slug from a fixed name; rerunning would collide, so
+// the test overrides the preview with a unique slug the way a user could
+const uniqSlug = (page, sel, base) => page.$eval(sel, (el, v) => { el.value = v; }, base + '-' + uniqUser().slice(-8));
 // a room page normalizes its path to /c/<channel> right after boot, so a workspace path matches by prefix
 const atPath = (page, p) => { lastStep = 'wait for ' + p; return page.waitForFunction((x) => location.pathname === x || location.pathname.startsWith(x + '/'), { timeout: 8000 }, p); };
 const roomApi = (p, session, slug, opts = {}) => call(SERVER, p, Object.assign({ token: session, headers: { 'X-Workspace-Slug': slug } }, opts));
 // the switcher mounts after its own GET /api/v1/user, a beat after the chat shows
 const openMenu = async (page) => { await visible(page, '#ws-switcher-wrap'); await page.click('#ws-switcher'); await visible(page, '#ws-menu'); };
+// the rail lists the workspaces; the header menu carries only actions
+const railSlugs = (page) => page.$$eval('#rail-list a.rail-item', (els) => els.map((a) => a.getAttribute('href')).filter((h) => h.startsWith('/w/')).map((h) => h.slice(3)));
 const menuSlugs = (page) => page.$$eval('#ws-menu a.ws-item', (els) => els.map((a) => a.getAttribute('href')).filter((h) => h.startsWith('/w/')).map((h) => h.slice(3)));
 
 (async () => {
@@ -62,6 +67,7 @@ const menuSlugs = (page) => page.$$eval('#ws-menu a.ws-item', (els) => els.map((
   const sessionA = await loginPage(pageA, SERVER, uniqUser(), { displayName: 'Ada Switcher', next: '/create' });
   await visible(pageA, '#create-view');
   await pageA.type('#create-room-name', 'ws zulu');
+  await uniqSlug(pageA, '#create-room-slug', 'ws-zulu');
   await pageA.click('#create-form button[type=submit]');
   await pageA.waitForFunction(() => location.pathname.startsWith('/w/'), { timeout: 8000 });
   const slug1 = new URL(pageA.url()).pathname.split('/')[2];
@@ -86,12 +92,14 @@ const menuSlugs = (page) => page.$$eval('#ws-menu a.ws-item', (els) => els.map((
   await pageA.waitForFunction(() => location.pathname.includes('/c/'), { timeout: 8000 });
   if (!pageA.url().startsWith(SERVER + '/w/' + slug2 + '/c/')) throw new Error('normalized path left /w/: ' + pageA.url());
 
-  // the menu: current workspace, the other one, Invite member (the creator is admin), Create, Join, Settings, Sign out
+  // the menu: workspace actions only, no workspace rows (the rail is the switcher); Invite member as the creator is admin
   await openMenu(pageA);
   if (await pageA.$eval('#ws-switcher', (el) => el.getAttribute('aria-expanded')) !== 'true') throw new Error('aria-expanded not true when open');
   const items = await pageA.$$eval('#ws-menu .ws-item', (els) => els.map((e) => e.textContent));
-  if (items.join('|') !== 'ws alpha|ws zulu|Invite member|Create workspace|Join with invite code|Settings|Sign out') throw new Error('menu items: ' + items.join('|'));
-  if ((await menuSlugs(pageA)).join(',') !== slug1) throw new Error('menu links: ' + await menuSlugs(pageA));
+  if (items.join('|') !== 'Invite member|Create workspace|Join with invite code|Settings') throw new Error('menu items: ' + items.join('|'));
+  if ((await menuSlugs(pageA)).length) throw new Error('menu still lists workspaces: ' + await menuSlugs(pageA));
+  if (!await pageA.$('#ws-menu .ws-sep')) {} else throw new Error('menu still has a divider');
+  if ((await railSlugs(pageA)).sort().join(',') !== [slug1, slug2].sort().join(',')) throw new Error('rail links: ' + await railSlugs(pageA));
   await shot(pageA, 'menu.png');
   // Escape closes and returns focus to the button; click outside closes too
   await pageA.keyboard.press('Escape');
@@ -126,17 +134,17 @@ const menuSlugs = (page) => page.$$eval('#ws-menu a.ws-item', (els) => els.map((
   await pageA.type('#composer-input', 'hello from the switcher');
   await pageA.keyboard.press('Enter');
   await pageA.waitForFunction(() => document.querySelector('#messages').textContent.includes('hello from the switcher'), { timeout: 8000 });
+  if ((await railSlugs(pageA)).sort().join(',') !== [slug1, slug2, slug3].sort().join(',')) throw new Error('rail after entering ws three: ' + await railSlugs(pageA));
   await openMenu(pageA);
-  if ((await menuSlugs(pageA)).sort().join(',') !== [slug1, slug2].sort().join(',')) throw new Error('menu after entering ws three: ' + await menuSlugs(pageA));
-  // the long name truncates inside the menu; the menu never widens past the
+  // the long name truncates in the header; the menu never widens past the
   // sidebar, which would scroll sideways and clip it
   const fit = await pageA.evaluate(() => {
     const sb = document.querySelector('#sidebar');
-    const cur = document.querySelector('#ws-menu .ws-item.current .ws-label');
+    const cur = document.querySelector('#ws-current');
     return { sbScroll: sb.scrollWidth, sbClient: sb.clientWidth, sbRight: sb.getBoundingClientRect().right, menuRight: document.querySelector('#ws-menu').getBoundingClientRect().right, curOverflow: cur.scrollWidth > cur.clientWidth };
   });
   if (fit.sbScroll > fit.sbClient || fit.menuRight > fit.sbRight) throw new Error('menu overflows the sidebar: ' + JSON.stringify(fit));
-  if (!fit.curOverflow) throw new Error('long name not truncated in the menu: ' + JSON.stringify(fit));
+  if (!fit.curOverflow) throw new Error('long name not truncated in the header: ' + JSON.stringify(fit));
   await pageA.keyboard.press('Escape');
   await shot(pageA, 'entered.png');
 
@@ -171,6 +179,7 @@ const menuSlugs = (page) => page.$$eval('#ws-menu a.ws-item', (els) => els.map((
   await pageD.goto(SERVER + '/', { waitUntil: 'networkidle2' });
   await visible(pageD, '#no-ws-view');
   await pageD.type('#no-ws-create-name', 'ws four');
+  await uniqSlug(pageD, '#no-ws-create-slug', 'ws-four');
   await Promise.all([
     pageD.waitForNavigation({ waitUntil: 'networkidle2', timeout: 8000 }),
     pageD.click('#no-ws-create-form button[type=submit]'),
@@ -194,7 +203,9 @@ const menuSlugs = (page) => page.$$eval('#ws-menu a.ws-item', (els) => els.map((
   await atPath(pageA, '/w/' + slug1);
   await visible(pageA, '#chat-view');
   await openMenu(pageA);
-  if ((await menuSlugs(pageA)).join(',') !== slug2) throw new Error('menu after the revoke: ' + await menuSlugs(pageA));
+  // the rail is the switcher: the revoked workspace is gone, the other two stay; the menu lists no workspaces
+  if ((await railSlugs(pageA)).sort().join(',') !== [slug1, slug2].sort().join(',')) throw new Error('rail after the revoke: ' + await railSlugs(pageA));
+  if ((await menuSlugs(pageA)).length) throw new Error('menu lists workspaces after the revoke: ' + await menuSlugs(pageA));
   await pageA.keyboard.press('Escape');
 
   // quota: A owns two, three more through the API make five, the sixth is a 409 on /create
@@ -202,6 +213,7 @@ const menuSlugs = (page) => page.$$eval('#ws-menu a.ws-item', (els) => els.map((
   await pageA.goto(SERVER + '/create', { waitUntil: 'networkidle2' });
   await visible(pageA, '#create-view');
   await pageA.type('#create-room-name', 'ws six of A');
+  await uniqSlug(pageA, '#create-room-slug', 'ws-six');
   await pageA.click('#create-form button[type=submit]');
   await visible(pageA, '#create-error');
   await pageA.waitForFunction(() => /maximum number of workspaces/.test(document.querySelector('#create-error').textContent), { timeout: 8000 });
@@ -210,12 +222,13 @@ const menuSlugs = (page) => page.$$eval('#ws-menu a.ws-item', (els) => els.map((
   if (!pageA.url().startsWith(SERVER + '/create')) throw new Error('quota error left /create: ' + pageA.url());
   await shot(pageA, 'quota.png');
 
-  // the switcher's Sign out ends the session
+  // Sign out lives in the personal menu under the profile row and ends the session
   await openWorkspace(pageA, SERVER, sessionA, slug1);
-  await openMenu(pageA);
+  await pageA.click('#me-footer');
+  await visible(pageA, '#me-menu');
   await Promise.all([
     pageA.waitForNavigation({ waitUntil: 'networkidle2', timeout: 8000 }),
-    pageA.$$eval('#ws-menu button.ws-item', (els) => els.find((b) => b.textContent === 'Sign out').click()),
+    pageA.click('#me-signout'),
   ]);
   await atPath(pageA, '/login');
   if (await pageA.evaluate(() => localStorage.getItem('agentchat:session')) !== null) throw new Error('session survived sign out');

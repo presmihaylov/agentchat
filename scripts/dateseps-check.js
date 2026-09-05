@@ -128,6 +128,9 @@ const rows = (sel) => `[...document.querySelector(${JSON.stringify(sel)}).childr
   await page.screenshot({ path: path.join(OUT, 'dateseps-feed-stuck.png') });
   await page.evaluate(() => { document.querySelector('#messages').scrollTop = 0; });
   await sleep(200);
+  // the separator is subtle: no border, 11px, weight <= 500
+  const look = await page.$eval('#messages .date-divider:not(.stuck) span', (el) => { const c = getComputedStyle(el); return { border: c.borderTopWidth, bg: c.backgroundColor, size: c.fontSize, weight: c.fontWeight }; });
+  if (!(look.border === '0px' && look.bg === 'rgba(0, 0, 0, 0)' && look.size === '11px' && Number(look.weight) <= 500)) throw new Error('separator look: ' + JSON.stringify(look));
   const atTop = await page.evaluate(() => [...document.querySelectorAll('#messages .date-divider')].map((d) => d.className + ':' + getComputedStyle(d).visibility));
   assert(atTop.every((c) => c === 'date-divider:visible'), 'markers at scrollTop 0: ' + JSON.stringify(atTop));
   await page.screenshot({ path: path.join(OUT, 'dateseps-feed-top.png') });
