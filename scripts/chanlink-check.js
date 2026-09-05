@@ -1,3 +1,4 @@
+require('fs').mkdirSync(process.env.OUT || 'tmp', { recursive: true });
 // E2E for #channel mentions: "#name" renders as an in-app link for a channel
 // you are in, stays plain text for one you are not (a private channel leaks
 // nothing), and "#" opens a channel autocomplete in both composers.
@@ -75,7 +76,7 @@ const assert = (cond, msg) => { if (!cond) throw new Error(msg); };
   const typed = await page.$eval('#composer-input', (el) => el.value);
   assert(typed === 'go to #plaza ', 'inserted text: ' + JSON.stringify(typed));
   assert(await page.$('#composer-input .chanlink'), 'no #channel chip in the composer');
-  await page.screenshot({ path: (process.env.OUT || '.') + '/chanlink-composer.png' });
+  await page.screenshot({ path: (process.env.OUT || 'tmp') + '/chanlink-composer.png' });
   await page.$eval('#composer-input', (el) => el.__composer.clear());
 
   // 4. the thread composer does the same

@@ -1,3 +1,4 @@
+require('fs').mkdirSync(process.env.OUT || 'tmp', { recursive: true });
 // E2E for dragging channels between sidebar sections: a real browser drag lands
 // the row, the order inside a section survives a reload, a collapsed section
 // accepts a drop on its header, and the strip drops a channel out of sections.
@@ -133,7 +134,7 @@ const assert = (cond, msg) => { if (!cond) throw new Error(msg); };
     const r = dst.getBoundingClientRect();
     dst.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: dt, clientY: r.top + 2 }));
   });
-  await page.screenshot({ path: (process.env.OUT || '.') + '/dnd-dragging.png' });
+  await page.screenshot({ path: (process.env.OUT || 'tmp') + '/dnd-dragging.png' });
   const marks = await page.$$eval('#channel-list li', (ns) => ({
     dnd: document.getElementById('channel-list').classList.contains('dnd'),
     lifted: ns.filter((n) => n.classList.contains('dragging')).length,

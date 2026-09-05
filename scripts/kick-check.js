@@ -8,7 +8,7 @@ const path = require('path');
 const puppeteer = require('puppeteer-core');
 const { call, createRoom, registerAndLogin, loginPage, openWorkspace, openSettings, uniqUser } = require('./lib/login.js');
 const SERVER = process.env.SERVER || 'http://localhost:8095';
-const OUT = process.env.OUT || '.';
+const OUT = process.env.OUT || 'tmp';
 
 const assert = (cond, msg) => { if (!cond) throw new Error(msg); };
 let step = 'setup';

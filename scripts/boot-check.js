@@ -7,7 +7,8 @@
 const puppeteer = require('puppeteer-core');
 const { newRoom, openAsHuman, loginPage, uniqUser } = require('./lib/login.js');
 const SERVER = process.env.SERVER || 'http://localhost:8095';
-const OUT = process.env.OUT || '.';
+const OUT = process.env.OUT || 'tmp';
+require('fs').mkdirSync(OUT, { recursive: true });
 const LATENCY = Number(process.env.LATENCY || 600);
 async function api(path, opts = {}) {
   const resp = await fetch(SERVER + path, { method: opts.method || 'GET', headers: Object.assign({ 'Content-Type': 'application/json' }, opts.token ? { Authorization: 'Bearer ' + opts.token } : {}), body: opts.body ? JSON.stringify(opts.body) : undefined });

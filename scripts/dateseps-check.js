@@ -1,3 +1,4 @@
+require('fs').mkdirSync(process.env.OUT || 'tmp', { recursive: true });
 // E2E for the Slack-style date separators: one marker before the first message
 // of each local calendar day, in the feed and in a thread; sticky at the top of
 // the scroll box; the unread divider still lands where it did; a live message

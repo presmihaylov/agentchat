@@ -1,3 +1,4 @@
+require('fs').mkdirSync(process.env.OUT || 'tmp', { recursive: true });
 // E2E for notifications: one ping per burst in a thread (debounce), none for
 // your own messages or the channel you are viewing, a muted channel stays
 // quiet and dark except for mentions and broadcasts, and the settings persist on the
@@ -127,7 +128,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   await page.click('#notify-enabled');
   await page.waitForFunction(() => !document.querySelector('#notify-enabled').checked, { timeout: 5000 });
   await sleep(300);
-  await page.screenshot({ path: (process.env.OUT || '.') + '/notify-settings.png' });
+  await page.screenshot({ path: (process.env.OUT || 'tmp') + '/notify-settings.png' });
   await backToRoom(page);
   await sleep(3200);
   await say('plaza', '@alice nothing at all');

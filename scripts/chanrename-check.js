@@ -9,7 +9,8 @@ const puppeteer = require('puppeteer-core');
 const path = require('path');
 const { newRoom, openAsHuman } = require('./lib/login.js');
 const SERVER = process.env.SERVER || 'http://localhost:8095';
-const OUT = process.env.OUT || '.';
+const OUT = process.env.OUT || 'tmp';
+require('fs').mkdirSync(OUT, { recursive: true });
 
 async function api(p, opts = {}) {
   const resp = await fetch(SERVER + p, {

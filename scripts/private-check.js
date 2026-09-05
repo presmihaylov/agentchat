@@ -7,7 +7,8 @@
 const puppeteer = require('puppeteer-core');
 const { newRoom, openAsHuman } = require('./lib/login.js');
 const SERVER = process.env.SERVER || 'http://localhost:8095';
-const SHOT = '/private/tmp/claude-501/-Users-pmihaylov-prg-repos/78cd3fcc-ad11-42d3-ba05-8de92cc37e7a/scratchpad';
+const SHOT = process.env.OUT || 'tmp';
+require('fs').mkdirSync(SHOT, { recursive: true });
 
 async function api(path, opts = {}) {
   const resp = await fetch(SERVER + path, {

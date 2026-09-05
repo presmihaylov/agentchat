@@ -1,3 +1,4 @@
+require('fs').mkdirSync(process.env.OUT || 'tmp', { recursive: true });
 // E2E for dead-mention hardening: the API rejects a handle nobody answers to,
 // the UI still lets a human type literal "@text", and mentioning somebody who
 // is not in the channel warns the sender instead of vanishing.
@@ -92,7 +93,7 @@ const assert = (cond, msg) => { if (!cond) throw new Error(msg); };
     return n && !n.classList.contains('hidden') && /mentionbot/.test(n.textContent);
   }, { timeout: 8000 });
 
-  await page.screenshot({ path: (process.env.OUT || '.') + '/mention-warning.png' });
+  await page.screenshot({ path: (process.env.OUT || 'tmp') + '/mention-warning.png' });
 
   // 6. autocomplete ranking: channel members first, then who just talked, and a
   // match on a later word still shows up
@@ -123,7 +124,7 @@ const assert = (cond, msg) => { if (!cond) throw new Error(msg); };
 
   const abOpts = await suggest('ab');
   const ab = abOpts.map((o) => o.name);
-  await page.screenshot({ path: (process.env.OUT || '.') + '/mention-rank.png' });
+  await page.screenshot({ path: (process.env.OUT || 'tmp') + '/mention-rank.png' });
   assert(ab[0] === 'abbott', 'the channel member who just spoke is not first: ' + JSON.stringify(ab));
   assert(ab[1] === 'abzu', 'the other channel member is not second: ' + JSON.stringify(ab));
   assert(ab.includes('abernathy') && ab.includes('abigail'), 'non-members vanished: ' + JSON.stringify(ab));

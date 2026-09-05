@@ -1,3 +1,4 @@
+require('fs').mkdirSync(process.env.OUT || 'tmp', { recursive: true });
 // E2E for the theme toggle: "System" follows the OS, Dark/Light force a palette,
 // the choice survives a reload, and the highlight.js sheet swaps with the theme.
 // Run: NODE_PATH=<dir with puppeteer-core> node scripts/theme-check.js
@@ -105,7 +106,7 @@ const assert = (cond, msg) => { if (!cond) throw new Error(msg); };
   assert(s.mode === 'light' && lum(s.bg) > 200 && s.hljsLight && !s.hljsDark, 'forced light: ' + JSON.stringify(s));
   const codeBg = await page.$eval('#messages .msg pre code', (el) => getComputedStyle(el).backgroundColor);
   assert(lum(codeBg) > 200, 'code block still dark in light mode: ' + codeBg);
-  await page.screenshot({ path: (process.env.OUT || '.') + '/theme-light.png' });
+  await page.screenshot({ path: (process.env.OUT || 'tmp') + '/theme-light.png' });
 
   // 6. back to System: follows the (dark) OS again
   await openSettings(page, SERVER);

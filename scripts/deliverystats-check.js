@@ -5,7 +5,8 @@
 const puppeteer = require('puppeteer-core');
 const { newRoom, enterAs, call } = require('./lib/login.js');
 const SERVER = process.env.SERVER || 'http://localhost:8095';
-const OUT = process.env.OUT || '.';
+const OUT = process.env.OUT || 'tmp';
+require('fs').mkdirSync(OUT, { recursive: true });
 const assert = (ok, msg) => { if (!ok) throw new Error(msg); };
 
 const openProfile = async (page, name) => {

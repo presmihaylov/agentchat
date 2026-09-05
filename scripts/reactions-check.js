@@ -1,3 +1,4 @@
+require('fs').mkdirSync(process.env.OUT || 'tmp', { recursive: true });
 // E2E for emoji reactions: the 😀 toolbar button opens a picker, a pick adds a
 // pill under the message, clicking your own pill removes it, another
 // participant's reaction lands live with a count and a "who" tooltip, the
@@ -75,7 +76,7 @@ async function api(path, opts = {}) {
   await page.waitForSelector('.rx-tip', { timeout: 2000 });
   const tip = await page.$eval('.rx-tip', (el) => el.querySelector('.rx-tip-emoji').textContent + '|' + el.querySelector('.rx-tip-text').textContent);
   assert(tip === '👀|You and bob reacted with :eyes:', 'tooltip: ' + tip);
-  await page.screenshot({ path: (process.env.OUT || '.') + '/reactions-tip.png' });
+  await page.screenshot({ path: (process.env.OUT || 'tmp') + '/reactions-tip.png' });
   await page.hover('#channel-title');
   await sleep(150);
   assert(await page.$('.rx-tip') === null, 'tooltip stayed after mouse left');
@@ -123,7 +124,7 @@ async function api(path, opts = {}) {
   assert(labels.includes('Add reaction'), 'menu lacks Add reaction: ' + JSON.stringify(labels));
   await page.evaluate(() => [...document.querySelectorAll('.ctx-item')].find((b) => b.textContent === 'Add reaction').click());
   await page.waitForSelector('.reaction-picker', { timeout: 4000 });
-  await page.screenshot({ path: (process.env.OUT || '.') + '/reactions.png' });
+  await page.screenshot({ path: (process.env.OUT || 'tmp') + '/reactions.png' });
 
   await browser.close();
   console.log('REACTIONS_CHECK_OK');

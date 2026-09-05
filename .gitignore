@@ -8,3 +8,7 @@ web/node_modules/
 *.test
 .DS_Store
 scripts/node_modules/
+# e2e screenshots: the check scripts write to tmp/ (or $OUT), never the repo root
+/*.png
+scripts/**/*.png
+tmp/

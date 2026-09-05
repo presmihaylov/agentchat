@@ -1,3 +1,4 @@
+require('fs').mkdirSync(process.env.OUT || 'tmp', { recursive: true });
 // E2E for quiet threads: a thread nobody wrote in for the configured period
 // simply leaves the sidebar (there is no Archived section any more), a new
 // reply brings it back, a mention brings it back, a manual hide (✕ or the
@@ -77,7 +78,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   });
   await waitLeaves((l) => !l.includes('alice topic'), 'quiet thread must leave the sidebar');
   assert(await noArchivedSection(), 'an Archived section is still rendered');
-  await page.screenshot({ path: (process.env.OUT || '.') + '/archive-section.png' });
+  await page.screenshot({ path: (process.env.OUT || 'tmp') + '/archive-section.png' });
 
   // 4. revive on a plain reply from someone else: back in the sidebar. The
   //    clock returns to real time first, or the fresh reply is already "old".

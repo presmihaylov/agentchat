@@ -1,3 +1,4 @@
+require('fs').mkdirSync(process.env.OUT || 'tmp', { recursive: true });
 // E2E for message permalinks: right-click copies a stable /m/<id> URL, opening
 // that URL lands on the message and flashes it (paginating back through history
 // when the message is old), threaded messages open their thread, and a link to
@@ -85,7 +86,7 @@ const post = (token, body, root) =>
     return r.top >= box.top - 2 && r.bottom <= box.bottom + 2;
   }, old.id);
   assert(centered, 'the old message was found but not scrolled into view');
-  await page.screenshot({ path: (process.env.OUT || '.') + '/permalink-flash.png' });
+  await page.screenshot({ path: (process.env.OUT || 'tmp') + '/permalink-flash.png' });
 
   // 4. a threaded message opens its thread
   await page.goto(SERVER + '/r/' + slug + '/c/general/t/' + root.id + '/m/' + reply.id, { waitUntil: 'networkidle2' });

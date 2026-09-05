@@ -66,7 +66,7 @@ const chanNames = (page) => page.$$eval('#channel-list li', (lis) =>
   await page.waitForFunction(() =>
     [...document.querySelectorAll('#channel-list li')].some((li) => ((li.querySelector('.chan-name') || {}).textContent || '').startsWith('secret')),
     { timeout: 4000 });
-  await page.screenshot({ path: '/private/tmp/claude-501/-Users-pmihaylov-prg-repos/78cd3fcc-ad11-42d3-ba05-8de92cc37e7a/scratchpad/membership-joined.png' });
+  await page.screenshot({ path: (require('fs').mkdirSync(process.env.OUT || 'tmp', { recursive: true }), (process.env.OUT || 'tmp') + '/membership-joined.png') });
 
   // bob can now read the earlier message.
   await page.evaluate(() => {

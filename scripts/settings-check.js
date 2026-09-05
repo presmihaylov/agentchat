@@ -11,7 +11,7 @@ const os = require('os');
 const puppeteer = require('puppeteer-core');
 const { newRoom, enterAs, loginPage, enterWithCode, openSettings, backToRoom, PASSWORD, sleep } = require('./lib/login.js');
 const SERVER = process.env.SERVER || 'http://localhost:8095';
-const OUT = process.env.OUT || '.';
+const OUT = process.env.OUT || 'tmp';
 
 const assert = (cond, msg) => { if (!cond) throw new Error(msg); };
 async function api(p, opts = {}) {

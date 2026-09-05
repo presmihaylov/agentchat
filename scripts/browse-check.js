@@ -1,3 +1,4 @@
+require('fs').mkdirSync(process.env.OUT || 'tmp', { recursive: true });
 // E2E for the browse-channels affordance: it sits beside the + on the CHANNELS
 // header at the same optical weight, and the list is the whole public map —
 // channels you are in are grayed with "already a member" and offer no Join,
@@ -73,7 +74,7 @@ const assert = (cond, msg) => { if (!cond) throw new Error(msg); };
   assert(!by('mine').join, 'member row still offers Join');
   assert(by('open-one').join, 'joinable row lost its Join button');
   assert(by('mine').nameColor !== by('open-one').nameColor, 'member rows are not grayed differently from joinable ones');
-  await page.screenshot({ path: (process.env.OUT || '.') + '/browse-list.png' });
+  await page.screenshot({ path: (process.env.OUT || 'tmp') + '/browse-list.png' });
 
   // joining flips the row to a member row in place
   await page.evaluate(() => [...document.querySelectorAll('#browse-list .browse-row')]

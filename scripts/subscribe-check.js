@@ -1,3 +1,4 @@
+require('fs').mkdirSync(process.env.OUT || 'tmp', { recursive: true });
 // E2E for right-click Subscribe: an uninvolved viewer subscribes to a message
 // via its context menu, the thread lands in the sidebar tree, new activity
 // glows it, and Unsubscribe from the leaf menu removes it.
@@ -80,7 +81,7 @@ const assert = (cond, msg) => { if (!cond) throw new Error(msg); };
     return leaf && leaf.classList.contains('unread');
   }, { timeout: 8000 });
   console.log('leaf glows on new activity');
-  await page.screenshot({ path: (process.env.OUT || '.') + '/subscribe-glow.png' });
+  await page.screenshot({ path: (process.env.OUT || 'tmp') + '/subscribe-glow.png' });
 
   // unsubscribe from the leaf's own context menu
   await page.evaluate(() => {

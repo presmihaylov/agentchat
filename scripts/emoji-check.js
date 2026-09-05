@@ -1,3 +1,4 @@
+require('fs').mkdirSync(process.env.OUT || 'tmp', { recursive: true });
 // E2E for emoji: ":shortcode:" renders as the character in the feed but stays
 // literal inside code, "12:45" and a lone ":" never open the picker, ":rock"
 // opens it in both composers, and Enter inserts the character.
@@ -66,7 +67,7 @@ const assert = (cond, msg) => { if (!cond) throw new Error(msg); };
   assert(/:rocket:$/.test(again[0]), 'recent did not rank first: ' + JSON.stringify(again));
   await page.keyboard.press('Escape');
   assert(!(await page.$(ac)), 'Escape did not close the picker');
-  await page.screenshot({ path: (process.env.OUT || '.') + '/emoji-picker.png' });
+  await page.screenshot({ path: (process.env.OUT || 'tmp') + '/emoji-picker.png' });
   await page.$eval('#composer-input', (el) => el.__composer.clear());
 
   // 3. the thread composer has the same picker
