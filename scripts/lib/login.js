@@ -139,9 +139,19 @@ async function openSettings(page, base, tab = 'personal') {
   await page.waitForSelector('#settings-view:not(.hidden)', { timeout: 8000 });
   if (tab === 'personal') await page.waitForSelector('#notify-settings:not(.hidden)', { timeout: 8000 });
 }
+// workspace menu > Invite member: opens the invite modal (admins only)
+async function openInviteModal(page) {
+  await page.waitForSelector('#ws-switcher-wrap:not(.hidden)', { timeout: 8000 });
+  // DOM clicks: the small default viewport clips the sidebar in some checks
+  await page.evaluate(() => document.getElementById('ws-switcher').click());
+  await page.waitForSelector('#ws-invite-member', { timeout: 5000 });
+  await page.evaluate(() => document.getElementById('ws-invite-member').click());
+  await page.waitForSelector('#invite-modal:not(.hidden)', { timeout: 5000 });
+}
+
 async function backToRoom(page) {
   await Promise.all([page.waitForNavigation({ waitUntil: 'networkidle2' }), page.click('#settings-back')]);
   await page.waitForSelector('#chat-view:not(.hidden)', { timeout: 8000 });
 }
 
-module.exports = { openSettings, backToRoom, call, registerAndLogin, createRoom, newRoom, loginPage, enterWithCode, enterAs, openWorkspace, openAsHuman, switchTo, uniqUser, PASSWORD, sleep };
+module.exports = { openSettings, openInviteModal, backToRoom, call, registerAndLogin, createRoom, newRoom, loginPage, enterWithCode, enterAs, openWorkspace, openAsHuman, switchTo, uniqUser, PASSWORD, sleep };

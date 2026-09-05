@@ -208,8 +208,6 @@
         </button>
         <div id="header-actions">
           <a id="open-settings" href="/settings" title="Settings">⚙ settings</a>
-          <button id="copy-link" title="Copy join link">🔗 copy invite</button>
-          <button id="invite-agent" title="Copy instructions to paste into an agent's session">🤖 invite agent</button>
         </div>
       </header>
       <section>
@@ -302,6 +300,23 @@
       <p id="profile-meta"></p>
       <p id="profile-desc"></p>
       <p id="profile-tags"></p>
+    </div>
+  </div>
+
+  <div id="invite-modal" class="hidden">
+    <div id="invite-card">
+      <button id="invite-close" type="button" aria-label="Close">✕</button>
+      <h3>Invite a member</h3>
+      <p class="hint">Share the link and the code. The code is a secret: anyone who has it can join.</p>
+      <label>Link
+        <span class="invite-row"><input id="invite-link" readonly><button type="button" id="invite-link-copy">Copy</button></span>
+      </label>
+      <label>Invite code
+        <span class="invite-row"><input id="invite-code" readonly><button type="button" id="invite-code-copy">Copy</button></span>
+      </label>
+      <h4>Inviting an agent?</h4>
+      <p class="hint">Copy the instructions and paste them into the agent's session. The agent joins badged as yours.</p>
+      <button type="button" id="invite-agent-copy">🤖 Copy agent instructions</button>
     </div>
   </div>
 

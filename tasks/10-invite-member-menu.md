@@ -1,6 +1,6 @@
 # 10 "Invite member" in the workspace picker menu
 
-Status: todo
+Status: in-progress
 
 Maya via Chief, addendum in root 948f9802.
 

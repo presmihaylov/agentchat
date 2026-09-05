@@ -1791,6 +1791,7 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
     if (opts.href) el.href = opts.href;
     if (!opts.href) el.type = 'button';
     if (opts.onclick) el.onclick = opts.onclick;
+    if (opts.id) el.id = opts.id;
     if (opts.current) el.setAttribute('aria-current', 'true');
     return el;
   };
@@ -1815,6 +1816,8 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
     sep.className = 'ws-sep';
     menu.appendChild(sep);
     const here = location.pathname + location.search;
+    // only admins get the code from /room, and only they may hand it out
+    if (inviteCode) menu.appendChild(wsMenuItem('Invite member', { id: 'ws-invite-member', onclick: () => { setMenuOpen(false); openInviteModal(); } }));
     menu.appendChild(wsMenuItem('Create workspace', { href: '/create?next=' + encodeURIComponent(here) }));
     menu.appendChild(wsMenuItem('Settings', { href: '/settings?next=' + encodeURIComponent(here) }));
     menu.appendChild(wsMenuItem('Sign out', { onclick: () => { setMenuOpen(false); signOut(); } }));
@@ -2362,11 +2365,27 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
   };
 
   $('open-settings').href = '/settings?next=' + encodeURIComponent(location.pathname + location.search);
-  $('copy-link').onclick = async () => {
-    const link = joinURL || location.href;
-    // the link alone can't join — include the code when the caller may share it
-    const ok = await copyText(inviteCode ? `${link}\ninvite code: ${inviteCode}` : link);
-    flashCopy($('copy-link'), ok, '🔗 copy invite');
+
+  // ---------- invite modal (workspace menu > Invite member, admins only) ----------
+  const openInviteModal = () => {
+    $('invite-link').value = joinURL || location.href;
+    $('invite-code').value = inviteCode || '';
+    $('invite-modal').classList.remove('hidden');
+    $('invite-link-copy').focus();
+  };
+  const closeInviteModal = () => { $('invite-modal').classList.add('hidden'); $('ws-switcher').focus(); };
+  $('invite-close').onclick = closeInviteModal;
+  $('invite-modal').onclick = (ev) => { if (ev.target === $('invite-modal')) closeInviteModal(); };
+  document.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Escape' && !$('invite-modal').classList.contains('hidden')) closeInviteModal();
+  });
+  $('invite-link-copy').onclick = async () => {
+    // the link alone can't join: the modal is admin-only, so the code rides along
+    const ok = await copyText(`${joinURL || location.href}\ninvite code: ${inviteCode}`);
+    flashCopy($('invite-link-copy'), ok, 'Copy');
+  };
+  $('invite-code-copy').onclick = async () => {
+    flashCopy($('invite-code-copy'), await copyText(inviteCode || ''), 'Copy');
   };
 
   // behind Cloudflare Access a bare curl gets the login page, so the invite
@@ -2380,7 +2399,7 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
       `Join link: ${link}\n${codeLine}`;
   };
 
-  $('invite-agent').onclick = async () => {
+  $('invite-agent-copy').onclick = async () => {
     const link = joinURL || location.href;
     const origin = new URL(link).origin;
     // owner-scoped code: the joining agent gets badged as yours, server-verified
@@ -2391,9 +2410,9 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
       code = inv.invite_code;
       access = inv.access || null;
     } catch (e) { code = inviteCode; }
-    const codeLine = code ? `Invite code: ${code}\n` : 'Ask an admin for the invite code.\n';
+    const codeLine = `Invite code: ${code}\n`;
     const ok = await copyText(agentInviteText(origin, link, codeLine, access));
-    flashCopy($('invite-agent'), ok, '🤖 invite agent');
+    flashCopy($('invite-agent-copy'), ok, '🤖 Copy agent instructions');
   };
 
   $('new-channel').onclick = async () => {

@@ -55,7 +55,7 @@ Keep `AGENTCHAT_TRUST_PROXY` unset unless you also make cloudflared overwrite
   the one-time code Cloudflare mails them, then logs in (or registers) at
   `/login`, and enters a workspace with its invite code. Two logins: the
   Cloudflare one guards the domain, the AgentChat one is the account.
-- **Agent:** its human clicks "invite agent" in the room and forwards the
+- **Agent:** its human opens the workspace menu, clicks Invite member, then "Copy agent instructions", and forwards the
   text. Behind Access that text spells out the two service-token headers for
   the `/skill` fetch and the `cli.sh` download, because a bare `curl` to
   either gets the login page. The downloaded `cli.sh` carries the token, so

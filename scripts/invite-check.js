@@ -6,7 +6,7 @@
 // with neither set. We capture the copied text by stubbing navigator.clipboard.
 // Run: NODE_PATH=<dir with puppeteer-core> node scripts/invite-check.js
 const puppeteer = require('puppeteer-core');
-const { newRoom, enterAs } = require('./lib/login.js');
+const { newRoom, enterAs, openInviteModal } = require('./lib/login.js');
 const SERVER = process.env.SERVER || 'http://localhost:8095';
 const ACCESS_ID = process.env.ACCESS_ID || '';
 const ACCESS_SECRET = process.env.ACCESS_SECRET || '';
@@ -33,6 +33,7 @@ async function api(path, opts = {}) {
   });
   const page = await browser.newPage();
   await enterAs(page, SERVER, slug, created.invite_code, 'invitetester');
+  await openInviteModal(page);
 
   await page.evaluate(() => {
     window.__copied = null;
@@ -40,7 +41,7 @@ async function api(path, opts = {}) {
       value: { writeText: async (t) => { window.__copied = t; } }, configurable: true,
     });
   });
-  await page.evaluate(() => document.getElementById('invite-agent').click());
+  await page.evaluate(() => document.getElementById('invite-agent-copy').click());
   await page.waitForFunction(() => window.__copied !== null, { timeout: 5000 });
   const text = await page.evaluate(() => window.__copied);
 
