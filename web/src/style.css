@@ -713,7 +713,16 @@ html:not([data-theme="light"]) .rail-item .ws-avatar { color: hsl(var(--ws-h) 55
 button.danger { background: var(--broadcast); color: #fff; border: 0; border-radius: 6px; padding: 10px 14px; font-weight: 600; margin-top: 10px; }
 button.danger:disabled { opacity: .45; cursor: not-allowed; }
 .rail-badge { position: absolute; right: -3px; bottom: -3px; min-width: 8px; height: 8px; border-radius: 8px; background: var(--text); border: 2px solid var(--bg); box-sizing: content-box; pointer-events: none; }
-.rail-badge.count { min-width: 10px; height: 16px; padding: 0 4px; line-height: 16px; font-size: 10px; font-weight: 700; text-align: center; background: var(--badge); color: #fff; }
+/* count pills (task 18): neutral for plain unreads, the alert red for @mentions, gray on a muted workspace */
+.rail-badge.count { min-width: 10px; height: 16px; padding: 0 4px; line-height: 16px; font-size: 10px; font-weight: 700; text-align: center; background: var(--text); color: var(--bg); }
+.rail-badge.count.mention { background: var(--badge); color: #fff; }
+.rail-badge.count.muted { background: #8a8f98; color: #fff; }
+.rail-item.is-muted .ws-avatar { opacity: .55; }
+.rail-item.dragging { opacity: .4; }
+#rail-list.drop-target .rail-item { cursor: grabbing; }
+#rail-ctx { position: fixed; z-index: 60; min-width: 180px; padding: 6px; background: var(--panel2); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 6px 20px var(--shadow); display: flex; flex-direction: column; }
+#rail-ctx .rail-menu-item[disabled] { color: var(--dim); cursor: default; }
+#rail-ctx .rail-menu-item[disabled]:hover { background: none; }
 [data-tip]:hover::after, [data-tip]:focus-visible::after { content: attr(data-tip); position: absolute; left: calc(100% + 14px); top: 50%; transform: translateY(-50%); background: var(--text); color: var(--bg); padding: 6px 10px; border-radius: 6px; font-size: 13px; font-weight: 600; white-space: nowrap; z-index: 40; pointer-events: none; }
 #rail-add { width: 44px; height: 44px; border-radius: 50%; border: 0; padding: 0; background: var(--panel2); color: var(--dim); font-size: 20px; line-height: 1; cursor: pointer; position: relative; transition: border-radius .15s, background .15s, color .15s; }
 #rail-add:hover, #rail-add:focus-visible, #rail-add[aria-expanded="true"] { border-radius: 14px; background: var(--online); color: #fff; }

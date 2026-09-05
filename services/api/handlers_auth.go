@@ -184,3 +184,78 @@ func (s *Server) handleGetUser(w http.ResponseWriter, r *http.Request, u models.
 	out["user"] = u
 	writeJSON(w, http.StatusOK, out)
 }
+
+type workspaceOrderReq struct {
+	Order []string `json:"order"`
+}
+
+// handleSetWorkspaceOrder stores the rail order of the account (task 18):
+// every id must be a live membership; unlisted rooms sort after the listed
+// ones. Answers with the reordered workspace list.
+func (s *Server) handleSetWorkspaceOrder(w http.ResponseWriter, r *http.Request, u models.User) {
+	var req workspaceOrderReq
+	if !readJSON(w, r, &req) {
+		return
+	}
+	if len(req.Order) == 0 || len(req.Order) > 200 {
+		writeErr(w, http.StatusBadRequest, "order must list 1 to 200 workspace ids")
+		return
+	}
+	seen := map[string]bool{}
+	for _, id := range req.Order {
+		if !isUUID(id) || seen[id] {
+			writeErr(w, http.StatusBadRequest, "order must be a list of distinct workspace ids")
+			return
+		}
+		seen[id] = true
+	}
+	if err := s.store.SetWorkspaceOrder(r.Context(), u.ID, req.Order); err != nil {
+		writeStoreErr(w, err)
+		return
+	}
+	rooms, err := s.store.RoomsByUser(r.Context(), u.ID)
+	if err != nil {
+		writeStoreErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"workspaces": rooms})
+}
+
+type workspacePrefsReq struct {
+	Muted *bool `json:"muted"`
+}
+
+// handleSetWorkspacePrefs flips the account-level mute of one workspace
+// (task 18). The mute silences notifications everywhere the user is logged
+// in; the rail badge keeps its count in gray.
+func (s *Server) handleSetWorkspacePrefs(w http.ResponseWriter, r *http.Request, u models.User) {
+	id := r.PathValue("id")
+	if !isUUID(id) {
+		writeErr(w, http.StatusBadRequest, "bad workspace id")
+		return
+	}
+	var req workspacePrefsReq
+	if !readJSON(w, r, &req) {
+		return
+	}
+	if req.Muted == nil {
+		writeErr(w, http.StatusBadRequest, "nothing to change: send muted")
+		return
+	}
+	if err := s.store.SetWorkspaceMuted(r.Context(), u.ID, id, *req.Muted); err != nil {
+		writeStoreErr(w, err)
+		return
+	}
+	rooms, err := s.store.RoomsByUser(r.Context(), u.ID)
+	if err != nil {
+		writeStoreErr(w, err)
+		return
+	}
+	for _, ur := range rooms {
+		if ur.ID == id {
+			writeJSON(w, http.StatusOK, ur)
+			return
+		}
+	}
+	writeStoreErr(w, models.ErrNotMember)
+}

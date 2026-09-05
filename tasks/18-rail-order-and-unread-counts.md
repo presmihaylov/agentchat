@@ -1,6 +1,6 @@
 # 18 Rail order per user, unread counter badges
 
-Status: todo
+Status: done (see the shipping commit in git log, 2026-09-06)
 
 Maya via Chief, root d4c931ea in #agentchat (2026-09-05 13:50Z). Own deploy, after invite links (17).
 
@@ -32,3 +32,31 @@ total across all non-muted workspaces and non-muted channels, mentions included,
 the document title with the count in parentheses, e.g. `(153) AgentChat`. Zero unread: plain favicon,
 plain title. Update live from the same badge feed the rail uses, plus on tab focus. Muted workspaces and
 muted channels never count.
+
+## Design (as shipped)
+
+- Schema 000034 `user_room_prefs (user_id, room_id, position, muted)`, PK (user, room), cascades on
+  both. Account-level: survives leave-and-rejoin, invisible to other members.
+- `GET /api/v1/user` lists workspaces in `position NULLS LAST, joined_at` order and carries
+  `unread_count` (plain unread total, the sidebar rule: a muted channel counts only its mentions and
+  broadcasts), `mentions`, `unread` (bool, kept) and `muted`.
+- `PATCH /api/v1/user/workspace-order {order:[ids]}`: 1-200 distinct ids, every one a live
+  membership (403 `not_a_member` otherwise, nothing changes); listed rooms get 0..n, unlisted ones
+  lose their position and sort after. Answers the reordered list.
+- `PATCH /api/v1/user/workspaces/<id> {muted}`: live membership only, answers the workspace entry.
+- Rail: marks are `draggable`; dragover moves the dragged mark live, drop saves the DOM order.
+  Right-click (or Shift+F10 on a focused mark) opens `#rail-ctx`: Move up, Move down, Mute/Unmute
+  workspace. Alt+ArrowUp/Down moves a focused mark. Both session-only, no agent surface.
+- Badges: `.rail-badge.count` neutral pill with the unread count; `.mention` red with the mention
+  count; `.muted` gray with the count, never red; the mark dims and its tooltip reads
+  "<name> (Muted)". 99+ cap. The current mark stays clean (its channel list is the live truth).
+- Mute: `notifyReason` returns null when the open workspace is muted (no sound, no browser
+  notification, no title count). Settings > Personal > Workspace has the toggle for the workspace
+  the page came from.
+- Favicon + title: `unreadTotal()` = non-muted other workspaces' `unread_count` from the rail feed
+  plus the open room's live channel counts (muted channels: mentions only). Title `(N) AgentChat |
+  name` uncapped; favicon drawn on a 32px canvas over the shipped mark with a red 99+-capped pill.
+  Refreshed on every channel render, every rail poll (60 s) and on tab focus.
+- Checks: `scripts/railorder-check.js` (drag, reload, other member's order, Alt+Arrow, context
+  menu mute: gray pill, tooltip, no notification, title; Settings toggle), `scripts/railbadge-check.js`
+  (neutral 1, red mention, 99+, title, favicon data URL). Go: `TestWorkspaceOrderAndMute`.

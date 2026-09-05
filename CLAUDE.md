@@ -54,7 +54,8 @@ node scripts/theme-check.js                 # THEME_CHECK_OK
 node scripts/settings-check.js              # SETTINGS_CHECK_OK (same)
 node scripts/wsavatar-check.js              # WSAVATAR_CHECK_OK
 node scripts/rail-check.js                  # RAIL_CHECK_OK
-node scripts/railbadge-check.js             # RAILBADGE_CHECK_OK
+node scripts/railbadge-check.js             # RAILBADGE_CHECK_OK (count pills, 99+, title, favicon)
+node scripts/railorder-check.js             # RAILORDER_CHECK_OK (rail drag order, workspace mute, task 18)
 node scripts/wsdelete-check.js             # WSDELETE_CHECK_OK
 node scripts/fleetroom-check.js            # FLEETROOM_CHECK_OK (no browser, no db)
 node scripts/kick-check.js                 # KICK_CHECK_OK

@@ -3,6 +3,7 @@ package models
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"regexp"
 	"time"
@@ -254,21 +255,23 @@ type UserRoom struct {
 	AvatarAttachmentID *string   `json:"avatar_attachment_id,omitempty"`
 	AvatarURL          string    `json:"avatar_url,omitempty"`
 	Color              int16     `json:"color"`
-	// Unread and Mentions roll up the channel badges of this user's participant:
-	// a muted channel counts only through its mentions, like the sidebar
-	Unread   bool  `json:"unread"`
-	Mentions int64 `json:"mentions"`
+	// Unread, UnreadCount and Mentions roll up the channel badges of this
+	// user's participant: a muted channel counts only through its mentions,
+	// like the sidebar. Muted is the account-level workspace mute (task 18).
+	Unread      bool  `json:"unread"`
+	UnreadCount int64 `json:"unread_count"`
+	Mentions    int64 `json:"mentions"`
+	Muted       bool  `json:"muted"`
 }
 
-// RoomsByUser lists the rooms the user still has a live row in, oldest
-// membership first. Revoked rows do not count. The read state is the channel
-// badge rule from ListChannelsUnread over the participant's live channels;
-// unread is an EXISTS so a busy unread channel stops at its first row.
+// RoomsByUser lists the rooms the user still has a live row in, in the user's
+// rail order (unplaced rooms after the placed ones, oldest membership first).
+// Revoked rows do not count. The read state is the channel badge rule from
+// ListChannelsUnread over the participant's live channels.
 func (s *Store) RoomsByUser(ctx context.Context, userID string) ([]UserRoom, error) {
 	rows, err := s.pool.Query(ctx,
 		`SELECT r.id, r.slug, r.name, p.role, p.created_at, r.avatar_attachment_id, r.color,
-		        EXISTS (
-		          SELECT 1 FROM channel_members cm
+		        (SELECT count(*) FROM channel_members cm
 		          JOIN channels c ON c.id = cm.channel_id AND NOT c.archived
 		          LEFT JOIN channel_reads rd ON rd.channel_id = c.id AND rd.participant_id = p.id
 		          JOIN messages m ON m.channel_id = c.id AND m.thread_root_id IS NULL
@@ -276,7 +279,7 @@ func (s *Store) RoomsByUser(ctx context.Context, userID string) ([]UserRoom, err
 		               AND m.created_at > COALESCE(rd.last_read_at, p.created_at)
 		          WHERE cm.participant_id = p.id
 		            AND (NOT cm.muted OR m.is_broadcast OR EXISTS (
-		                 SELECT 1 FROM mentions mn WHERE mn.message_id = m.id AND mn.participant_id = p.id))) AS unread,
+		                 SELECT 1 FROM mentions mn WHERE mn.message_id = m.id AND mn.participant_id = p.id))) AS unread_count,
 		        (SELECT count(*) FROM channel_members cm
 		          JOIN channels c ON c.id = cm.channel_id AND NOT c.archived
 		          LEFT JOIN channel_reads rd ON rd.channel_id = c.id AND rd.participant_id = p.id
@@ -285,10 +288,12 @@ func (s *Store) RoomsByUser(ctx context.Context, userID string) ([]UserRoom, err
 		               AND m.created_at > COALESCE(rd.last_read_at, p.created_at)
 		          WHERE cm.participant_id = p.id
 		            AND (m.is_broadcast OR EXISTS (
-		                 SELECT 1 FROM mentions mn WHERE mn.message_id = m.id AND mn.participant_id = p.id))) AS mentions
+		                 SELECT 1 FROM mentions mn WHERE mn.message_id = m.id AND mn.participant_id = p.id))) AS mentions,
+		        COALESCE(pr.muted, false)
 		 FROM participants p JOIN rooms r ON r.id = p.room_id
+		 LEFT JOIN user_room_prefs pr ON pr.user_id = p.user_id AND pr.room_id = r.id
 		 WHERE p.user_id = $1 AND NOT p.revoked
-		 ORDER BY p.created_at, r.id`, userID)
+		 ORDER BY pr.position NULLS LAST, p.created_at, r.id`, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -296,11 +301,68 @@ func (s *Store) RoomsByUser(ctx context.Context, userID string) ([]UserRoom, err
 	out := []UserRoom{}
 	for rows.Next() {
 		var ur UserRoom
-		if err := rows.Scan(&ur.ID, &ur.Slug, &ur.Name, &ur.Role, &ur.JoinedAt, &ur.AvatarAttachmentID, &ur.Color, &ur.Unread, &ur.Mentions); err != nil {
+		if err := rows.Scan(&ur.ID, &ur.Slug, &ur.Name, &ur.Role, &ur.JoinedAt, &ur.AvatarAttachmentID, &ur.Color, &ur.UnreadCount, &ur.Mentions, &ur.Muted); err != nil {
 			return nil, err
 		}
+		ur.Unread = ur.UnreadCount > 0
 		ur.AvatarURL = AvatarPath(ur.AvatarAttachmentID)
 		out = append(out, ur)
 	}
 	return out, rows.Err()
+}
+
+// ErrNotMember is a workspace pref aimed at a room the user has no live row in.
+var ErrNotMember = errors.New("you are not a member of that workspace")
+
+// SetWorkspaceOrder stores the user's rail order: roomIDs get positions 0..n
+// in the given order, every other room of the user loses its position (it
+// sorts after the placed ones). Every id must be a live membership.
+func (s *Store) SetWorkspaceOrder(ctx context.Context, userID string, roomIDs []string) error {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	// two saves from one user must not interleave: the NULL sweep of one would
+	// miss the rows the other is inserting
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext('user_room_prefs:' || $1::text))`, userID); err != nil {
+		return err
+	}
+	var live int
+	if err := tx.QueryRow(ctx,
+		`SELECT count(*) FROM participants WHERE user_id = $1 AND NOT revoked AND room_id = ANY($2::uuid[])`,
+		userID, roomIDs).Scan(&live); err != nil {
+		return err
+	}
+	if live != len(roomIDs) {
+		return ErrNotMember
+	}
+	if _, err := tx.Exec(ctx, `UPDATE user_room_prefs SET position = NULL WHERE user_id = $1`, userID); err != nil {
+		return err
+	}
+	for i, id := range roomIDs {
+		if _, err := tx.Exec(ctx,
+			`INSERT INTO user_room_prefs (user_id, room_id, position) VALUES ($1, $2, $3)
+			 ON CONFLICT (user_id, room_id) DO UPDATE SET position = EXCLUDED.position`, userID, id, i); err != nil {
+			return err
+		}
+	}
+	return tx.Commit(ctx)
+}
+
+// SetWorkspaceMuted flips the user's account-level mute on a room they are a
+// live member of.
+func (s *Store) SetWorkspaceMuted(ctx context.Context, userID, roomID string, muted bool) error {
+	tag, err := s.pool.Exec(ctx,
+		`INSERT INTO user_room_prefs (user_id, room_id, muted)
+		 SELECT $1, $2, $3 WHERE EXISTS (
+		   SELECT 1 FROM participants WHERE user_id = $1 AND room_id = $2 AND NOT revoked)
+		 ON CONFLICT (user_id, room_id) DO UPDATE SET muted = EXCLUDED.muted`, userID, roomID, muted)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotMember
+	}
+	return nil
 }

@@ -150,6 +150,11 @@
             </select>
           </label>
         </div>
+        <div id="ws-mute-section" class="hidden">
+          <h2>Workspace</h2>
+          <label class="row-check"><input type="checkbox" id="ws-mute"> Mute <span id="ws-mute-name"></span></label>
+          <p class="hint">No notifications from this workspace on any device. The rail badge keeps its count, in gray.</p>
+        </div>
         <div>
           <h2>Appearance</h2>
           <label class="row-select">Theme
@@ -239,6 +244,7 @@
   <div id="chat-view" class="hidden">
     <nav id="ws-rail" class="hidden" aria-label="Workspaces">
       <div id="rail-list"></div>
+      <div id="rail-ctx" class="hidden" role="menu" aria-label="Workspace actions"></div>
       <div class="rail-sep"></div>
       <div id="rail-add-wrap">
         <button type="button" id="rail-add" data-tip="Create workspace" aria-label="Create workspace" aria-haspopup="menu" aria-expanded="false" aria-controls="rail-menu">+</button>

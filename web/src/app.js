@@ -34,7 +34,7 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
   let channelMembers = [];
   let current = null;        // current channel object
   let openThreadRoot = null; // message id of the open thread
-  let unreadMentions = 0;
+  let railRooms = [];        // the last /api/v1/user workspace list: badges, mutes, order
   let notifyPrefs = { enabled: true, sound: true, archive_after_secs: 3600 };
   let cursor = -1;
   // One pending attachment per composer. The thread reply shares the upload
@@ -928,6 +928,7 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
   };
 
   const renderChannels = () => {
+    setTitle(); // the open room's channel state is half of the tab badge
     const ul = $('channel-list');
     ul.innerHTML = '';
     const placement = groupOf();
@@ -1259,9 +1260,69 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
     if (offlineOpen.has('root')) sunkHumans.forEach(renderHuman);
   };
 
+  // the unread total behind the tab title and the favicon pill (task 18):
+  // every non-muted workspace's unread_count from the rail feed, the open
+  // one live from its channel list (a muted channel counts only its
+  // mentions, like the sidebar). Muted workspaces never count.
+  const roomUnread = () => channels.reduce((n, c) => n + (c.muted ? (c.unread_mentions || 0) : (c.unread_count || 0)), 0);
+  const railEntry = (slug) => railRooms.find((w) => w.slug === slug);
+  const roomMuted = () => { const w = room && railEntry(room.slug); return !!(w && w.muted); };
+  const unreadTotal = () => {
+    let n = 0;
+    for (const w of railRooms) {
+      if (w.muted || (room && w.slug === room.slug)) continue;
+      n += w.unread_count || 0;
+    }
+    if (room && !roomMuted()) n += roomUnread();
+    return n;
+  };
+  const capCount = (n) => (n > 99 ? '99+' : String(n));
+  // the favicon is drawn on a canvas over the shipped 32px mark: a red pill
+  // with the count bottom-right, Discord-style; zero puts the plain files back
+  const faviconLinks = () => [...document.querySelectorAll('link[rel="icon"]')];
+  const faviconOriginal = faviconLinks().map((l) => l.getAttribute('href'));
+  let faviconImg = null;
+  let faviconShown = 0;
+  const paintFavicon = (n) => {
+    if (n === faviconShown) return;
+    faviconShown = n;
+    const links = faviconLinks();
+    if (n === 0) { links.forEach((l, i) => l.setAttribute('href', faviconOriginal[i])); return; }
+    const draw = () => {
+      const cv = document.createElement('canvas');
+      cv.width = 32; cv.height = 32;
+      const cx = cv.getContext('2d');
+      if (faviconImg && faviconImg.complete && faviconImg.naturalWidth) cx.drawImage(faviconImg, 0, 0, 32, 32);
+      const text = capCount(n);
+      cx.font = `bold ${text.length > 2 ? 11 : 13}px system-ui, sans-serif`;
+      const tw = Math.ceil(cx.measureText(text).width);
+      const w = Math.max(16, tw + 6);
+      const h = 16;
+      const x = 32 - w;
+      const y = 32 - h;
+      cx.fillStyle = '#ed4245';
+      cx.beginPath();
+      cx.roundRect(x, y, w, h, 8);
+      cx.fill();
+      cx.fillStyle = '#fff';
+      cx.textAlign = 'center';
+      cx.textBaseline = 'middle';
+      cx.fillText(text, x + w / 2, y + h / 2 + 0.5);
+      const url = cv.toDataURL('image/png');
+      links.forEach((l) => l.setAttribute('href', url));
+    };
+    if (!faviconImg) {
+      faviconImg = new Image();
+      faviconImg.onload = () => { if (faviconShown === n) draw(); };
+      faviconImg.src = faviconOriginal[0] || '/brand/favicon-32.png';
+    }
+    draw();
+  };
   const setTitle = () => {
     // "(3) AgentChat | Acme Team"; plain "AgentChat" outside a workspace
-    document.title = (unreadMentions > 0 ? `(${unreadMentions}) ` : '') + 'AgentChat' + (room ? ' | ' + room.name : '');
+    const n = unreadTotal();
+    document.title = (n > 0 ? `(${n}) ` : '') + 'AgentChat' + (room ? ' | ' + room.name : '');
+    paintFavicon(n);
   };
 
   // ---------- data flows ----------
@@ -1655,6 +1716,7 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
   const notifyReason = (m) => {
     if (!notifyPrefs.enabled || !me) return null;
     if (m.author_id === me.id || m.kind === 'system') return null;
+    if (roomMuted()) return null; // the whole-workspace mute (task 18)
     const ch = channels.find((c) => c.id === m.channel_id);
     if (!ch) return null;
     if (!document.hidden && document.hasFocus() && current && current.id === ch.id) return null;
@@ -1743,10 +1805,6 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
     if (t === 'message.created') {
       const m = ev.payload;
       maybeNotify(m);
-      if ((m.mentions || []).includes(me.name) && (document.hidden || m.author_id !== me.id)) {
-        unreadMentions++;
-        setTitle();
-      }
       if (current && m.channel_id === current.id && !m.thread_root_id) {
         settleMine(m); // clear my optimistic placeholder before the real append
         const box = $('messages');
@@ -2016,26 +2074,43 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
     menu.appendChild(wsMenuItem('Sign out', { id: 'me-signout', onclick: () => { setMeMenuOpen(false); signOut(); } }));
   };
 
-  // the rail: one round mark per workspace, the current one marked; a click is
-  // a full load of /w/<slug>. "+" opens create-or-join.
+  // the rail: one round mark per workspace in the user's own order, the
+  // current one marked; a click is a full load of /w/<slug>. "+" opens
+  // create-or-join. Marks drag to reorder (task 18); the right-click menu and
+  // Alt+Arrow are the keyboard way, and the menu also holds the mute.
   const mountRail = (workspaces, here) => {
     const list = $('rail-list');
     list.innerHTML = '';
+    railRooms = workspaces;
     const rows = workspaces.some((w) => w.slug === room.slug) ? workspaces : [room, ...workspaces];
     for (const ws of rows) {
       const cur = ws.slug === room.slug;
       const a = document.createElement('a');
       a.className = 'rail-item';
       a.href = '/w/' + encodeURIComponent(ws.slug);
+      a.dataset.slug = ws.slug;
+      a.dataset.id = ws.id;
       a.dataset.tip = ws.name;
       a.setAttribute('aria-label', ws.name);
       if (cur) a.setAttribute('aria-current', 'true');
+      // the fallback row (a room missing from the list) has no server id to order
+      const listed = workspaces.some((w) => w.id === ws.id);
+      a.draggable = listed;
       // the current room's record is fresher than the /user list (an avatar set this session)
       a.appendChild(wsAvatarEl(cur ? room : ws, 'ws-avatar-rail', wsHeaders(ws.slug)));
       const badge = document.createElement('span');
       badge.className = 'rail-badge hidden';
       a.appendChild(badge);
       list.appendChild(a);
+      if (!listed) continue;
+      a.addEventListener('dragstart', (ev) => railDragStart(ev, a));
+      a.addEventListener('dragend', railDragEnd);
+      a.addEventListener('contextmenu', (ev) => { ev.preventDefault(); openRailCtx(a, ev); });
+      a.addEventListener('keydown', (ev) => {
+        if (!ev.altKey || (ev.key !== 'ArrowUp' && ev.key !== 'ArrowDown')) return;
+        ev.preventDefault();
+        moveRailItem(a, ev.key === 'ArrowUp' ? -1 : 1);
+      });
     }
     $('rail-create').href = '/create?next=' + encodeURIComponent(here);
     $('ws-rail').classList.remove('hidden');
@@ -2043,20 +2118,31 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
     if (!railTimer) railTimer = setInterval(refreshRail, 60000);
   };
 
-  // a mention count pill, else an unread dot, on every mark but the current
-  // one: the open room's channel badges are the live truth for it
+  // a count pill on every mark but the current one (the open room's channel
+  // badges are the live truth for it): red for @mentions, neutral for plain
+  // unreads, gray when the workspace is muted. 99+ caps the number.
   const paintRailBadges = (workspaces) => {
+    railRooms = workspaces;
     for (const ws of workspaces) {
       const a = $('rail-list').querySelector('.rail-item[href="/w/' + encodeURIComponent(ws.slug) + '"]');
       if (!a) continue;
       const badge = a.querySelector('.rail-badge');
-      const mentions = ws.slug === room.slug ? 0 : (ws.mentions || 0);
-      const unread = ws.slug !== room.slug && !!ws.unread;
-      badge.classList.toggle('hidden', !unread && mentions === 0);
-      badge.classList.toggle('count', mentions > 0);
-      badge.textContent = mentions > 0 ? (mentions > 99 ? '99+' : String(mentions)) : '';
-      a.setAttribute('aria-label', ws.name + (mentions > 0 ? ', ' + mentions + ' mentions' : unread ? ', unread' : ''));
+      const cur = ws.slug === room.slug;
+      const mentions = cur ? 0 : (ws.mentions || 0);
+      const unread = cur ? 0 : (ws.unread_count || 0);
+      const shown = Math.max(unread, mentions);
+      badge.classList.toggle('hidden', shown === 0);
+      badge.classList.toggle('count', shown > 0);
+      badge.classList.toggle('mention', mentions > 0 && !ws.muted);
+      badge.classList.toggle('muted', !!ws.muted);
+      badge.textContent = shown > 0 ? capCount(mentions > 0 && !ws.muted ? mentions : shown) : '';
+      a.classList.toggle('is-muted', !!ws.muted);
+      a.dataset.tip = ws.name + (ws.muted ? ' (Muted)' : '');
+      const what = ws.muted ? ', muted' + (shown > 0 ? ', ' + shown + ' unread' : '')
+        : mentions > 0 ? ', ' + mentions + ' mentions' : unread > 0 ? ', ' + unread + ' unread' : '';
+      a.setAttribute('aria-label', ws.name + what);
     }
+    setTitle();
   };
   // the session has no token for the other rooms, so this poll is their stream:
   // every 60 s, and at once when the tab comes back (see the focus handler)
@@ -2065,6 +2151,123 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
     if ($('ws-rail').classList.contains('hidden') || document.hidden) return;
     try { paintRailBadges((await fetchWorkspaces()).workspaces || []); } catch (e) { console.error('rail', e); }
   };
+
+  // ---------- rail order and mute (task 18) ----------
+  const railItems = () => [...$('rail-list').querySelectorAll('.rail-item')];
+  // the DOM order is the truth the server gets; railRooms follows it so the
+  // badge feed and the title agree before the next poll
+  // saves run one at a time so the last DOM order is the last one the server sees
+  let railSaveChain = Promise.resolve();
+  const saveRailOrder = () => {
+    const ids = railItems().map((a) => a.dataset.id).filter(Boolean);
+    railRooms = ids.map((id) => railRooms.find((w) => w.id === id)).filter(Boolean)
+      .concat(railRooms.filter((w) => !ids.includes(w.id)));
+    railSaveChain = railSaveChain.then(async () => {
+      try {
+        const out = await api('/api/v1/user/workspace-order', { method: 'PATCH', body: { order: ids } });
+        if (out && out.workspaces) paintRailBadges(out.workspaces);
+      } catch (e) { console.error('rail order', e); }
+    });
+    return railSaveChain;
+  };
+  const railOrderDirty = () => {
+    const ids = railItems().map((a) => a.dataset.id).filter(Boolean);
+    return ids.some((id, i) => (railRooms[i] || {}).id !== id);
+  };
+  const moveRailItem = (a, dir) => {
+    const items = railItems();
+    const i = items.indexOf(a);
+    const j = i + dir;
+    if (i < 0 || j < 0 || j >= items.length) return;
+    if (dir < 0) items[j].before(a);
+    if (dir > 0) items[j].after(a);
+    a.focus();
+    saveRailOrder();
+  };
+  let railDragging = null;
+  const railDragStart = (ev, a) => {
+    railDragging = a;
+    a.classList.add('dragging');
+    if (ev.dataTransfer) {
+      ev.dataTransfer.effectAllowed = 'move';
+      try { ev.dataTransfer.setData('text/plain', a.dataset.slug); } catch { /* synthetic event */ }
+    }
+  };
+  // a drop outside the rail fires dragend only, but dragover already moved the
+  // mark, so the order on screen is the one to keep
+  const railDragEnd = () => {
+    if (!railDragging) return;
+    railDragging.classList.remove('dragging');
+    railDragging = null;
+    $('rail-list').classList.remove('drop-target');
+    if (railOrderDirty()) saveRailOrder();
+  };
+  // the dragged mark follows the pointer live: it moves before the mark whose
+  // upper half the pointer is over, after the one whose lower half it is over
+  $('rail-list').addEventListener('dragover', (ev) => {
+    if (!railDragging) return;
+    ev.preventDefault();
+    if (ev.dataTransfer) ev.dataTransfer.dropEffect = 'move';
+    $('rail-list').classList.add('drop-target');
+    for (const a of railItems()) {
+      if (a === railDragging) continue;
+      const r = a.getBoundingClientRect();
+      if (ev.clientY < r.top || ev.clientY > r.bottom) continue;
+      if (ev.clientY < r.top + r.height / 2) a.before(railDragging);
+      if (ev.clientY >= r.top + r.height / 2) a.after(railDragging);
+      return;
+    }
+  });
+  $('rail-list').addEventListener('drop', (ev) => {
+    if (!railDragging) return;
+    ev.preventDefault();
+    railDragEnd();
+  });
+  // a click on a mark right after a drag would navigate: the drop already
+  // consumed it, and a real click never sets railDragging
+
+  const setWorkspaceMuted = async (ws, muted) => {
+    try {
+      const out = await api('/api/v1/user/workspaces/' + ws.id, { method: 'PATCH', body: { muted } });
+      railRooms = railRooms.map((w) => (w.id === ws.id ? { ...w, ...out } : w));
+      paintRailBadges(railRooms);
+    } catch (e) { console.error('workspace mute', e); }
+  };
+  // the mark's context menu: move up, move down, mute or unmute
+  const closeRailCtx = () => { $('rail-ctx').classList.add('hidden'); };
+  const openRailCtx = (a, ev) => {
+    const ws = railRooms.find((w) => w.id === a.dataset.id);
+    if (!ws) return;
+    const menu = $('rail-ctx');
+    menu.replaceChildren();
+    const items = railItems();
+    const i = items.indexOf(a);
+    const item = (label, id, onclick, disabled) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'rail-menu-item';
+      b.id = id;
+      b.setAttribute('role', 'menuitem');
+      b.textContent = label;
+      b.disabled = !!disabled;
+      b.onclick = () => { closeRailCtx(); onclick(); };
+      menu.appendChild(b);
+    };
+    item('Move up', 'rail-ctx-up', () => moveRailItem(a, -1), i <= 0);
+    item('Move down', 'rail-ctx-down', () => moveRailItem(a, 1), i >= items.length - 1);
+    item(ws.muted ? 'Unmute workspace' : 'Mute workspace', 'rail-ctx-mute', () => setWorkspaceMuted(ws, !ws.muted));
+    menu.dataset.slug = ws.slug;
+    menu.classList.remove('hidden');
+    const r = a.getBoundingClientRect();
+    // a keyboard-opened menu (Shift+F10) has no pointer: anchor it to the mark
+    const x = ev && ev.clientX ? ev.clientX : r.right + 6;
+    const y = ev && ev.clientY ? ev.clientY : r.top;
+    menu.style.left = x + 'px';
+    menu.style.top = Math.min(y, window.innerHeight - menu.offsetHeight - 8) + 'px';
+    menu.querySelector('button:not([disabled])').focus();
+  };
+  document.addEventListener('click', (ev) => { if (!$('rail-ctx').contains(ev.target)) closeRailCtx(); });
+  document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape') closeRailCtx(); });
 
   const setRailMenuOpen = (open) => {
     $('rail-menu').classList.toggle('hidden', !open);
@@ -2951,8 +3154,6 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
   }
 
   window.addEventListener('focus', () => {
-    unreadMentions = 0;
-    setTitle();
     // returning to the tab counts as reading what is on screen now
     if (me && current) markRead(current);
     refreshRail();

@@ -63,6 +63,8 @@ func writeStoreErr(w http.ResponseWriter, err error) {
 		writeErrCode(w, http.StatusForbidden, "invite_revoked", err.Error())
 	case errors.Is(err, models.ErrInviteAgentsOnly):
 		writeErrCode(w, http.StatusForbidden, "invite_agents_only", err.Error())
+	case errors.Is(err, models.ErrNotMember):
+		writeErrCode(w, http.StatusForbidden, "not_a_member", err.Error())
 	case errors.Is(err, models.ErrAgentOffline):
 		writeErrCode(w, http.StatusConflict, "agent_offline", err.Error())
 	case errors.Is(err, models.ErrCallFinished):

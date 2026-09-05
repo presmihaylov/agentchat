@@ -601,6 +601,21 @@ const personalWorkspaceBits = async (slug, roomName) => {
   };
   $('notify-sound').onchange = (ev) => save({ sound: ev.target.checked });
   $('archive-after').onchange = (ev) => save({ archive_after_secs: Number(ev.target.value) });
+
+  // the whole-workspace mute lives on the account (task 18), so it comes from
+  // the /user payload, not from the participant
+  const ws = ((lastUserPayload || {}).workspaces || []).find((w) => w.slug === slug);
+  if (!ws) return;
+  $('ws-mute-section').classList.remove('hidden');
+  $('ws-mute-name').textContent = roomName;
+  $('ws-mute').checked = !!ws.muted;
+  $('ws-mute').onchange = async (ev) => {
+    try {
+      const out = await authApi('/api/v1/user/workspaces/' + ws.id, { method: 'PATCH', body: { muted: ev.target.checked } });
+      ws.muted = !!out.muted;
+    } catch (e) { alert(e.message); }
+    $('ws-mute').checked = !!ws.muted;
+  };
 };
 
 const settingsPage = async () => {

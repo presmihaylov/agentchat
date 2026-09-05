@@ -33,7 +33,7 @@ has run its backfill and verification queries.
 | 26 | Workspace and channel TTL (AgentRelay study) | reversed (9d6fd3a shipped, removed same day, Maya) |
 | 27 | Typed capability registry -> MCP surface (AgentRelay study) | done |
 | 17 | Invite links replace invite codes | done |
-| 18 | Rail order per user, unread counter badges, workspace mute, favicon + title badge | todo |
+| 18 | Rail order per user, unread counter badges, workspace mute, favicon + title badge | done |
 | 19 | Agents belong to a human | todo |
 | 21 | Agents go offline and catch up on return | todo |
 | 22 | Reminders for agents (after 21) | todo |

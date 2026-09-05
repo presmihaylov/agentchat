@@ -844,3 +844,122 @@ func TestCreateRoomSlug(t *testing.T) {
 		t.Fatalf("underivable name: %d %v", st, out)
 	}
 }
+
+// Task 18: the rail order and the workspace mute are per account, validated
+// against live membership; the list carries unread_count and muted.
+func TestWorkspaceOrderAndMute(t *testing.T) {
+	srv, _ := newTestServer(t)
+	adminA, _, roomA := sessionRoom(t, srv.URL, "order a")
+	adminB, _, roomB := sessionRoom(t, srv.URL, "order b")
+	_, _, roomC := sessionRoom(t, srv.URL, "order c")
+	_, _, roomX := sessionRoom(t, srv.URL, "order x")
+
+	user, _ := registerAs(t, srv.URL, "Ora Rail")
+	other, _ := registerAs(t, srv.URL, "Otto Rail")
+	for _, room := range []map[string]any{roomA, roomB, roomC} {
+		user.must("POST", "/api/v1/workspaces/"+room["slug"].(string)+"/enter", map[string]any{"invite": room["invite"]}, 200)
+		other.must("POST", "/api/v1/workspaces/"+room["slug"].(string)+"/enter", map[string]any{"invite": room["invite"]}, 200)
+	}
+	ids := func(out map[string]any) []string {
+		var got []string
+		for _, w := range out["workspaces"].([]any) {
+			got = append(got, w.(map[string]any)["id"].(string))
+		}
+		return got
+	}
+	same := func(a, b []string) bool {
+		if len(a) != len(b) {
+			return false
+		}
+		for i := range a {
+			if a[i] != b[i] {
+				return false
+			}
+		}
+		return true
+	}
+	a, b, c, x := roomA["id"].(string), roomB["id"].(string), roomC["id"].(string), roomX["id"].(string)
+	if got := ids(user.must("GET", "/api/v1/user", nil, 200)); !same(got, []string{a, b, c}) {
+		t.Fatalf("default order should be join order: %v", got)
+	}
+
+	// a room the user is not in, a bad id, a duplicate: all refused, order untouched
+	if st, out := user.do("PATCH", "/api/v1/user/workspace-order", map[string]any{"order": []string{c, x}}); st != 403 || out["code"] != "not_a_member" {
+		t.Fatalf("order with a foreign room: %d %v", st, out)
+	}
+	if st, _ := user.do("PATCH", "/api/v1/user/workspace-order", map[string]any{"order": []string{c, "nope"}}); st != 400 {
+		t.Fatalf("order with a bad id: %d", st)
+	}
+	if st, _ := user.do("PATCH", "/api/v1/user/workspace-order", map[string]any{"order": []string{c, c}}); st != 400 {
+		t.Fatalf("order with a duplicate: %d", st)
+	}
+	if got := ids(user.must("GET", "/api/v1/user", nil, 200)); !same(got, []string{a, b, c}) {
+		t.Fatalf("a refused order must not change anything: %v", got)
+	}
+
+	// a full order sticks; a partial one places the listed rooms first
+	out := user.must("PATCH", "/api/v1/user/workspace-order", map[string]any{"order": []string{c, a, b}}, 200)
+	if got := ids(out); !same(got, []string{c, a, b}) {
+		t.Fatalf("order response: %v", got)
+	}
+	if got := ids(user.must("GET", "/api/v1/user", nil, 200)); !same(got, []string{c, a, b}) {
+		t.Fatalf("order did not persist: %v", got)
+	}
+	user.must("PATCH", "/api/v1/user/workspace-order", map[string]any{"order": []string{b}}, 200)
+	if got := ids(user.must("GET", "/api/v1/user", nil, 200)); !same(got, []string{b, a, c}) {
+		t.Fatalf("partial order: %v", got)
+	}
+	// the other member keeps the join order: the order is per account
+	if got := ids(other.must("GET", "/api/v1/user", nil, 200)); !same(got, []string{a, b, c}) {
+		t.Fatalf("another user's order moved: %v", got)
+	}
+
+	// unread_count is the plain unread total, mentions the @mention subset
+	for i := 0; i < 3; i++ {
+		adminA.must("POST", "/api/v1/channels/general/messages", map[string]any{"body": "news"}, 201)
+	}
+	adminA.must("POST", "/api/v1/channels/general/messages", map[string]any{"body": "hey @Ora Rail"}, 201)
+	adminB.must("POST", "/api/v1/channels/general/messages", map[string]any{"body": "b news"}, 201)
+	find := func(out map[string]any, id string) map[string]any {
+		for _, w := range out["workspaces"].([]any) {
+			if m := w.(map[string]any); m["id"] == id {
+				return m
+			}
+		}
+		t.Fatalf("room %s missing from %v", id, out)
+		return nil
+	}
+	out = user.must("GET", "/api/v1/user", nil, 200)
+	if wa := find(out, a); wa["unread_count"] != 4.0 || wa["mentions"] != 1.0 || wa["unread"] != true || wa["muted"] != false {
+		t.Fatalf("room a badge: %v", wa)
+	}
+	if wb := find(out, b); wb["unread_count"] != 1.0 || wb["mentions"] != 0.0 {
+		t.Fatalf("room b badge: %v", wb)
+	}
+	if wc := find(out, c); wc["unread_count"] != 0.0 || wc["unread"] != false {
+		t.Fatalf("room c badge: %v", wc)
+	}
+
+	// the mute is per account and per room; the count stays
+	if st, out := user.do("PATCH", "/api/v1/user/workspaces/"+x, map[string]any{"muted": true}); st != 403 || out["code"] != "not_a_member" {
+		t.Fatalf("mute a foreign room: %d %v", st, out)
+	}
+	if st, _ := user.do("PATCH", "/api/v1/user/workspaces/"+a, map[string]any{}); st != 400 {
+		t.Fatalf("mute without a value: %d", st)
+	}
+	wa := user.must("PATCH", "/api/v1/user/workspaces/"+a, map[string]any{"muted": true}, 200)
+	if wa["muted"] != true || wa["unread_count"] != 4.0 || wa["id"] != a {
+		t.Fatalf("mute response: %v", wa)
+	}
+	out = user.must("GET", "/api/v1/user", nil, 200)
+	if find(out, a)["muted"] != true || find(out, b)["muted"] != false {
+		t.Fatalf("mute did not persist: %v", out)
+	}
+	if find(other.must("GET", "/api/v1/user", nil, 200), a)["muted"] != false {
+		t.Fatal("another user's mute moved")
+	}
+	wa = user.must("PATCH", "/api/v1/user/workspaces/"+a, map[string]any{"muted": false}, 200)
+	if wa["muted"] != false {
+		t.Fatalf("unmute response: %v", wa)
+	}
+}
