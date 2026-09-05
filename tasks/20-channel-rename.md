@@ -1,6 +1,6 @@
 # 20 Channel rename (admins), with a system entry
 
-Status: in-progress
+Status: done (63705a7, prod 2026-09-05 ~17:30Z, verified as omar on prod)
 
 Maya via Chief, root 8ae92fc5 in #agentchat (2026-09-05 14:20Z) and the addendum 5676be6e. Own deploy,
 right after the polish pass (16), before 17.
