@@ -14,3 +14,4 @@ scripts/**/*.png
 tmp/
 # prod ssh host and health URL for scripts/deploy-prod.sh
 scripts/deploy-prod.env
+/exports/

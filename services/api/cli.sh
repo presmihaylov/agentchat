@@ -8,7 +8,7 @@
 # thread, whether the id is the root or any reply inside it.
 set -euo pipefail
 
-VERSION="1.8.0"
+VERSION="1.9.0"
 DEFAULT_SERVER="{{SERVER}}"
 # Cloudflare Access service token, baked in by the server when the room sits
 # behind a Cloudflare tunnel. Empty otherwise. The env file can override both.
@@ -58,6 +58,11 @@ DO
   rejoin <message-id>            hear that thread's untagged replies again
   download <message-id>          save that message's attachments
   join <channel>                 join a public channel
+  room create <name> [--slug s] [--ttl N]  make a workspace with a session (ses_)
+                                 token; --ttl N seconds sets an expiry (60..31536000)
+  room ttl <seconds|clear>       set or clear this workspace's expiry (admin). Past the
+                                 expiry it is read-only; 7 days later it is exported
+                                 and deleted. Session tokens also need SLUG in the env.
 
 FLAGS
   --json                on any read command, print raw JSON
@@ -168,6 +173,8 @@ CODE=""
 request() {
   local method="$1" path="$2" body="${3:-}" out
   local args=(-sS -X "$method" -H "Authorization: Bearer $TOKEN" ${CF_ARGS[@]+"${CF_ARGS[@]}"} -w $'\n%{http_code}')
+  # a session token is per person, so it names the workspace with a header
+  if [ -n "${SLUG:-}" ]; then args+=(-H "X-Workspace-Slug: $SLUG"); fi
   if [ -n "$body" ]; then args+=(-H 'Content-Type: application/json' -d "$body"); fi
   out=$(curl "${args[@]}" "$SERVER$path") || die "cannot reach $SERVER"
   CODE="${out##*$'\n'}"
@@ -638,12 +645,46 @@ cmd_whoami() {
   api GET /api/v1/me
   if [ "$JSON" = "1" ]; then json_pretty "$RESP"; return; fi
   json_str "$RESP" '"%s (%s, %s)" % (d["name"], "human" if d["is_human"] else "agent", d["role"])'
+  request GET /api/v1/room
+  [ "$CODE" = "200" ] || return 0
+  json_str "$RESP" '("workspace %s expired %s: read-only, deleted %s" % (d["name"], d["expires_at"], d.get("purge_at"))) if d.get("expired") else (("workspace %s expires %s" % (d["name"], d["expires_at"])) if d.get("expires_at") else "")' | sed '/^$/d'
 }
 
 cmd_react() {
   [ $# -ge 2 ] || die "usage: cli.sh react <message-id> <emoji>"
   api POST "/api/v1/messages/$1/reactions" "$(EMOJI="$2" python3 -c 'import json,os;print(json.dumps({"emoji":os.environ["EMOJI"]}))')"
   printf 'reacted %s on %s\n' "$2" "$1"
+}
+
+# room create <name> [--ttl N] | room ttl <seconds|off>
+cmd_room() {
+  local sub="${1:-}"; shift || true
+  case "$sub" in
+    create)
+      [ $# -ge 1 ] || die "usage: cli.sh room create <name> [--ttl seconds]"
+      case "$TTL" in *[!0-9]*) die "--ttl: give seconds (60..31536000)" ;; esac
+      api POST /api/v1/rooms "$(NAME="$1" TTL="$TTL" SLUG_FLAG="$SLUG_FLAG" python3 -c '
+import json,os
+d={"name":os.environ["NAME"]}
+if os.environ["SLUG_FLAG"]: d["slug"]=os.environ["SLUG_FLAG"]
+if os.environ["TTL"]: d["expiresInSeconds"]=int(os.environ["TTL"])
+print(json.dumps(d))')"
+      if [ "$JSON" = "1" ]; then json_pretty "$RESP"; return; fi
+      json_str "$RESP" '"created %s (slug %s)%s\ninvite code: %s  (a secret: share it in private)" % (
+        d["room"]["name"], d["room"]["slug"],
+        "  expires " + d["room"]["expires_at"] if d["room"].get("expires_at") else "",
+        d["invite_code"])'
+      ;;
+    ttl)
+      [ $# -ge 1 ] || die "usage: cli.sh room ttl <seconds|clear>"
+      local secs="$1"; case "$secs" in clear|off|0) secs=0 ;; esac
+      case "$secs" in *[!0-9]*|"") die "room ttl: give seconds (60..31536000) or clear" ;; esac
+      api PATCH /api/v1/room "{\"expiresInSeconds\":$secs}"
+      if [ "$JSON" = "1" ]; then json_pretty "$RESP"; return; fi
+      json_str "$RESP" '("expiry removed: %s lives until an admin deletes it" % d["name"]) if not d.get("expires_at") else ("%s expires %s (read-only after that, exported and deleted 7 days later)" % (d["name"], d["expires_at"]))'
+      ;;
+    *) die "usage: cli.sh room create <name> [--slug s] [--ttl seconds] | room ttl <seconds|clear>" ;;
+  esac
 }
 
 cmd_leave() {
@@ -700,7 +741,7 @@ cmd_join() {
 JSON=0; LIMIT=30; SINCE=""; WAIT=0; ORDER="oldest"; OUT="."; CHANNEL=""; FORCE_MENTIONS=0
 NEW_TOPIC=0
 PEEK=0; LATEST=""; WRAP_CODE=0; WRAP_LANG=""; FORCE=0; BODY_FILE=""
-ENV_FILE=""; SERVER_FLAG=""; ATTACH=()
+ENV_FILE=""; SERVER_FLAG=""; ATTACH=(); TTL=""; SLUG_FLAG=""
 ARGS=()
 
 while [ $# -gt 0 ]; do
@@ -722,6 +763,8 @@ while [ $# -gt 0 ]; do
     --code=*) WRAP_CODE=1; WRAP_LANG="${1#--code=}" ;;
     --force) FORCE=1 ;;
     --latest) LATEST="${2:?--latest needs a channel}"; shift ;;
+    --ttl) TTL="${2:?--ttl needs seconds}"; shift ;;
+    --slug) SLUG_FLAG="${2:?--slug needs a slug}"; shift ;;
     --env) ENV_FILE="${2:?--env needs a file}"; shift ;;
     --server) SERVER_FLAG="${2:?--server needs a url}"; shift ;;
     --version) printf 'agentchat cli %s\n' "$VERSION"; exit 0 ;;
@@ -761,6 +804,7 @@ case "$cmd" in
   rejoin) cmd_rejoin "$@" ;;
   download) cmd_download "$@" ;;
   join) cmd_join "$@" ;;
+  room) cmd_room "$@" ;;
   help) usage ;;
   *) die "unknown command: $cmd (try cli.sh --help)" ;;
 esac

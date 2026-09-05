@@ -24,6 +24,9 @@ type renameRoomReq struct {
 	// delivery policy (task 25); either may come alone, without a rename
 	DeliveryDeadLetterDays *int `json:"delivery_dead_letter_days"`
 	DeliveryMaxAttempts    *int `json:"delivery_max_attempts"`
+	// expiry (task 26): N sets it to now+N seconds (revives an expired
+	// workspace), 0 clears it; the only change allowed after expiry
+	ExpiresInSeconds *int `json:"expiresInSeconds"`
 }
 
 func (s *Server) handleRenameRoom(w http.ResponseWriter, r *http.Request, p models.Participant) {
@@ -36,7 +39,7 @@ func (s *Server) handleRenameRoom(w http.ResponseWriter, r *http.Request, p mode
 	}
 	req.Name = strings.TrimSpace(req.Name)
 	policy := req.DeliveryDeadLetterDays != nil || req.DeliveryMaxAttempts != nil
-	if req.Name == "" && !policy {
+	if req.Name == "" && !policy && req.ExpiresInSeconds == nil {
 		writeErr(w, http.StatusBadRequest, "name must be 1-100 characters")
 		return
 	}
@@ -46,6 +49,28 @@ func (s *Server) handleRenameRoom(w http.ResponseWriter, r *http.Request, p mode
 	}
 	var room models.Room
 	var err error
+	if req.ExpiresInSeconds != nil {
+		at, ok := expiryFromReq(w, req.ExpiresInSeconds)
+		if !ok {
+			return
+		}
+		room, err = s.store.SetRoomExpiry(r.Context(), p.RoomID, at, p.ID)
+		if err != nil {
+			writeStoreErr(w, err)
+			return
+		}
+	}
+	if req.Name != "" || policy {
+		expired, err := s.store.RoomExpired(r.Context(), p.RoomID)
+		if err != nil {
+			writeStoreErr(w, err)
+			return
+		}
+		if expired {
+			writeStoreErr(w, models.ErrRoomExpired)
+			return
+		}
+	}
 	if policy {
 		room, err = s.store.RoomByID(r.Context(), p.RoomID)
 		if err != nil {

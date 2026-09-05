@@ -56,7 +56,8 @@ func freeParticipantName(ctx context.Context, tx pgx.Tx, roomID, base string) (s
 // CreateRoomAs creates a workspace for a logged-in user: the room, #general and
 // the creator's admin participant (linked, no token) in one transaction.
 // At most RoomQuota rooms per creator, counted under a per-user advisory lock.
-func (s *Store) CreateRoomAs(ctx context.Context, name, slug, secret string, creator User) (Room, Participant, error) {
+// expiresAt (nil = never) is when the workspace turns read-only; see SetRoomExpiry.
+func (s *Store) CreateRoomAs(ctx context.Context, name, slug, secret string, creator User, expiresAt *time.Time) (Room, Participant, error) {
 	var r Room
 	var p Participant
 	tx, err := s.pool.Begin(ctx)
@@ -77,9 +78,9 @@ func (s *Store) CreateRoomAs(ctx context.Context, name, slug, secret string, cre
 	}
 
 	err = scanRoom(tx.QueryRow(ctx,
-		`INSERT INTO rooms (name, slug, secret, created_by_user_id, color) VALUES ($1, $2, $3, $4, floor(random() * $5))
+		`INSERT INTO rooms (name, slug, secret, created_by_user_id, color, expires_at) VALUES ($1, $2, $3, $4, floor(random() * $5), $6)
 		 RETURNING `+roomColumns,
-		name, slug, secret, creator.ID, RoomColorSlots,
+		name, slug, secret, creator.ID, RoomColorSlots, expiresAt,
 	), &r)
 	if err != nil {
 		if isUniqueViolation(err) {
@@ -248,8 +249,10 @@ type UserRoom struct {
 	Color              int16     `json:"color"`
 	// Unread and Mentions roll up the channel badges of this user's participant:
 	// a muted channel counts only through its mentions, like the sidebar
-	Unread   bool  `json:"unread"`
-	Mentions int64 `json:"mentions"`
+	ExpiresAt *time.Time `json:"expires_at"`
+	Expired   bool       `json:"expired"`
+	Unread    bool       `json:"unread"`
+	Mentions  int64      `json:"mentions"`
 }
 
 // RoomsByUser lists the rooms the user still has a live row in, oldest
@@ -258,7 +261,7 @@ type UserRoom struct {
 // unread is an EXISTS so a busy unread channel stops at its first row.
 func (s *Store) RoomsByUser(ctx context.Context, userID string) ([]UserRoom, error) {
 	rows, err := s.pool.Query(ctx,
-		`SELECT r.id, r.slug, r.name, p.role, p.created_at, r.avatar_attachment_id, r.color,
+		`SELECT r.id, r.slug, r.name, p.role, p.created_at, r.avatar_attachment_id, r.color, r.expires_at,
 		        EXISTS (
 		          SELECT 1 FROM channel_members cm
 		          JOIN channels c ON c.id = cm.channel_id AND NOT c.archived
@@ -288,10 +291,11 @@ func (s *Store) RoomsByUser(ctx context.Context, userID string) ([]UserRoom, err
 	out := []UserRoom{}
 	for rows.Next() {
 		var ur UserRoom
-		if err := rows.Scan(&ur.ID, &ur.Slug, &ur.Name, &ur.Role, &ur.JoinedAt, &ur.AvatarAttachmentID, &ur.Color, &ur.Unread, &ur.Mentions); err != nil {
+		if err := rows.Scan(&ur.ID, &ur.Slug, &ur.Name, &ur.Role, &ur.JoinedAt, &ur.AvatarAttachmentID, &ur.Color, &ur.ExpiresAt, &ur.Unread, &ur.Mentions); err != nil {
 			return nil, err
 		}
 		ur.AvatarURL = AvatarPath(ur.AvatarAttachmentID)
+		ur.Expired = ur.ExpiresAt != nil && !ur.ExpiresAt.After(time.Now())
 		out = append(out, ur)
 	}
 	return out, rows.Err()

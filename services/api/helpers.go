@@ -47,6 +47,10 @@ func writeStoreErr(w http.ResponseWriter, err error) {
 		writeErr(w, http.StatusConflict, err.Error())
 	case errors.Is(err, models.ErrArchived):
 		writeErr(w, http.StatusConflict, err.Error())
+	case errors.Is(err, models.ErrRoomExpired):
+		writeErrCode(w, http.StatusConflict, "workspace_expired", err.Error())
+	case errors.Is(err, models.ErrChannelExpired):
+		writeErrCode(w, http.StatusConflict, "channel_expired", err.Error())
 	case errors.Is(err, models.ErrTooManyReactions):
 		writeErr(w, http.StatusConflict, err.Error())
 	case errors.Is(err, models.ErrQuota):

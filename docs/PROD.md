@@ -27,6 +27,12 @@ and only moves when you run the deploy script.
   `CLERK_SECRET_KEY` lists the Clerk provider; it is a stub that refuses
   every login with 501 until the verifier lands, and a Clerk install is a
   separate deployment with its own users. Never set it on this prod.
+  `AGENTCHAT_EXPORT_DIR=/Users/<user>/agentchat-prod/exports` (task 26): where
+  the expiry sweeper writes a workspace or channel export before it deletes
+  one. Set it to an absolute path; the default `exports` is relative to the
+  launchd working directory. Nothing is deleted without its export on disk,
+  and the sweeper also takes a `pg_dump -Fc` there before the first purge of
+  a batch (`pg_dump` from postgresql@17 must be on the PATH the plist gives).
 - `~/agentchat-prod/logs/agentchatd.log` — app log.
 - `~/agentchat-prod/backups/agentchat-<utc stamp>-pre-<commit>.dump` — a
   `pg_dump -Fc` the deploy script takes before every binary swap. The newest

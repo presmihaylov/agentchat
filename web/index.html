@@ -89,6 +89,22 @@
             <p id="ws-name-ok" class="ok hidden">Renamed.</p>
             <button type="submit" id="ws-name-save" class="secondary">Rename workspace</button>
           </form>
+          <div id="ws-expiry">
+            <h2>Expiry</h2>
+            <p id="ws-expiry-state" class="hint"></p>
+            <p class="hint">Past the expiry the workspace is read-only. Seven days later it is exported and deleted.</p>
+            <p id="ws-expiry-error" class="error hidden"></p>
+            <div id="ws-expiry-actions" class="row-copy hidden">
+              <select id="ws-expiry-by">
+                <option value="3600">Expire in 1 hour</option>
+                <option value="86400">Expire in 24 hours</option>
+                <option value="604800" selected>Expire in 7 days</option>
+                <option value="2592000">Expire in 30 days</option>
+              </select>
+              <button type="button" id="ws-expiry-apply" class="secondary">Apply</button>
+              <button type="button" id="ws-expiry-clear" class="secondary hidden">Remove expiry</button>
+            </div>
+          </div>
           <h2>Logo</h2>
           <div id="ws-avatar-row">
             <div id="ws-avatar-slot"></div>
@@ -248,7 +264,7 @@
           <button type="button" id="ws-switcher" aria-haspopup="menu" aria-expanded="false" aria-controls="ws-menu"><span id="ws-current"></span><span class="ws-caret" aria-hidden="true">▾</span></button>
           <div id="ws-menu" class="hidden" role="menu"></div>
         </div>
-        <h2 id="room-head"><span id="room-avatar"></span><span id="room-name"></span></h2>
+        <h2 id="room-head"><span id="room-avatar"></span><span id="room-name"></span><span id="room-expiry" class="expiry-pill hidden"></span></h2>
         <button id="open-search" title="Search messages">
           <span class="os-icon"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><circle cx="6.5" cy="6.5" r="4.5"/><path d="M10 10l4.5 4.5"/></svg></span>
           <span class="os-label">Search messages</span>
@@ -283,6 +299,7 @@
       </header>
       <div id="messages"></div>
       <form id="composer">
+        <p id="composer-lock" class="composer-lock hidden"></p>
         <div class="composer-main composer-box">
           <div id="composer-mount" class="composer-editor"></div>
           <div class="composer-bar">
@@ -300,6 +317,7 @@
       <header><span>Thread</span><button id="thread-close">✕</button></header>
       <div id="thread-messages"></div>
       <form id="thread-composer">
+        <p id="thread-composer-lock" class="composer-lock hidden"></p>
         <div class="composer-main composer-box">
           <div id="thread-mount" class="composer-editor"></div>
           <div class="composer-bar">

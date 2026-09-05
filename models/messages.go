@@ -102,15 +102,17 @@ func (s *Store) CreateMessage(ctx context.Context, p CreateMessageParams) (Messa
 
 	// archived check inside the tx so a concurrent archive can't race past
 	// the handler's pre-check; FOR SHARE blocks the archiver until we commit
-	var archived bool
+	var archived, chExpired, roomExpired bool
 	err = tx.QueryRow(ctx,
-		`SELECT archived FROM channels WHERE id = $1 AND room_id = $2 FOR SHARE`,
-		p.ChannelID, p.RoomID).Scan(&archived)
+		`SELECT c.archived, `+channelExpiredSQL+`, `+roomExpiredSQL+`
+		 FROM channels c JOIN rooms r ON r.id = c.room_id
+		 WHERE c.id = $1 AND c.room_id = $2 FOR SHARE OF c`,
+		p.ChannelID, p.RoomID).Scan(&archived, &chExpired, &roomExpired)
 	if err != nil {
 		return Message{}, mapRowErr(err)
 	}
-	if archived {
-		return Message{}, ErrArchived
+	if err := writableErr(archived, chExpired, roomExpired); err != nil {
+		return Message{}, err
 	}
 
 	// system timeline entries take no replies
@@ -312,16 +314,17 @@ func collectMessages(rows pgx.Rows) ([]Message, error) {
 // caller's tx commits, closing the same race CreateMessage guards. Returns
 // ErrNotFound when the message does not exist, ErrArchived when it is read-only.
 func assertChannelWritable(ctx context.Context, tx pgx.Tx, roomID, messageID string) error {
-	var archived bool
+	var archived, chExpired, roomExpired bool
 	err := tx.QueryRow(ctx,
-		`SELECT c.archived FROM messages m JOIN channels c ON c.id = m.channel_id
+		`SELECT c.archived, `+channelExpiredSQL+`, `+roomExpiredSQL+`
+		 FROM messages m JOIN channels c ON c.id = m.channel_id JOIN rooms r ON r.id = c.room_id
 		 WHERE m.id = $1 AND m.room_id = $2 FOR SHARE OF c`,
-		messageID, roomID).Scan(&archived)
+		messageID, roomID).Scan(&archived, &chExpired, &roomExpired)
 	if err != nil {
 		return mapRowErr(err)
 	}
-	if archived {
-		return ErrArchived
+	if err := writableErr(archived, chExpired, roomExpired); err != nil {
+		return err
 	}
 	return nil
 }

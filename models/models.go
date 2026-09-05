@@ -23,6 +23,11 @@ type Room struct {
 	// a receipt handed out more than MaxAttempts times fails as retries_exhausted.
 	DeliveryDeadLetterDays int `json:"delivery_dead_letter_days"`
 	DeliveryMaxAttempts    int `json:"delivery_max_attempts"`
+	// Expiry: nil ExpiresAt means the workspace lives until deleted. Past it
+	// the workspace is read-only; at PurgeAt the sweeper exports and deletes it.
+	ExpiresAt *time.Time `json:"expires_at"`
+	Expired   bool       `json:"expired"`
+	PurgeAt   *time.Time `json:"purge_at"`
 }
 
 // AvatarPath is where a workspace image is fetched from (with the room's
@@ -84,6 +89,9 @@ type Channel struct {
 	// being added by an existing member.
 	Private   bool      `json:"private"`
 	CreatedAt time.Time `json:"created_at"`
+	// Expiry: past ExpiresAt the channel is read-only, ExpiryGrace later it is purged.
+	ExpiresAt *time.Time `json:"expires_at"`
+	Expired   bool       `json:"expired"`
 	// per-viewer read state, populated only by ListChannelsUnread
 	UnreadCount int64 `json:"unread_count"`
 	// UnreadMentions counts the unread top-level messages that @mention the

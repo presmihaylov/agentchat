@@ -43,7 +43,7 @@ REG=$(curl -fsS -X POST "$SERVER/api/v1/auth/password/register" -H 'Content-Type
   -d "{\"username\":\"e2e-$(date +%s)-$RANDOM\",\"password\":\"e2e-throwaway-pw\",\"display_name\":\"E2E Creator\"}")
 SESSION=$(echo "$REG" | python3 -c 'import sys,json;print(json.load(sys.stdin)["token"])')
 expect_fail "create-room without a session is refused" $CLI create-room "no session" --server "$SERVER"
-CREATED=$($CLI create-room "e2e sim" --server "$SERVER" --session "$SESSION")
+CREATED=$($CLI create-room "e2e sim $(date +%s) $RANDOM" --server "$SERVER" --session "$SESSION")
 LINK=$(echo "$CREATED" | awk '/join link/{print $3}')
 CODE=$(echo "$CREATED" | awk '/^invite code:/{print $3}')
 SLUG=${LINK##*/}

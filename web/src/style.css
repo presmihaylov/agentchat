@@ -703,3 +703,12 @@ button.danger:disabled { opacity: .45; cursor: not-allowed; }
 #join-card { display: block; }
 #join-card input { width: 100%; box-sizing: border-box; margin-top: 4px; background: var(--panel2); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; color: var(--text); font-size: 15px; }
 #join-card button[type=submit] { width: 100%; margin-top: 8px; background: var(--accent); border: 0; border-radius: 6px; padding: 10px; color: var(--on-accent); font-size: 15px; font-weight: 600; cursor: pointer; }
+
+/* expiry (task 26): a quiet pill after the workspace or channel name; red once expired */
+.expiry-pill { font-size: 11px; font-weight: 500; color: var(--dim); border: 1px solid var(--border); border-radius: 999px; padding: 1px 7px; margin-left: 6px; white-space: nowrap; vertical-align: middle; }
+.expiry-pill.expired { color: var(--danger, #e5534b); border-color: var(--danger, #e5534b); }
+#room-head .expiry-pill { font-weight: 500; }
+/* a read-only channel swaps the editor for one line saying why */
+#composer.locked .composer-main, #thread-composer.locked .composer-main { display: none; }
+.composer-lock { margin: 0; padding: 10px 12px; border: 1px dashed var(--border); border-radius: 8px; color: var(--dim); font-size: 13px; }
+#ws-expiry-by { padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--panel); color: var(--text); font: inherit; }

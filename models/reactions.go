@@ -62,6 +62,9 @@ func (s *Store) SetReaction(ctx context.Context, roomID, messageID, participantI
 	if err := lockRoomEvents(ctx, tx, roomID); err != nil {
 		return ReactionEvent{}, err
 	}
+	if err := assertNotExpiredTx(ctx, tx, roomID, messageID); err != nil {
+		return ReactionEvent{}, err
+	}
 	ev := ReactionEvent{MessageID: messageID, Emoji: emoji, ParticipantID: participantID, Added: added}
 	err = tx.QueryRow(ctx,
 		`SELECT m.channel_id, m.thread_root_id, m.author_id, a.name
@@ -129,6 +132,9 @@ func (s *Store) ReplaceReactions(ctx context.Context, roomID, messageID, partici
 	defer tx.Rollback(ctx)
 
 	if err := lockRoomEvents(ctx, tx, roomID); err != nil {
+		return nil, err
+	}
+	if err := assertNotExpiredTx(ctx, tx, roomID, messageID); err != nil {
 		return nil, err
 	}
 	base := ReactionEvent{MessageID: messageID, ParticipantID: participantID}
