@@ -21,6 +21,9 @@ func requireAdmin(w http.ResponseWriter, p models.Participant) bool {
 
 type renameRoomReq struct {
 	Name string `json:"name"`
+	// delivery policy (task 25); either may come alone, without a rename
+	DeliveryDeadLetterDays *int `json:"delivery_dead_letter_days"`
+	DeliveryMaxAttempts    *int `json:"delivery_max_attempts"`
 }
 
 func (s *Server) handleRenameRoom(w http.ResponseWriter, r *http.Request, p models.Participant) {
@@ -32,14 +35,46 @@ func (s *Server) handleRenameRoom(w http.ResponseWriter, r *http.Request, p mode
 		return
 	}
 	req.Name = strings.TrimSpace(req.Name)
-	if req.Name == "" || len(req.Name) > 100 {
+	policy := req.DeliveryDeadLetterDays != nil || req.DeliveryMaxAttempts != nil
+	if req.Name == "" && !policy {
 		writeErr(w, http.StatusBadRequest, "name must be 1-100 characters")
 		return
 	}
-	room, err := s.store.RenameRoom(r.Context(), p.RoomID, req.Name, p.ID)
-	if err != nil {
-		writeStoreErr(w, err)
+	if req.Name != "" && len(req.Name) > 100 {
+		writeErr(w, http.StatusBadRequest, "name must be 1-100 characters")
 		return
+	}
+	var room models.Room
+	var err error
+	if policy {
+		room, err = s.store.RoomByID(r.Context(), p.RoomID)
+		if err != nil {
+			writeStoreErr(w, err)
+			return
+		}
+		days, attempts := room.DeliveryDeadLetterDays, room.DeliveryMaxAttempts
+		if req.DeliveryDeadLetterDays != nil {
+			days = *req.DeliveryDeadLetterDays
+		}
+		if req.DeliveryMaxAttempts != nil {
+			attempts = *req.DeliveryMaxAttempts
+		}
+		if days < 1 || days > 365 || attempts < 1 || attempts > 100 {
+			writeErr(w, http.StatusBadRequest, "delivery_dead_letter_days must be 1-365 and delivery_max_attempts 1-100")
+			return
+		}
+		room, err = s.store.SetDeliveryPolicy(r.Context(), p.RoomID, days, attempts)
+		if err != nil {
+			writeStoreErr(w, err)
+			return
+		}
+	}
+	if req.Name != "" {
+		room, err = s.store.RenameRoom(r.Context(), p.RoomID, req.Name, p.ID)
+		if err != nil {
+			writeStoreErr(w, err)
+			return
+		}
 	}
 	writeJSON(w, http.StatusOK, room)
 }

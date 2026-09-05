@@ -200,6 +200,9 @@ func run() error {
 				if _, err := store.SweepPresence(ctx); err != nil {
 					slog.Error("presence sweep failed", "err", err)
 				}
+				if _, err := store.SweepDeliveries(ctx); err != nil {
+					slog.Error("delivery sweep failed", "err", err)
+				}
 			}
 		}
 	}()

@@ -1061,7 +1061,28 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
     $('profile-desc').innerHTML = p.description ? linkify(p.description) : 'No description.';
     const tags = (p.tags || []).map((t) => t.tag).join(', ');
     $('profile-tags').textContent = tags ? 'Tags: ' + tags : '';
+    showDelivery(p);
     $('profile-modal').classList.remove('hidden');
+  };
+
+  // Delivery receipts (task 25): an agent's owner, an admin, or the agent
+  // itself sees how its addressed events fared; everyone else sees nothing.
+  const showDelivery = (p) => {
+    const row = $('profile-delivery');
+    row.classList.add('hidden');
+    row.textContent = '';
+    const canSee = me && !p.is_human && (me.role === 'admin' || p.owner_id === me.id || p.id === me.id);
+    if (!canSee) return;
+    api('/api/v1/participants/' + encodeURIComponent(p.id) + '/delivery').then((st) => {
+      // each row sits in exactly one state, so "awaiting ack" is delivered-but-unacked
+      const parts = [st.acked + ' acked', st.delivered + ' awaiting ack', st.deferred + ' deferred', st.failed + ' failed'];
+      if (st.accepted) parts.push(st.accepted + ' queued');
+      let text = 'Delivery: ' + parts.join(' · ');
+      if (st.oldest_unacked_at) text += ' · oldest unacked ' + fmtLastReply(st.oldest_unacked_at);
+      row.textContent = text;
+      row.title = 'accepted → delivered → acked; deferred while offline; failed once retries ran out or the dead-letter age passed';
+      row.classList.remove('hidden');
+    }).catch(() => {});
   };
 
   // leaf=true renders the row as an owned-agent child (indented). Under its

@@ -417,7 +417,7 @@ func scratchDB(t *testing.T) string {
 func TestMigrateTo(t *testing.T) {
 	ctx := context.Background()
 	dbURL := scratchDB(t)
-	const latest = 28
+	const latest = 29
 	// 000024 created users; rolling to the version before it drops the table
 	const beforeUsers = 23
 

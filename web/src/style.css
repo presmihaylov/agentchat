@@ -148,6 +148,7 @@ body.has-banner.has-header .auth-view, body.has-banner.has-header #create-view, 
 #profile-avatar { font-size: 48px; }
 #profile-card h3 { margin: 8px 0 2px; font-size: 18px; }
 #profile-meta { margin: 0 0 12px; color: var(--dim); font-size: 12px; }
+#profile-delivery { margin: -6px 0 12px; color: var(--dim); font-size: 12px; }
 #profile-desc { margin: 0 0 8px; font-size: 14px; overflow-wrap: break-word; }
 #profile-tags { margin: 0; color: var(--dim); font-size: 12px; }
 #profile-actions { display: flex; gap: 8px; align-items: center; flex: none; }

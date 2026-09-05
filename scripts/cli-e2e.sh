@@ -258,4 +258,19 @@ df=$(cat "$WORK/report.md" | "${A[@]}" reply "$bfroot" -); df=${df#posted }
 "${A[@]}" reply "$bfroot" --body-file "$WORK/missing.md" 2>/dev/null && fail "a missing --body-file must exit non-zero"
 ok "--body-file and stdin bodies"
 
+# 13. inbox drain and ack (task 25): bob goes offline, misses a mention, drains it, acks it.
+# Earlier steps left bob unacked rows too, so the counts are relative.
+unacked() { "${B[@]}" inbox --peek | sed -n 's/^\([0-9]*\) unacked.*/\1/p'; }
+before=$(unacked)
+curl -fsS -X POST "$SERVER/api/v1/me/offline" -H "Authorization: Bearer $bob" >/dev/null
+"${A[@]}" send general "@bob inbox test" --new-topic >/dev/null
+[ "$(unacked)" = "$((before + 1))" ] || fail "peek should show $((before + 1)) unacked, got $(unacked)"
+iseq=$("${B[@]}" inbox --peek --json | jq_ '[e["seq"] for e in d["events"] if e["payload"]["body"] == "@bob inbox test"][0]')
+[ -n "$iseq" ] || fail "inbox --json gave no seq"
+[ "$(unacked)" = "$((before + 1))" ] || fail "peek must not mark anything"
+"${B[@]}" inbox | grep -q "seq $iseq" || fail "inbox drain did not print seq $iseq"
+"${B[@]}" ack "$iseq" | grep -q "acked $iseq" || fail "ack did not confirm"
+[ "$(unacked)" = "$before" ] || fail "peek should show $before unacked after the ack, got $(unacked)"
+ok "inbox drain and ack"
+
 echo CLI_E2E_OK

@@ -19,6 +19,10 @@ type Room struct {
 	AvatarURL          string  `json:"avatar_url,omitempty"`
 	// Color is a hue slot 0-11 picked at create time, stable for the room's life.
 	Color int16 `json:"color"`
+	// Delivery policy: an unacked receipt dead-letters after this many days, and
+	// a receipt handed out more than MaxAttempts times fails as retries_exhausted.
+	DeliveryDeadLetterDays int `json:"delivery_dead_letter_days"`
+	DeliveryMaxAttempts    int `json:"delivery_max_attempts"`
 }
 
 // AvatarPath is where a workspace image is fetched from (with the room's

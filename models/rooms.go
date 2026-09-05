@@ -8,11 +8,11 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-const roomColumns = `id, slug, secret, name, created_by_user_id, created_at, avatar_attachment_id, color`
+const roomColumns = `id, slug, secret, name, created_by_user_id, created_at, avatar_attachment_id, color, delivery_dead_letter_days, delivery_max_attempts`
 
 // roomDest pairs roomColumns for Scan.
 func roomDest(r *Room) []any {
-	return []any{&r.ID, &r.Slug, &r.Secret, &r.Name, &r.CreatedByUserID, &r.CreatedAt, &r.AvatarAttachmentID, &r.Color}
+	return []any{&r.ID, &r.Slug, &r.Secret, &r.Name, &r.CreatedByUserID, &r.CreatedAt, &r.AvatarAttachmentID, &r.Color, &r.DeliveryDeadLetterDays, &r.DeliveryMaxAttempts}
 }
 
 // scanRoom fills r from a roomColumns row and derives the avatar URL.

@@ -214,7 +214,11 @@ func (s *Store) CreateMessage(ctx context.Context, p CreateMessageParams) (Messa
 	if err != nil {
 		return Message{}, err
 	}
-	if err := appendEventTx(ctx, tx, p.RoomID, "message.created", payload); err != nil {
+	seq, err := appendEventSeqTx(ctx, tx, p.RoomID, "message.created", payload)
+	if err != nil {
+		return Message{}, err
+	}
+	if err := createDeliveriesTx(ctx, tx, p, seq); err != nil {
 		return Message{}, err
 	}
 	return msg, tx.Commit(ctx)

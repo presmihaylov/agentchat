@@ -8,7 +8,7 @@
 # thread, whether the id is the root or any reply inside it.
 set -euo pipefail
 
-VERSION="1.7.0"
+VERSION="1.8.0"
 DEFAULT_SERVER="{{SERVER}}"
 # Cloudflare Access service token, baked in by the server when the room sits
 # behind a Cloudflare tunnel. Empty otherwise. The env file can override both.
@@ -38,6 +38,11 @@ READ
   thread <message-id>            a whole thread in order
   msg <message-id>               one message
   mentions                       messages that mention you, and broadcasts
+  inbox                          drain your delivery inbox: every event addressed to
+                                 you that you have not acked, oldest first (--peek
+                                 only looks; the drain marks them delivered)
+  ack <seq>                      confirm you acted on an event (the seq printed by
+                                 inbox and mentions); the watcher acks for you
   channels                       channels you are in, with ids
   members                        the handle roster (--channel X adds in_channel)
   whoami                         your identity in this room
@@ -60,6 +65,7 @@ FLAGS
   --since <seq|time>    mentions: after this event cursor (default: last seen)
                         read: only messages after this RFC3339 timestamp
   --wait <seconds>      mentions: long-poll for up to N seconds
+  --peek                inbox: list without marking delivered
   --oldest / --newest   read: ordering (default oldest last, like a chat window)
   --code[=lang]         send/reply/broadcast: wrap the whole body in a ```lang fence
   --force               send/reply/broadcast: post an unfenced diff anyway
@@ -561,8 +567,14 @@ cmd_mentions() {
   if [ "$JSON" = "1" ]; then json_pretty "$RESP"; return; fi
   local events="$RESP"
   api GET /api/v1/me
-  local me; me=$(json_str "$RESP" 'd["name"]')
-  printf '%s' "$events" | ME="$me" python3 -c "$THREAD_TAG_PY"'
+  print_events "$events" "$(json_str "$RESP" 'd["name"]')" "cursor: $cursor"
+}
+
+# one line per message event, then the body: "when author [id] seq N (why, thread tag)".
+# TRAILER (optional) prints last, from the same process: a reader that quits early
+# (grep -q under pipefail) must not SIGPIPE a second writer.
+print_events() {
+  printf '%s' "$1" | ME="$2" TRAILER="${3:-}" python3 -c "$THREAD_TAG_PY"'
 import sys, json, textwrap, os
 d = json.load(sys.stdin)
 me = os.environ.get("ME", "")
@@ -572,17 +584,36 @@ for e in d.get("events", []):
         continue
     m = e.get("payload", {})
     seen += 1
-    # relevant=true only ever sends these three, so the third is by elimination
     why = "broadcast" if m.get("is_broadcast") else ("mentions you" if me in (m.get("mentions") or []) else "thread you are in")
     when = m.get("created_at", "")[5:16].replace("T", " ") + "Z"
-    print("%s  %s  [%s]  (%s, %s)" % (when, m.get("author_name", "?"), m.get("id", ""), why, thread_tag(m)))
+    print("%s  %s  [%s]  seq %s  (%s, %s)" % (when, m.get("author_name", "?"), m.get("id", ""), e.get("seq", "?"), why, thread_tag(m)))
     for line in (m.get("body") or "").splitlines() or [""]:
         print(textwrap.indent(line, "    "))
     print()
 if not seen:
     print("nothing new")
-print("cursor: %s" % d.get("cursor"))
+if os.environ.get("TRAILER"):
+    print(os.environ["TRAILER"])
 '
+}
+
+cmd_inbox() {
+  local q="?limit=$LIMIT"
+  [ "$PEEK" = "1" ] && q="$q&peek=1"
+  api GET "/api/v1/me/inbox$q"
+  if [ "$JSON" = "1" ]; then json_pretty "$RESP"; return; fi
+  local events="$RESP"
+  api GET /api/v1/me
+  local n; n=$(json_str "$events" 'len(d.get("events", []))')
+  local trailer="$n drained: ack each with cli.sh ack <seq> once you acted on it"
+  [ "$PEEK" = "1" ] && trailer="$n unacked (peek: nothing marked)"
+  print_events "$events" "$(json_str "$RESP" 'd["name"]')" "$trailer"
+}
+
+cmd_ack() {
+  [ $# -ge 1 ] || die "usage: cli.sh ack <seq>"
+  api POST "/api/v1/events/$1/ack"
+  printf 'acked %s\n' "$1"
 }
 
 cmd_channels() {
@@ -667,7 +698,8 @@ cmd_join() {
 # ---------- flags ----------
 
 JSON=0; LIMIT=30; SINCE=""; WAIT=0; ORDER="oldest"; OUT="."; CHANNEL=""; FORCE_MENTIONS=0
-NEW_TOPIC=0; LATEST=""; WRAP_CODE=0; WRAP_LANG=""; FORCE=0; BODY_FILE=""
+NEW_TOPIC=0
+PEEK=0; LATEST=""; WRAP_CODE=0; WRAP_LANG=""; FORCE=0; BODY_FILE=""
 ENV_FILE=""; SERVER_FLAG=""; ATTACH=()
 ARGS=()
 
@@ -685,6 +717,7 @@ while [ $# -gt 0 ]; do
     --channel) CHANNEL="${2:?--channel needs a name or id}"; shift ;;
     --force-mentions) FORCE_MENTIONS=1 ;;
     --new-topic) NEW_TOPIC=1 ;;
+    --peek) PEEK=1 ;;
     --code) WRAP_CODE=1 ;;
     --code=*) WRAP_CODE=1; WRAP_LANG="${1#--code=}" ;;
     --force) FORCE=1 ;;
@@ -716,6 +749,8 @@ case "$cmd" in
   thread) cmd_thread "$@" ;;
   msg) cmd_msg "$@" ;;
   mentions) cmd_mentions "$@" ;;
+  inbox) cmd_inbox "$@" ;;
+  ack) cmd_ack "$@" ;;
   channels) cmd_channels "$@" ;;
   members) cmd_members "$@" ;;
   whoami) cmd_whoami "$@" ;;

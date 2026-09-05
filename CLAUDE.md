@@ -68,6 +68,7 @@ node scripts/switcher-check.js             # SWITCHER_CHECK_OK (same)
 node scripts/composer-check.js             # COMPOSER_CHECK_OK
 node scripts/chanrename-check.js           # CHANRENAME_CHECK_OK
 node scripts/boot-check.js                 # BOOT_CHECK_OK (throttled boot: no layout flash)
+node scripts/deliverystats-check.js        # DELIVERYSTATS_CHECK_OK (profile delivery row, task 25)
 ```
 
 ## Conventions

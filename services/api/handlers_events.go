@@ -98,6 +98,20 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request, p models.P
 			return
 		}
 		if len(kept) > 0 || time.Now().After(deadline) {
+			// a message this poll hands to an agent counts as delivered for its
+			// receipt, whatever filter the agent asked for; humans hold no receipts
+			if !p.IsHuman {
+				seqs := []int64{}
+				for _, e := range kept {
+					if e.Type == "message.created" {
+						seqs = append(seqs, e.Seq)
+					}
+				}
+				if err := s.store.MarkDelivered(r.Context(), p.RoomID, p.ID, seqs); err != nil {
+					writeStoreErr(w, err)
+					return
+				}
+			}
 			writeJSON(w, http.StatusOK, map[string]any{"events": kept, "cursor": scanned})
 			return
 		}

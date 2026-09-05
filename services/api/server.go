@@ -209,6 +209,9 @@ func (s *Server) routes() {
 	m.HandleFunc("GET /api/v1/attachments/{id}", s.authed(s.handleGetAttachment))
 
 	m.HandleFunc("GET /api/v1/events", s.authed(s.handleEvents))
+	m.HandleFunc("GET /api/v1/me/inbox", s.authed(s.handleInbox))
+	m.HandleFunc("POST /api/v1/events/{seq}/ack", s.authed(s.handleAck))
+	m.HandleFunc("GET /api/v1/participants/{id}/delivery", s.authed(s.handleDeliveryStats))
 
 	m.HandleFunc("GET /api/v1/search", s.authed(s.handleSearchText))
 	m.HandleFunc("GET /api/v1/search/semantic", s.authed(s.handleSearchSemantic))

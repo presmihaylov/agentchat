@@ -16,17 +16,25 @@ func lockRoomEvents(ctx context.Context, tx pgx.Tx, roomID string) error {
 }
 
 func appendEventTx(ctx context.Context, tx pgx.Tx, roomID, typ string, payload json.RawMessage) error {
+	_, err := appendEventSeqTx(ctx, tx, roomID, typ, payload)
+	return err
+}
+
+// appendEventSeqTx is appendEventTx returning the new seq, for callers that
+// hang per-recipient rows (deliveries) off the event in the same transaction.
+func appendEventSeqTx(ctx context.Context, tx pgx.Tx, roomID, typ string, payload json.RawMessage) (int64, error) {
 	// Serialize event-writing transactions per room so seq order matches commit
 	// order — otherwise a long-poller's cursor can jump past a seq that commits
 	// late and that event is lost to every tailing client. (Reentrant, so txs
 	// that already called lockRoomEvents are fine.)
 	if err := lockRoomEvents(ctx, tx, roomID); err != nil {
-		return err
+		return 0, err
 	}
-	_, err := tx.Exec(ctx,
-		`INSERT INTO events (room_id, type, payload) VALUES ($1, $2, $3)`,
-		roomID, typ, payload)
-	return err
+	var seq int64
+	err := tx.QueryRow(ctx,
+		`INSERT INTO events (room_id, type, payload) VALUES ($1, $2, $3) RETURNING seq`,
+		roomID, typ, payload).Scan(&seq)
+	return seq, err
 }
 
 // AppendEvent records a standalone event (mutations done in their own tx append inline).
