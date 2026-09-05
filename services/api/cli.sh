@@ -611,6 +611,12 @@ cmd_mentions() {
 print_events() {
   printf '%s' "$1" | ME="$2" TRAILER="${3:-}" python3 -c "$THREAD_TAG_PY"'
 import sys, json, textwrap, os
+def utc(v):
+    from datetime import datetime, timezone
+    try:
+        return datetime.fromisoformat(v.replace("Z", "+00:00")).astimezone(timezone.utc).strftime("%Y-%m-%d %H:%MZ")
+    except ValueError:
+        return v[:16].replace("T", " ")
 d = json.load(sys.stdin)
 me = os.environ.get("ME", "")
 seen = 0
@@ -620,7 +626,7 @@ for e in d.get("events", []):
         seen += 1
         when = (m.get("fired_at") or "")[5:16].replace("T", " ") + "Z"
         nxt = m.get("next_fire_at")
-        tail = "next %s" % nxt[:16].replace("T", " ") + "Z" if nxt else "one-time, done"
+        tail = "next %s" % utc(nxt) if nxt else "one-time, done"
         print("%s  REMINDER  [%s]  seq %s  (%s, %s)" % (when, m.get("reminder_id", ""), e.get("seq", "?"), m.get("schedule", ""), tail))
         for line in (m.get("text") or "").splitlines() or [""]:
             print(textwrap.indent(line, "    "))
@@ -774,11 +780,17 @@ cmd_join() {
 print_reminders() {
   printf '%s' "$1" | python3 -c '
 import json, sys
+def utc(v):
+    from datetime import datetime, timezone
+    try:
+        return datetime.fromisoformat(v.replace("Z", "+00:00")).astimezone(timezone.utc).strftime("%Y-%m-%d %H:%MZ")
+    except ValueError:
+        return v[:16].replace("T", " ")
 d = json.load(sys.stdin)
 rs = d.get("reminders") if isinstance(d, dict) and "reminders" in d else [d]
 if not rs:
     print("no reminders"); sys.exit(0)
-def ts(v): return (v or "")[:16].replace("T", " ") + ("Z" if v else "")
+def ts(v): return utc(v) if v else ""
 for r in rs:
     nxt = ts(r.get("next_fire_at")) if r.get("next_fire_at") else "done"
     last = ts(r.get("last_fired_at")) if r.get("last_fired_at") else "never"
