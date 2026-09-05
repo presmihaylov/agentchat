@@ -107,7 +107,7 @@ const menuSlugs = (page) => page.$$eval('#ws-menu a.ws-item', (els) => els.map((
   if (!pageA.url().startsWith(SERVER + '/w/' + slug1)) throw new Error('switch landed on ' + pageA.url());
   await pageA.waitForFunction(() => document.querySelector('#ws-current').textContent === 'ws zulu', { timeout: 8000 });
   await visible(pageA, '#ws-switcher-wrap');
-  if (!await hiddenNow(pageA, '#room-name')) throw new Error('plain room name shown next to the switcher');
+  if (!await hiddenNow(pageA, '#room-head')) throw new Error('plain room name shown next to the switcher');
   await shot(pageA, 'switched.png');
 
   // B creates ws three (with a name long enough to overflow the sidebar); A
@@ -132,7 +132,7 @@ const menuSlugs = (page) => page.$$eval('#ws-menu a.ws-item', (els) => els.map((
   // sidebar, which would scroll sideways and clip it
   const fit = await pageA.evaluate(() => {
     const sb = document.querySelector('#sidebar');
-    const cur = document.querySelector('#ws-menu .ws-item.current');
+    const cur = document.querySelector('#ws-menu .ws-item.current .ws-label');
     return { sbScroll: sb.scrollWidth, sbClient: sb.clientWidth, sbRight: sb.getBoundingClientRect().right, menuRight: document.querySelector('#ws-menu').getBoundingClientRect().right, curOverflow: cur.scrollWidth > cur.clientWidth };
   });
   if (fit.sbScroll > fit.sbClient || fit.menuRight > fit.sbRight) throw new Error('menu overflows the sidebar: ' + JSON.stringify(fit));

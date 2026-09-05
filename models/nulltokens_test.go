@@ -31,10 +31,7 @@ func TestNullHumanTokens(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	room, err := s.CreateRoom(ctx, "r", "r-slug", secrets.InviteCode())
-	if err != nil {
-		t.Fatal(err)
-	}
+	room := legacyRoom(t, s, "r", "r-slug")
 	hashes := map[string][]byte{}
 	mk := func(name string, human bool, userID *string) Participant {
 		_, hash := secrets.NewToken()

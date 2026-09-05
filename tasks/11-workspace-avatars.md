@@ -1,6 +1,6 @@
 # 11 Workspace avatars
 
-Status: todo
+Status: in-progress
 
 Maya via Chief, root 948f9802.
 

@@ -76,11 +76,11 @@ func (s *Store) CreateRoomAs(ctx context.Context, name, slug, secret string, cre
 		return r, p, ErrRoomQuota
 	}
 
-	err = tx.QueryRow(ctx,
-		`INSERT INTO rooms (name, slug, secret, created_by_user_id) VALUES ($1, $2, $3, $4)
+	err = scanRoom(tx.QueryRow(ctx,
+		`INSERT INTO rooms (name, slug, secret, created_by_user_id, color) VALUES ($1, $2, $3, $4, floor(random() * $5))
 		 RETURNING `+roomColumns,
-		name, slug, secret, creator.ID,
-	).Scan(&r.ID, &r.Slug, &r.Secret, &r.Name, &r.CreatedByUserID, &r.CreatedAt)
+		name, slug, secret, creator.ID, RoomColorSlots,
+	), &r)
 	if err != nil {
 		if isUniqueViolation(err) {
 			return r, p, ErrConflict
@@ -238,18 +238,21 @@ func (s *Store) SessionScope(ctx context.Context, tokenHash []byte, slug string,
 
 // UserRoom is one switcher entry: a room the user is a live participant of.
 type UserRoom struct {
-	ID       string    `json:"id"`
-	Slug     string    `json:"slug"`
-	Name     string    `json:"name"`
-	Role     string    `json:"role"`
-	JoinedAt time.Time `json:"joined_at"`
+	ID                 string    `json:"id"`
+	Slug               string    `json:"slug"`
+	Name               string    `json:"name"`
+	Role               string    `json:"role"`
+	JoinedAt           time.Time `json:"joined_at"`
+	AvatarAttachmentID *string   `json:"avatar_attachment_id,omitempty"`
+	AvatarURL          string    `json:"avatar_url,omitempty"`
+	Color              int16     `json:"color"`
 }
 
 // RoomsByUser lists the rooms the user still has a live row in, oldest
 // membership first. Revoked rows do not count.
 func (s *Store) RoomsByUser(ctx context.Context, userID string) ([]UserRoom, error) {
 	rows, err := s.pool.Query(ctx,
-		`SELECT r.id, r.slug, r.name, p.role, p.created_at
+		`SELECT r.id, r.slug, r.name, p.role, p.created_at, r.avatar_attachment_id, r.color
 		 FROM participants p JOIN rooms r ON r.id = p.room_id
 		 WHERE p.user_id = $1 AND NOT p.revoked
 		 ORDER BY p.created_at, r.id`, userID)
@@ -260,9 +263,10 @@ func (s *Store) RoomsByUser(ctx context.Context, userID string) ([]UserRoom, err
 	out := []UserRoom{}
 	for rows.Next() {
 		var ur UserRoom
-		if err := rows.Scan(&ur.ID, &ur.Slug, &ur.Name, &ur.Role, &ur.JoinedAt); err != nil {
+		if err := rows.Scan(&ur.ID, &ur.Slug, &ur.Name, &ur.Role, &ur.JoinedAt, &ur.AvatarAttachmentID, &ur.Color); err != nil {
 			return nil, err
 		}
+		ur.AvatarURL = AvatarPath(ur.AvatarAttachmentID)
 		out = append(out, ur)
 	}
 	return out, rows.Err()

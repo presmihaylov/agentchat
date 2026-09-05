@@ -14,7 +14,24 @@ type Room struct {
 	// CreatedByUserID is the workspace creator; NULL for legacy and agent-only rooms.
 	CreatedByUserID *string   `json:"created_by_user_id,omitempty"`
 	CreatedAt       time.Time `json:"created_at"`
+	// AvatarAttachmentID is the uploaded workspace image; nil means initials on Color.
+	AvatarAttachmentID *string `json:"avatar_attachment_id,omitempty"`
+	AvatarURL          string  `json:"avatar_url,omitempty"`
+	// Color is a hue slot 0-11 picked at create time, stable for the room's life.
+	Color int16 `json:"color"`
 }
+
+// AvatarPath is where a workspace image is fetched from (with the room's
+// participant credentials), or "" when the room shows initials.
+func AvatarPath(attachmentID *string) string {
+	if attachmentID == nil {
+		return ""
+	}
+	return "/api/v1/attachments/" + *attachmentID
+}
+
+// RoomColorSlots is how many hues the initials fallback cycles through.
+const RoomColorSlots = 12
 
 type Tag struct {
 	Tag      string  `json:"tag"`

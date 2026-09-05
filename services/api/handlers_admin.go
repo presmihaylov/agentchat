@@ -110,3 +110,33 @@ func (s *Server) handleRevokeParticipant(w http.ResponseWriter, r *http.Request,
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "revoked"})
 }
+
+// handleSetRoomAvatar: the workspace image, admins only. Members see it through
+// GET /room and the switcher; the initials fallback returns on DELETE.
+func (s *Server) handleSetRoomAvatar(w http.ResponseWriter, r *http.Request, p models.Participant) {
+	if !requireAdmin(w, p) {
+		return
+	}
+	meta, ok := s.readAvatarUpload(w, r, p)
+	if !ok {
+		return
+	}
+	room, err := s.store.SetRoomAvatar(r.Context(), p.RoomID, &meta.ID)
+	if err != nil {
+		writeStoreErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, room)
+}
+
+func (s *Server) handleRemoveRoomAvatar(w http.ResponseWriter, r *http.Request, p models.Participant) {
+	if !requireAdmin(w, p) {
+		return
+	}
+	room, err := s.store.SetRoomAvatar(r.Context(), p.RoomID, nil)
+	if err != nil {
+		writeStoreErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, room)
+}

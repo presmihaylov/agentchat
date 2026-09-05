@@ -147,8 +147,6 @@ body.has-banner.has-header .auth-view, body.has-banner.has-header #create-view, 
 /* a muted channel stays dark on unread (mentions still glow); the bell says it will not ping */
 #channel-list li.muted { opacity: .7; }
 #channel-list li.muted::after { content: '🔕'; font-size: 10px; margin-left: auto; opacity: .7; }
-.upload-btn, #avatar-remove { background: none; border: 1px solid var(--border); color: var(--dim); border-radius: 6px; font-size: 12px; padding: 5px 10px; cursor: pointer; }
-.upload-btn:hover, #avatar-remove:hover { color: var(--text); }
 #sidebar li.archived { color: var(--dim); font-style: italic; }
 /* Unread with no @mention: bold + a soft accent glow on the name, no number. */
 #sidebar li.unread { font-weight: 700; color: var(--hot); text-shadow: 0 0 9px var(--glow); }
@@ -540,3 +538,23 @@ a.chanlink:hover { text-decoration: underline; }
 #ws-name:disabled { opacity: .7; }
 #open-settings { display: inline-flex; align-items: center; background: var(--panel2); border: 1px solid var(--border); color: var(--dim); border-radius: 6px; padding: 4px 8px; font-size: 12px; text-decoration: none; }
 #open-settings:hover { border-color: var(--accent); color: var(--text); }
+
+/* workspace mark: the uploaded logo, else initials on the workspace's colour
+   slot (12 hues, --ws-h). Initials come from data-initials so the mark adds
+   no text to the name beside it. */
+.ws-avatar { display: inline-flex; align-items: center; justify-content: center; flex: none; border-radius: 6px; overflow: hidden; background: hsl(var(--ws-h) 55% 42%); color: #fff; font-weight: 700; line-height: 1; vertical-align: middle; }
+.ws-avatar::before { content: attr(data-initials); }
+.ws-avatar.has-img::before { content: none; }
+.ws-avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.ws-avatar-sm { width: 22px; height: 22px; font-size: 10px; }
+.ws-avatar-md { width: 36px; height: 36px; font-size: 15px; border-radius: 8px; }
+.ws-avatar-lg { width: 96px; height: 96px; font-size: 40px; border-radius: 18px; }
+#ws-current-avatar, #room-avatar { display: inline-flex; flex: none; }
+#room-head { display: flex; align-items: center; gap: 8px; }
+#enter-room-icon { display: inline-flex; vertical-align: middle; }
+#ws-menu .ws-item { display: flex; align-items: center; gap: 8px; }
+#ws-menu .ws-item .ws-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#ws-avatar-row { display: flex; align-items: center; gap: 16px; margin-bottom: 14px; }
+#ws-avatar-actions { display: flex; gap: 8px; }
+.upload-btn, #avatar-remove, #ws-avatar-remove { background: none; border: 1px solid var(--border); color: var(--dim); border-radius: 6px; font-size: 12px; padding: 5px 10px; cursor: pointer; }
+.upload-btn:hover, #avatar-remove:hover, #ws-avatar-remove:hover { color: var(--text); }

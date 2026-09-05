@@ -46,13 +46,7 @@ func TestBackfillUsers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	mkRoomSlug := func(name, slug string) Room {
-		r, err := s.CreateRoom(ctx, name, slug, secrets.InviteCode())
-		if err != nil {
-			t.Fatal(err)
-		}
-		return r
-	}
+	mkRoomSlug := func(name, slug string) Room { return legacyRoom(t, s, name, slug) }
 	roomA, roomB, roomC := mkRoomSlug("alpha", "alpha-slug"), mkRoomSlug("beta", "beta-slug"), mkRoomSlug("gamma", "gamma-slug")
 	human := func(roomID, name string, userID *string) Participant {
 		_, hash := secrets.NewToken()

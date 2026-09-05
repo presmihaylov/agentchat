@@ -58,39 +58,8 @@ func (s *Server) handleUpdateMe(w http.ResponseWriter, r *http.Request, p models
 // handleSetAvatar uploads a profile image (stored like any attachment) and
 // points the caller's avatar at it. The emoji avatar stays as the fallback.
 func (s *Server) handleSetAvatar(w http.ResponseWriter, r *http.Request, p models.Participant) {
-	if !s.uploadLimit.Allow("up:" + p.ID) {
-		writeErr(w, http.StatusTooManyRequests, "too many uploads, slow down")
-		return
-	}
-	r.Body = http.MaxBytesReader(w, r.Body, maxAttachmentBytes+64*1024)
-	if err := r.ParseMultipartForm(maxAttachmentBytes); err != nil {
-		writeErr(w, http.StatusBadRequest, "invalid multipart form (5MB max): "+err.Error())
-		return
-	}
-	file, header, err := r.FormFile("file")
-	if err != nil {
-		writeErr(w, http.StatusBadRequest, `multipart field "file" is required`)
-		return
-	}
-	defer file.Close()
-	data, err := io.ReadAll(io.LimitReader(file, maxAttachmentBytes+1))
-	if err != nil || len(data) > maxAttachmentBytes {
-		writeErr(w, http.StatusRequestEntityTooLarge, "avatar image exceeds 5MB")
-		return
-	}
-	// sniff, don't trust the client header — avatars render as <img> for everyone
-	contentType := http.DetectContentType(data)
-	if !strings.HasPrefix(contentType, "image/") {
-		writeErr(w, http.StatusBadRequest, "avatar must be an image (png, jpeg, gif, webp)")
-		return
-	}
-	filename := header.Filename
-	if filename == "" {
-		filename = "avatar"
-	}
-	meta, err := s.store.CreateAttachment(r.Context(), p.RoomID, p.ID, filename, contentType, data)
-	if err != nil {
-		writeStoreErr(w, err)
+	meta, ok := s.readAvatarUpload(w, r, p)
+	if !ok {
 		return
 	}
 	me, err := s.store.SetAvatarAttachment(r.Context(), p.RoomID, p.ID, &meta.ID)
@@ -99,6 +68,48 @@ func (s *Server) handleSetAvatar(w http.ResponseWriter, r *http.Request, p model
 		return
 	}
 	writeJSON(w, http.StatusOK, me)
+}
+
+// readAvatarUpload stores the multipart "file" as an attachment when it is an
+// image under the size cap; on any failure the error is already written.
+func (s *Server) readAvatarUpload(w http.ResponseWriter, r *http.Request, p models.Participant) (models.AttachmentMeta, bool) {
+	var none models.AttachmentMeta
+	if !s.uploadLimit.Allow("up:" + p.ID) {
+		writeErr(w, http.StatusTooManyRequests, "too many uploads, slow down")
+		return none, false
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxAttachmentBytes+64*1024)
+	if err := r.ParseMultipartForm(maxAttachmentBytes); err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid multipart form (5MB max): "+err.Error())
+		return none, false
+	}
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, `multipart field "file" is required`)
+		return none, false
+	}
+	defer file.Close()
+	data, err := io.ReadAll(io.LimitReader(file, maxAttachmentBytes+1))
+	if err != nil || len(data) > maxAttachmentBytes {
+		writeErr(w, http.StatusRequestEntityTooLarge, "avatar image exceeds 5MB")
+		return none, false
+	}
+	// sniff, don't trust the client header — avatars render as <img> for everyone
+	contentType := http.DetectContentType(data)
+	if !strings.HasPrefix(contentType, "image/") {
+		writeErr(w, http.StatusBadRequest, "avatar must be an image (png, jpeg, gif, webp)")
+		return none, false
+	}
+	filename := header.Filename
+	if filename == "" {
+		filename = "avatar"
+	}
+	meta, err := s.store.CreateAttachment(r.Context(), p.RoomID, p.ID, filename, contentType, data)
+	if err != nil {
+		writeStoreErr(w, err)
+		return none, false
+	}
+	return meta, true
 }
 
 func (s *Server) handleRemoveAvatar(w http.ResponseWriter, r *http.Request, p models.Participant) {

@@ -50,6 +50,7 @@ node scripts/archive-check.js               # ARCHIVE_CHECK_OK
 node scripts/emoji-check.js                 # EMOJI_CHECK_OK
 node scripts/theme-check.js                 # THEME_CHECK_OK
 node scripts/settings-check.js              # SETTINGS_CHECK_OK (same)
+node scripts/wsavatar-check.js              # WSAVATAR_CHECK_OK
 node scripts/reactions-check.js             # REACTIONS_CHECK_OK
 node scripts/codeblock-check.js             # CODEBLOCK_CHECK_OK
 node scripts/docpreview-check.js           # DOCPREVIEW_CHECK_OK

@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"net/http"
 	"sort"
 	"strings"
 	"testing"
@@ -533,5 +534,83 @@ func TestLinkedHumanCarriesUsernameOnLists(t *testing.T) {
 	legacy := &testClient{t: t, base: srv.URL, token: tok}
 	if got := legacy.must("GET", "/api/v1/me", nil, 200); got["user_id"] != user["id"] || got["username"] != user["username"] {
 		t.Fatalf("/me over act_: %v", got)
+	}
+}
+
+// Task 11: a workspace has an image (admin-set) or initials on a stable colour.
+func TestRoomAvatar(t *testing.T) {
+	srv, _ := newTestServer(t)
+	creator, _, room := sessionRoom(t, srv.URL, "Acme Research")
+	member, _ := registerAs(t, srv.URL, "Mem")
+	member.slug = creator.slug
+	member.must("POST", "/api/v1/workspaces/"+creator.slug+"/enter", map[string]any{"invite_code": room["invite_code"]}, 200)
+
+	// every room has a colour slot from birth, and the switcher payload carries it
+	color, ok := room["color"].(float64)
+	if !ok || color < 0 || color >= models.RoomColorSlots {
+		t.Fatalf("room color: %v", room["color"])
+	}
+	wsList := func(c *testClient) map[string]any {
+		for _, raw := range c.must("GET", "/api/v1/user", nil, 200)["workspaces"].([]any) {
+			ws := raw.(map[string]any)
+			if ws["slug"] == creator.slug {
+				return ws
+			}
+		}
+		t.Fatalf("workspace %s missing from /user", creator.slug)
+		return nil
+	}
+	if ws := wsList(member); ws["color"] != color || ws["avatar_url"] != nil {
+		t.Fatalf("fresh workspace in /user: %v", ws)
+	}
+
+	png := append([]byte("\x89PNG\r\n\x1a\n"), make([]byte, 64)...)
+	// members cannot set the image
+	if st, out := postAvatarTo(t, srv.URL, "/api/v1/room/avatar", member.token, member.slug, png); st != 403 {
+		t.Fatalf("member upload: %d %v, want 403", st, out)
+	}
+	if st, out := member.do("DELETE", "/api/v1/room/avatar", nil); st != 403 {
+		t.Fatalf("member remove: %d %v, want 403", st, out)
+	}
+	// a non-image is refused even for the admin
+	if st, out := postAvatarTo(t, srv.URL, "/api/v1/room/avatar", creator.token, creator.slug, []byte("nope")); st != 400 {
+		t.Fatalf("text upload: %d %v, want 400", st, out)
+	}
+
+	st, out := postAvatarTo(t, srv.URL, "/api/v1/room/avatar", creator.token, creator.slug, png)
+	if st != 200 {
+		t.Fatalf("admin upload: %d %v", st, out)
+	}
+	attID, _ := out["avatar_attachment_id"].(string)
+	if attID == "" || out["avatar_url"] != "/api/v1/attachments/"+attID {
+		t.Fatalf("upload response: %v", out)
+	}
+	// members see it on /room and in their workspace list, and can fetch the image
+	got := member.must("GET", "/api/v1/room", nil, 200)["room"].(map[string]any)
+	if got["avatar_url"] != "/api/v1/attachments/"+attID || got["color"] != color {
+		t.Fatalf("member /room after upload: %v", got)
+	}
+	if ws := wsList(member); ws["avatar_url"] != "/api/v1/attachments/"+attID {
+		t.Fatalf("member /user after upload: %v", ws)
+	}
+	req, _ := http.NewRequest("GET", srv.URL+"/api/v1/attachments/"+attID, nil)
+	req.Header.Set("Authorization", "Bearer "+member.token)
+	req.Header.Set("X-Workspace-Slug", member.slug)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != 200 {
+		t.Fatalf("member image fetch: %d", resp.StatusCode)
+	}
+
+	// remove brings the initials back; the colour never moves
+	out = creator.must("DELETE", "/api/v1/room/avatar", nil, 200)
+	if _, has := out["avatar_attachment_id"]; has || out["color"] != color {
+		t.Fatalf("after remove: %v", out)
+	}
+	if ws := wsList(member); ws["avatar_url"] != nil || ws["color"] != color {
+		t.Fatalf("member /user after remove: %v", ws)
 	}
 }

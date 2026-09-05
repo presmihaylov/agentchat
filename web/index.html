@@ -78,6 +78,13 @@
       <section id="settings-workspace" class="settings-panel hidden">
         <p id="ws-none" class="hint hidden">Open a workspace first: these settings belong to the workspace you came from.</p>
         <div id="ws-panel" class="hidden">
+          <div id="ws-avatar-row">
+            <div id="ws-avatar-slot"></div>
+            <div id="ws-avatar-actions" class="hidden">
+              <label class="upload-btn">Upload logo<input type="file" id="ws-avatar-input" accept="image/*" class="hidden"></label>
+              <button type="button" id="ws-avatar-remove" class="hidden">Remove logo</button>
+            </div>
+          </div>
           <form id="ws-name-form">
             <label>Name <input id="ws-name" type="text" required maxlength="100"></label>
             <p id="ws-name-error" class="error hidden"></p>
@@ -166,7 +173,7 @@
 
   <div id="enter-view" class="hidden">
     <form id="enter-form">
-      <h1>💬 Enter <span id="enter-room-name">this workspace</span></h1>
+      <h1><span id="enter-room-icon">💬</span> Enter <span id="enter-room-name">this workspace</span></h1>
       <p id="enter-error" class="error hidden"></p>
       <label>Invite code <input id="enter-code" required placeholder="inv-xxxx-xxxx-xxxx-xxxx" autocomplete="off"></label>
       <button type="submit">Enter workspace</button>
@@ -197,10 +204,10 @@
     <aside id="sidebar">
       <header id="room-header">
         <div id="ws-switcher-wrap" class="hidden">
-          <button type="button" id="ws-switcher" aria-haspopup="menu" aria-expanded="false" aria-controls="ws-menu"><span id="ws-current"></span><span class="ws-caret" aria-hidden="true">▾</span></button>
+          <button type="button" id="ws-switcher" aria-haspopup="menu" aria-expanded="false" aria-controls="ws-menu"><span id="ws-current-avatar"></span><span id="ws-current"></span><span class="ws-caret" aria-hidden="true">▾</span></button>
           <div id="ws-menu" class="hidden" role="menu"></div>
         </div>
-        <h2 id="room-name"></h2>
+        <h2 id="room-head"><span id="room-avatar"></span><span id="room-name"></span></h2>
         <button id="open-search" title="Search messages">
           <span class="os-icon">🔍</span>
           <span class="os-label">Search messages</span>

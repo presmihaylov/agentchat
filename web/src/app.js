@@ -1,3 +1,4 @@
+import { wsAvatarEl } from './wsavatar.js';
 /* AgentChat human web client — vanilla JS, talks to the same REST API as agents. */
 import { createComposer } from './composer.js';
 import { emojify, searchEmoji, rememberEmoji, shortcodeOf } from './emoji.js';
@@ -56,6 +57,15 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
     headers['Authorization'] = 'Bearer ' + ses;
     if (slug) headers['X-Workspace-Slug'] = slug;
     return headers;
+  };
+  // a workspace image is served to its members only: the slug must be that workspace's
+  const wsHeaders = (wsSlug) => {
+    const ses = sessionToken();
+    return ses ? { 'Authorization': 'Bearer ' + ses, 'X-Workspace-Slug': wsSlug } : {};
+  };
+  const paintRoomMark = () => {
+    $('room-avatar').replaceChildren(wsAvatarEl(room, 'ws-avatar-sm', wsHeaders(room.slug)));
+    $('ws-current-avatar').replaceChildren(wsAvatarEl(room, 'ws-avatar-sm', wsHeaders(room.slug)));
   };
 
   // One verdict on an auth failure, shared by api(), the event loop and the
@@ -1157,6 +1167,7 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
     await fetchPublicChannels();
     $('room-name').textContent = room.name;
     $('ws-current').textContent = room.name;
+    paintRoomMark();
     const foot = $('me-footer');
     foot.innerHTML = '';
     foot.appendChild(avatarEl(me, 'avatar-sm'));
@@ -1741,6 +1752,7 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
     try {
       const peek = await api('/api/v1/rooms/peek?slug=' + encodeURIComponent(slug));
       $('enter-room-name').textContent = '“' + peek.name + '”';
+      $('enter-room-icon').replaceChildren(wsAvatarEl(peek, 'ws-avatar-md'));
     } catch (e) {
       $('enter-error').textContent = e.status === 404 ? 'This link does not point to a workspace.' : e.message;
       $('enter-error').classList.remove('hidden');
@@ -1787,7 +1799,11 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
     const el = document.createElement(opts.href ? 'a' : 'button');
     el.className = 'ws-item' + (opts.current ? ' current' : '');
     el.setAttribute('role', 'menuitem');
-    el.textContent = label;
+    if (opts.avatar) el.appendChild(opts.avatar);
+    const text = document.createElement('span');
+    text.className = 'ws-label';
+    text.textContent = label;
+    el.appendChild(text);
     if (opts.href) el.href = opts.href;
     if (!opts.href) el.type = 'button';
     if (opts.onclick) el.onclick = opts.onclick;
@@ -1808,9 +1824,9 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
     try { out = await fetchWorkspaces(); } catch (e) { console.error('switcher', e); return; }
     const menu = $('ws-menu');
     menu.innerHTML = '';
-    menu.appendChild(wsMenuItem(room.name, { current: true }));
+    menu.appendChild(wsMenuItem(room.name, { current: true, avatar: wsAvatarEl(room, 'ws-avatar-sm', wsHeaders(room.slug)) }));
     for (const ws of (out.workspaces || []).filter((w) => w.slug !== room.slug)) {
-      menu.appendChild(wsMenuItem(ws.name, { href: '/w/' + encodeURIComponent(ws.slug) }));
+      menu.appendChild(wsMenuItem(ws.name, { href: '/w/' + encodeURIComponent(ws.slug), avatar: wsAvatarEl(ws, 'ws-avatar-sm', wsHeaders(ws.slug)) }));
     }
     const sep = document.createElement('div');
     sep.className = 'ws-sep';
@@ -1822,7 +1838,8 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
     menu.appendChild(wsMenuItem('Settings', { href: '/settings?next=' + encodeURIComponent(here) }));
     menu.appendChild(wsMenuItem('Sign out', { onclick: () => { setMenuOpen(false); signOut(); } }));
     $('ws-current').textContent = room.name;
-    $('room-name').classList.add('hidden');
+    paintRoomMark();
+    $('room-head').classList.add('hidden');
     $('ws-switcher-wrap').classList.remove('hidden');
   };
 

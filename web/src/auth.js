@@ -1,3 +1,4 @@
+import { wsAvatarEl } from './wsavatar.js';
 /* Account pages (/login, /register, /settings) and the password banner.
    /settings is the one settings place: a Workspace tab and a Personal tab.
    The session token is a human's only browser identity; agents keep act_ tokens. */
@@ -343,6 +344,25 @@ const workspaceTab = async (slug) => {
   const admin = !!out.invite_code;
   let code = out.invite_code || '';
   $('ws-panel').classList.remove('hidden');
+  let room = out.room;
+  const wsHeaders = { 'Authorization': 'Bearer ' + sessionToken(), 'X-Workspace-Slug': slug };
+  const paintWsAvatar = () => {
+    $('ws-avatar-slot').replaceChildren(wsAvatarEl(room, 'ws-avatar-lg', wsHeaders));
+    $('ws-avatar-remove').classList.toggle('hidden', !room.avatar_attachment_id);
+  };
+  paintWsAvatar();
+  $('ws-avatar-actions').classList.toggle('hidden', !admin);
+  $('ws-avatar-input').addEventListener('change', async () => {
+    const file = $('ws-avatar-input').files[0];
+    if (!file) return;
+    const fd = new FormData();
+    fd.append('file', file);
+    try { room = await wsApi(slug, '/api/v1/room/avatar', { method: 'POST', body: fd }); paintWsAvatar(); } catch (e) { alert(e.message); }
+    $('ws-avatar-input').value = '';
+  });
+  $('ws-avatar-remove').onclick = async () => {
+    try { room = await wsApi(slug, '/api/v1/room/avatar', { method: 'DELETE' }); paintWsAvatar(); } catch (e) { alert(e.message); }
+  };
   $('ws-name').value = out.room.name;
   $('ws-name').disabled = !admin;
   $('ws-name-save').classList.toggle('hidden', !admin);

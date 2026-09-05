@@ -45,7 +45,8 @@ func (s *Store) DeleteOrphanAttachments(ctx context.Context) (int64, error) {
 		`DELETE FROM attachments a
 		 WHERE a.created_at < now() - interval '24 hours'
 		   AND NOT EXISTS (SELECT 1 FROM message_attachments ma WHERE ma.attachment_id = a.id)
-		   AND NOT EXISTS (SELECT 1 FROM participants pt WHERE pt.avatar_attachment_id = a.id)`)
+		   AND NOT EXISTS (SELECT 1 FROM participants pt WHERE pt.avatar_attachment_id = a.id)
+		   AND NOT EXISTS (SELECT 1 FROM rooms rm WHERE rm.avatar_attachment_id = a.id)`)
 	if err != nil {
 		return 0, err
 	}

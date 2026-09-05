@@ -535,6 +535,13 @@ func TestEventFiltering(t *testing.T) {
 
 func postAvatar(t *testing.T, base, token string, content []byte) (int, map[string]any) {
 	t.Helper()
+	return postAvatarTo(t, base, "/api/v1/me/avatar", token, "", content)
+}
+
+// postAvatarTo uploads content as the multipart "file" to path; slug rides as
+// X-Workspace-Slug when set (session callers).
+func postAvatarTo(t *testing.T, base, path, token, slug string, content []byte) (int, map[string]any) {
+	t.Helper()
 	var buf bytes.Buffer
 	mw := multipart.NewWriter(&buf)
 	fw, err := mw.CreateFormFile("file", "pic.png")
@@ -545,12 +552,15 @@ func postAvatar(t *testing.T, base, token string, content []byte) (int, map[stri
 		t.Fatal(err)
 	}
 	mw.Close()
-	req, err := http.NewRequest("POST", base+"/api/v1/me/avatar", &buf)
+	req, err := http.NewRequest("POST", base+path, &buf)
 	if err != nil {
 		t.Fatal(err)
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Content-Type", mw.FormDataContentType())
+	if slug != "" {
+		req.Header.Set("X-Workspace-Slug", slug)
+	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatal(err)

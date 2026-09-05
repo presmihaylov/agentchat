@@ -417,7 +417,7 @@ func scratchDB(t *testing.T) string {
 func TestMigrateTo(t *testing.T) {
 	ctx := context.Background()
 	dbURL := scratchDB(t)
-	const latest = 27
+	const latest = 28
 	// 000024 created users; rolling to the version before it drops the table
 	const beforeUsers = 23
 
@@ -467,4 +467,19 @@ func TestMigrateTo(t *testing.T) {
 	if err := s.pool.QueryRow(ctx, "SELECT version FROM schema_migrations").Scan(&version); err != nil || version != latest {
 		t.Fatalf("version after re-open: %d %v", version, err)
 	}
+}
+
+// legacyRoom inserts a room on a schema older than 000028 (no colour column),
+// for the tests that drive a single migration over an old fixture.
+func legacyRoom(t *testing.T, s *Store, name, slug string) Room {
+	t.Helper()
+	var r Room
+	err := s.pool.QueryRow(context.Background(),
+		`INSERT INTO rooms (name, slug, secret) VALUES ($1, $2, $3) RETURNING id, slug, secret, name, created_by_user_id, created_at`,
+		name, slug, secrets.InviteCode(),
+	).Scan(&r.ID, &r.Slug, &r.Secret, &r.Name, &r.CreatedByUserID, &r.CreatedAt)
+	if err != nil {
+		t.Fatalf("legacy room %s: %v", name, err)
+	}
+	return r
 }

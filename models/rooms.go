@@ -4,9 +4,25 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+
+	"github.com/jackc/pgx/v5"
 )
 
-const roomColumns = `id, slug, secret, name, created_by_user_id, created_at`
+const roomColumns = `id, slug, secret, name, created_by_user_id, created_at, avatar_attachment_id, color`
+
+// roomDest pairs roomColumns for Scan.
+func roomDest(r *Room) []any {
+	return []any{&r.ID, &r.Slug, &r.Secret, &r.Name, &r.CreatedByUserID, &r.CreatedAt, &r.AvatarAttachmentID, &r.Color}
+}
+
+// scanRoom fills r from a roomColumns row and derives the avatar URL.
+func scanRoom(row pgx.Row, r *Room) error {
+	if err := row.Scan(roomDest(r)...); err != nil {
+		return err
+	}
+	r.AvatarURL = AvatarPath(r.AvatarAttachmentID)
+	return nil
+}
 
 // RoomQuota is how many rooms one user may create.
 const RoomQuota = 5
@@ -24,11 +40,11 @@ func (s *Store) CreateRoom(ctx context.Context, name, slug, secret string) (Room
 	}
 	defer tx.Rollback(ctx)
 
-	err = tx.QueryRow(ctx,
-		`INSERT INTO rooms (name, slug, secret) VALUES ($1, $2, $3)
+	err = scanRoom(tx.QueryRow(ctx,
+		`INSERT INTO rooms (name, slug, secret, color) VALUES ($1, $2, $3, floor(random() * $4))
 		 RETURNING `+roomColumns,
-		name, slug, secret,
-	).Scan(&r.ID, &r.Slug, &r.Secret, &r.Name, &r.CreatedByUserID, &r.CreatedAt)
+		name, slug, secret, RoomColorSlots,
+	), &r)
 	if err != nil {
 		if isUniqueViolation(err) {
 			return r, ErrConflict
@@ -53,18 +69,18 @@ func (s *Store) CreateRoom(ctx context.Context, name, slug, secret string) (Room
 // RoomBySecret looks a room up by its invite code.
 func (s *Store) RoomBySecret(ctx context.Context, secret string) (Room, error) {
 	var r Room
-	err := s.pool.QueryRow(ctx,
+	err := scanRoom(s.pool.QueryRow(ctx,
 		`SELECT `+roomColumns+` FROM rooms WHERE secret = $1`, secret,
-	).Scan(&r.ID, &r.Slug, &r.Secret, &r.Name, &r.CreatedByUserID, &r.CreatedAt)
+	), &r)
 	return r, mapRowErr(err)
 }
 
 // RoomBySlug looks a room up by its public URL slug.
 func (s *Store) RoomBySlug(ctx context.Context, slug string) (Room, error) {
 	var r Room
-	err := s.pool.QueryRow(ctx,
+	err := scanRoom(s.pool.QueryRow(ctx,
 		`SELECT `+roomColumns+` FROM rooms WHERE slug = $1`, slug,
-	).Scan(&r.ID, &r.Slug, &r.Secret, &r.Name, &r.CreatedByUserID, &r.CreatedAt)
+	), &r)
 	return r, mapRowErr(err)
 }
 
@@ -84,11 +100,11 @@ func (s *Store) RotateSecret(ctx context.Context, roomID, newSecret string) (Roo
 	if err := lockRoomEvents(ctx, tx, roomID); err != nil {
 		return r, err
 	}
-	err = tx.QueryRow(ctx,
+	err = scanRoom(tx.QueryRow(ctx,
 		`UPDATE rooms SET secret = $2 WHERE id = $1
 		 RETURNING `+roomColumns,
 		roomID, newSecret,
-	).Scan(&r.ID, &r.Slug, &r.Secret, &r.Name, &r.CreatedByUserID, &r.CreatedAt)
+	), &r)
 	if err != nil {
 		return r, mapRowErr(err)
 	}
@@ -116,11 +132,11 @@ func (s *Store) RenameRoom(ctx context.Context, roomID, name string) (Room, erro
 	if err := lockRoomEvents(ctx, tx, roomID); err != nil {
 		return r, err
 	}
-	err = tx.QueryRow(ctx,
+	err = scanRoom(tx.QueryRow(ctx,
 		`UPDATE rooms SET name = $2 WHERE id = $1
 		 RETURNING `+roomColumns,
 		roomID, name,
-	).Scan(&r.ID, &r.Slug, &r.Secret, &r.Name, &r.CreatedByUserID, &r.CreatedAt)
+	), &r)
 	if err != nil {
 		return r, mapRowErr(err)
 	}
@@ -133,8 +149,36 @@ func (s *Store) RenameRoom(ctx context.Context, roomID, name string) (Room, erro
 
 func (s *Store) RoomByID(ctx context.Context, id string) (Room, error) {
 	var r Room
-	err := s.pool.QueryRow(ctx,
+	err := scanRoom(s.pool.QueryRow(ctx,
 		`SELECT `+roomColumns+` FROM rooms WHERE id = $1`, id,
-	).Scan(&r.ID, &r.Slug, &r.Secret, &r.Name, &r.CreatedByUserID, &r.CreatedAt)
+	), &r)
 	return r, mapRowErr(err)
+}
+
+// SetRoomAvatar points the workspace image at an upload, or clears it (nil)
+// so the initials come back.
+func (s *Store) SetRoomAvatar(ctx context.Context, roomID string, attachmentID *string) (Room, error) {
+	var r Room
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return r, err
+	}
+	defer tx.Rollback(ctx)
+
+	if err := lockRoomEvents(ctx, tx, roomID); err != nil {
+		return r, err
+	}
+	err = scanRoom(tx.QueryRow(ctx,
+		`UPDATE rooms SET avatar_attachment_id = $2 WHERE id = $1
+		 RETURNING `+roomColumns,
+		roomID, attachmentID,
+	), &r)
+	if err != nil {
+		return r, mapRowErr(err)
+	}
+	payload, _ := json.Marshal(map[string]string{"room_id": roomID})
+	if err := appendEventTx(ctx, tx, roomID, "room.updated", payload); err != nil {
+		return r, err
+	}
+	return r, tx.Commit(ctx)
 }

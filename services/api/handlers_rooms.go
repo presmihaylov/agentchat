@@ -222,7 +222,8 @@ func (s *Server) handlePeekRoom(w http.ResponseWriter, r *http.Request) {
 		writeStoreErr(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"name": room.Name, "created_at": room.CreatedAt})
+	// the image needs membership to fetch, so the peek carries only the initials colour
+	writeJSON(w, http.StatusOK, map[string]any{"name": room.Name, "created_at": room.CreatedAt, "color": room.Color})
 }
 
 func (s *Server) handleGetRoom(w http.ResponseWriter, r *http.Request, p models.Participant) {
