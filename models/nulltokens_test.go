@@ -35,7 +35,7 @@ func TestNullHumanTokens(t *testing.T) {
 	hashes := map[string][]byte{}
 	mk := func(name string, human bool, userID *string) Participant {
 		_, hash := secrets.NewToken()
-		p, err := s.CreateParticipant(ctx, room.ID, name, "🧑", "", human, hash, nil, userID)
+		p, err := s.CreateParticipant(ctx, room.ID, name, "🧑", "", human, hash, nil, userID, "")
 		if err != nil {
 			t.Fatal(err)
 		}

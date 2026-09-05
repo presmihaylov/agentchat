@@ -98,7 +98,7 @@ const iconFirst = (page, sel) => page.$$eval(sel, (els) => els.map((el) => {
   await visible(page, '#rail-menu');
   assert(await page.$eval('#rail-add', (el) => el.getAttribute('aria-expanded')) === 'true', 'aria-expanded not true');
   const menuRows = await iconFirst(page, '#rail-menu .rail-menu-item');
-  assert(menuRows.map((r) => r.text.replace(/\s+/g, ' ').trim()).join('|') === '+Create workspace|→Join with invite code', 'rail menu rows: ' + JSON.stringify(menuRows));
+  assert(menuRows.map((r) => r.text.replace(/\s+/g, ' ').trim()).join('|') === '+Create workspace|→Join with invite link', 'rail menu rows: ' + JSON.stringify(menuRows));
   assert(menuRows.every((r) => r.iconFirst), 'rail menu icon not first: ' + JSON.stringify(menuRows));
   assert(await page.$eval('#rail-create', (a) => a.getAttribute('href')).then((h) => h.startsWith('/create?next=')), 'Create row does not lead to /create');
   await shot(page, 'add-menu.png');
@@ -121,7 +121,7 @@ const iconFirst = (page, sel) => page.$$eval(sel, (els) => els.map((el) => {
   await page.click('#ws-switcher');
   await visible(page, '#ws-menu');
   const wsRows = await iconFirst(page, '#ws-menu .ws-item');
-  assert(wsRows.map((r) => r.text).join('|') === 'Invite member|Join with invite code|Settings', 'ws menu rows: ' + JSON.stringify(wsRows));
+  assert(wsRows.map((r) => r.text).join('|') === 'Invite member|Join with invite link|Settings', 'ws menu rows: ' + JSON.stringify(wsRows));
   assert(wsRows.every((r) => r.hasIcon && r.iconFirst), 'ws menu icon not first: ' + JSON.stringify(wsRows));
   await shot(page, 'ws-menu.png');
   await page.click('#ws-join');
@@ -154,23 +154,29 @@ const iconFirst = (page, sel) => page.$$eval(sel, (els) => els.map((el) => {
   await visible(page, '#ws-rail');
 
   step = '6';
-  // 6. Join with invite code: a wrong code shows inline, the right one lands in B's workspace
+  // 6. Join with invite link: a dead link lands on the join page's dead-link
+  // card, the right one lands in B's workspace
   await page.click('#rail-add');
   await visible(page, '#rail-menu');
   await page.click('#rail-join');
   await visible(page, '#join-modal');
   assert(await hiddenNow(page, '#rail-menu'), 'rail menu stayed open behind the join modal');
-  assert(await page.evaluate(() => document.activeElement.id) === 'join-slug', 'join modal did not focus the link field');
-  await page.type('#join-slug', SERVER + '/w/' + four.room.slug);
-  await page.type('#join-code', 'inv-0000-0000-0000-0000');
+  assert(await page.evaluate(() => document.activeElement.id) === 'join-link', 'join modal did not focus the link field');
+  await page.type('#join-link', 'not a link');
   await page.click('#join-submit');
   await visible(page, '#join-error');
-  await page.waitForFunction(() => /invite code/.test(document.querySelector('#join-error').textContent), { timeout: 8000 });
+  await page.waitForFunction(() => /invite link/.test(document.querySelector('#join-error').textContent), { timeout: 8000 });
   await shot(page, 'join-error.png');
-  await page.$eval('#join-code', (el) => { el.value = ''; });
-  await page.type('#join-code', four.invite_code);
-  await shot(page, 'join.png');
+  await page.$eval('#join-link', (el) => { el.value = ''; });
+  await page.type('#join-link', SERVER + '/join/inv-0000-0000-0000-0000');
   await Promise.all([page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 8000 }), page.click('#join-submit')]);
+  await atPath(page, '/join/inv-0000-0000-0000-0000');
+  await visible(page, '#join-view');
+  await page.waitForFunction(() => /no longer works/.test(document.querySelector('#join-title').textContent), { timeout: 8000 });
+  await shot(page, 'join-dead.png');
+  await page.goto(SERVER + '/join/' + four.invite.split('/join/')[1], { waitUntil: 'networkidle2' });
+  await page.waitForFunction((p) => location.pathname === p || location.pathname.startsWith(p + '/'), { timeout: 8000 }, '/w/' + four.room.slug);
+  await shot(page, 'join.png');
   await atPath(page, '/w/' + four.room.slug);
   await visible(page, '#chat-view');
   await page.waitForFunction(() => document.querySelectorAll('#rail-list .rail-item').length === 4, { timeout: 8000 });
@@ -178,7 +184,7 @@ const iconFirst = (page, sel) => page.$$eval(sel, (els) => els.map((el) => {
   assert(items[3].href === '/w/' + four.room.slug && items[3].current, 'joined workspace not current in the rail: ' + JSON.stringify(items));
   await shot(page, 'joined.png');
 
-  const real = errors.filter((e) => !e.includes('favicon') && !/status of 400/.test(e));
+  const real = errors.filter((e) => !e.includes('favicon') && !/status of (400|404)/.test(e));
   assert(!real.length, 'page errors: ' + real.join(' | '));
   console.log('RAIL_CHECK_OK');
   await browser.close();

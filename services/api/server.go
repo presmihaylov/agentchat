@@ -97,6 +97,7 @@ func (s *Server) routes() {
 		_, _ = w.Write(page)
 	}
 	m.HandleFunc("GET /r/{slug}", serveApp)
+	m.HandleFunc("GET /join/{token}", serveApp)
 	// deep links: channel and thread live in the path, the SPA restores them
 	m.HandleFunc("GET /r/{slug}/c/{channel}", serveApp)
 	m.HandleFunc("GET /r/{slug}/c/{channel}/t/{thread}", serveApp)
@@ -130,6 +131,7 @@ func (s *Server) routes() {
 	m.HandleFunc("POST /api/v1/rooms", s.withSession(s.handleCreateRoom))
 	m.HandleFunc("POST /api/v1/rooms/join", s.handleJoinRoom)
 	m.HandleFunc("GET /api/v1/rooms/peek", s.handlePeekRoom)
+	m.HandleFunc("GET /api/v1/invites/peek", s.handlePeekInvite)
 
 	// human accounts (bearer session token)
 	m.HandleFunc("GET /api/v1/auth/providers", s.handleAuthProviders)
@@ -143,6 +145,8 @@ func (s *Server) routes() {
 	// authenticated (bearer participant token)
 	m.HandleFunc("GET /api/v1/room", s.authed(s.handleGetRoom))
 	m.HandleFunc("POST /api/v1/invites", s.authed(s.handleCreateInvite))
+	m.HandleFunc("GET /api/v1/invites", s.authed(s.handleListInvites))
+	m.HandleFunc("DELETE /api/v1/invites/{id}", s.authed(s.handleRevokeInvite))
 	m.HandleFunc("GET /api/v1/me", s.authed(s.handleGetMe))
 	m.HandleFunc("PATCH /api/v1/me", s.authed(s.handleUpdateMe))
 	m.HandleFunc("POST /api/v1/me/offline", s.authed(s.handleGoOffline))
@@ -154,7 +158,6 @@ func (s *Server) routes() {
 
 	m.HandleFunc("PATCH /api/v1/room", s.authed(s.handleRenameRoom))
 	m.HandleFunc("DELETE /api/v1/room", s.authed(s.handleDeleteRoom))
-	m.HandleFunc("POST /api/v1/room/rotate-secret", s.authed(s.handleRotateSecret))
 	m.HandleFunc("POST /api/v1/room/avatar", s.authed(s.handleSetRoomAvatar))
 	m.HandleFunc("DELETE /api/v1/room/avatar", s.authed(s.handleRemoveRoomAvatar))
 

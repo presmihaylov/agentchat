@@ -38,7 +38,6 @@ async function api(path, opts = {}) {
   await loginPage(page, SERVER, uniqUser(), { displayName: 'humantester', next: '/r/' + slug });
   await page.waitForSelector('#enter-view:not(.hidden)', { timeout: 5000 });
   await page.waitForFunction(() => document.querySelector('#enter-room-name').textContent.includes('ui smoke'), { timeout: 5000 });
-  if (await page.$('#join-view')) throw new Error('the legacy join view is still in the page');
 
   // the non-member boot is meant to get a 403 from /api/v1/me; only errors past it count
   errors.length = 0;

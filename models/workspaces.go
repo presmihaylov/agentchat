@@ -56,7 +56,8 @@ func freeParticipantName(ctx context.Context, tx pgx.Tx, roomID, base string) (s
 // CreateRoomAs creates a workspace for a logged-in user: the room, #general and
 // the creator's admin participant (linked, no token) in one transaction.
 // At most RoomQuota rooms per creator, counted under a per-user advisory lock.
-func (s *Store) CreateRoomAs(ctx context.Context, name, slug, secret string, creator User) (Room, Participant, error) {
+// The room gets one plain invite link carrying token, the admin's first link.
+func (s *Store) CreateRoomAs(ctx context.Context, name, slug, token string, creator User) (Room, Participant, error) {
 	var r Room
 	var p Participant
 	tx, err := s.pool.Begin(ctx)
@@ -77,14 +78,17 @@ func (s *Store) CreateRoomAs(ctx context.Context, name, slug, secret string, cre
 	}
 
 	err = scanRoom(tx.QueryRow(ctx,
-		`INSERT INTO rooms (name, slug, secret, created_by_user_id, color) VALUES ($1, $2, $3, $4, floor(random() * $5))
+		`INSERT INTO rooms (name, slug, created_by_user_id, color) VALUES ($1, $2, $3, floor(random() * $4))
 		 RETURNING `+roomColumns,
-		name, slug, secret, creator.ID, RoomColorSlots,
+		name, slug, creator.ID, RoomColorSlots,
 	), &r)
 	if err != nil {
 		if isUniqueViolation(err) {
 			return r, p, ErrConflict
 		}
+		return r, p, err
+	}
+	if _, err := tx.Exec(ctx, `INSERT INTO invites (token, room_id) VALUES ($1, $2)`, token, r.ID); err != nil {
 		return r, p, err
 	}
 	// room lock before the participant insert takes its FK row lock on rooms
@@ -113,7 +117,8 @@ func (s *Store) CreateRoomAs(ctx context.Context, name, slug, secret string, cre
 // EnterRoom adds a logged-in user to a room as a fresh linked participant. It
 // never adopts an existing row: a taken name gets -2, -3. Humans are their own
 // principal, so an owner-scoped code binds nobody here, exactly as in /join.
-func (s *Store) EnterRoom(ctx context.Context, roomID string, user User) (Participant, error) {
+// inviteID is the link that let the user in; entering spends one of its uses.
+func (s *Store) EnterRoom(ctx context.Context, roomID string, user User, inviteID string) (Participant, error) {
 	var p Participant
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -122,6 +127,9 @@ func (s *Store) EnterRoom(ctx context.Context, roomID string, user User) (Partic
 	defer tx.Rollback(ctx)
 
 	if err := lockRoomEvents(ctx, tx, roomID); err != nil {
+		return p, err
+	}
+	if err := consumeInviteTx(ctx, tx, inviteID); err != nil {
 		return p, err
 	}
 	name, err := freeParticipantName(ctx, tx, roomID, HumanParticipantName(user))

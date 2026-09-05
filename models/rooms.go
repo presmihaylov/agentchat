@@ -4,15 +4,21 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 )
 
-const roomColumns = `id, slug, secret, name, created_by_user_id, created_at, avatar_attachment_id, color, delivery_dead_letter_days, delivery_max_attempts`
+const roomColumns = `id, slug, name, created_by_user_id, created_at, avatar_attachment_id, color, delivery_dead_letter_days, delivery_max_attempts`
+
+// roomColumnsOf is roomColumns qualified with a table alias, for joins.
+func roomColumnsOf(alias string) string {
+	return alias + "." + strings.ReplaceAll(roomColumns, ", ", ", "+alias+".")
+}
 
 // roomDest pairs roomColumns for Scan.
 func roomDest(r *Room) []any {
-	return []any{&r.ID, &r.Slug, &r.Secret, &r.Name, &r.CreatedByUserID, &r.CreatedAt, &r.AvatarAttachmentID, &r.Color, &r.DeliveryDeadLetterDays, &r.DeliveryMaxAttempts}
+	return []any{&r.ID, &r.Slug, &r.Name, &r.CreatedByUserID, &r.CreatedAt, &r.AvatarAttachmentID, &r.Color, &r.DeliveryDeadLetterDays, &r.DeliveryMaxAttempts}
 }
 
 // scanRoom fills r from a roomColumns row and derives the avatar URL.
@@ -32,7 +38,9 @@ var ErrRoomQuota = errors.New("you already created the maximum number of workspa
 // ErrInviteInvalid: the code does not open the workspace it was presented to.
 var ErrInviteInvalid = errors.New("that invite code does not open this workspace")
 
-func (s *Store) CreateRoom(ctx context.Context, name, slug, secret string) (Room, error) {
+// CreateRoom makes an agent-only room (tests, legacy fixtures) with one plain
+// invite link carrying token.
+func (s *Store) CreateRoom(ctx context.Context, name, slug, token string) (Room, error) {
 	var r Room
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -41,14 +49,17 @@ func (s *Store) CreateRoom(ctx context.Context, name, slug, secret string) (Room
 	defer tx.Rollback(ctx)
 
 	err = scanRoom(tx.QueryRow(ctx,
-		`INSERT INTO rooms (name, slug, secret, color) VALUES ($1, $2, $3, floor(random() * $4))
+		`INSERT INTO rooms (name, slug, color) VALUES ($1, $2, floor(random() * $3))
 		 RETURNING `+roomColumns,
-		name, slug, secret, RoomColorSlots,
+		name, slug, RoomColorSlots,
 	), &r)
 	if err != nil {
 		if isUniqueViolation(err) {
 			return r, ErrConflict
 		}
+		return r, err
+	}
+	if _, err := tx.Exec(ctx, `INSERT INTO invites (token, room_id) VALUES ($1, $2)`, token, r.ID); err != nil {
 		return r, err
 	}
 
@@ -66,15 +77,6 @@ func (s *Store) CreateRoom(ctx context.Context, name, slug, secret string) (Room
 	return r, tx.Commit(ctx)
 }
 
-// RoomBySecret looks a room up by its invite code.
-func (s *Store) RoomBySecret(ctx context.Context, secret string) (Room, error) {
-	var r Room
-	err := scanRoom(s.pool.QueryRow(ctx,
-		`SELECT `+roomColumns+` FROM rooms WHERE secret = $1`, secret,
-	), &r)
-	return r, mapRowErr(err)
-}
-
 // RoomBySlug looks a room up by its public URL slug.
 func (s *Store) RoomBySlug(ctx context.Context, slug string) (Room, error) {
 	var r Room
@@ -82,43 +84,6 @@ func (s *Store) RoomBySlug(ctx context.Context, slug string) (Room, error) {
 		`SELECT `+roomColumns+` FROM rooms WHERE slug = $1`, slug,
 	), &r)
 	return r, mapRowErr(err)
-}
-
-// RotateSecret replaces the room's invite code, invalidating the old one.
-// The public slug (and so the room URL) stays stable.
-func (s *Store) RotateSecret(ctx context.Context, roomID, newSecret string) (Room, error) {
-	var r Room
-	tx, err := s.pool.Begin(ctx)
-	if err != nil {
-		return r, err
-	}
-	defer tx.Rollback(ctx)
-
-	// advisory lock BEFORE the rooms-row lock: every event-appending tx locks
-	// advisory-first, so taking the row lock first here would be an AB-BA
-	// deadlock against e.g. a concurrent join (FK FOR KEY SHARE on rooms)
-	if err := lockRoomEvents(ctx, tx, roomID); err != nil {
-		return r, err
-	}
-	err = scanRoom(tx.QueryRow(ctx,
-		`UPDATE rooms SET secret = $2 WHERE id = $1
-		 RETURNING `+roomColumns,
-		roomID, newSecret,
-	), &r)
-	if err != nil {
-		return r, mapRowErr(err)
-	}
-	// rotation is an eviction lever: kill every outstanding owner-scoped invite
-	// too, else a kicked member re-enters with a code they minted and saved
-	if _, err := tx.Exec(ctx, `DELETE FROM invites WHERE room_id = $1`, roomID); err != nil {
-		return r, err
-	}
-	// never put the secret itself in the event log
-	payload, _ := json.Marshal(map[string]string{"room_id": roomID})
-	if err := appendEventTx(ctx, tx, roomID, "room.secret_rotated", payload); err != nil {
-		return r, err
-	}
-	return r, tx.Commit(ctx)
 }
 
 // RenameRoom renames the workspace and, when the name actually changed, writes

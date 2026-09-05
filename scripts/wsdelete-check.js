@@ -52,7 +52,7 @@ const hiddenNow = (page, sel) => page.$eval(sel, (el) => el.classList.contains('
   pageB.on('pageerror', (e) => errors.push('pageerror B: ' + e.message));
   await openWorkspace(pageB, SERVER, sessionB, gone.room.slug);
   await openSettings(pageB, SERVER, 'workspace');
-  await pageB.waitForSelector('#ws-invite:not(.hidden)', { timeout: 8000 });
+  await pageB.waitForSelector('#ws-name', { visible: true, timeout: 8000 });
   await new Promise((r) => setTimeout(r, 500));
   assert(await hiddenNow(pageB, '#ws-danger'), 'non-owner admin sees the Danger zone');
   await shot(pageB, 'admin.png');

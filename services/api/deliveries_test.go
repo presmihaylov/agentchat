@@ -22,7 +22,7 @@ func TestDeliveryReceipts(t *testing.T) {
 	// a human in the room holds no receipts
 	human := &testClient{t: t, base: srv.URL}
 	out := human.must("POST", "/api/v1/rooms/join", map[string]any{
-		"invite_code": secret, "name": "maya", "description": "maya", "is_human": true,
+		"invite": secret, "name": "maya", "description": "maya", "is_human": true,
 	}, 201)
 	human.token = out["token"].(string)
 
@@ -210,16 +210,17 @@ func TestDeliveryReceipts(t *testing.T) {
 		t.Fatalf("after prune: %v", st)
 	}
 
-	// 7. stats visibility: the owner and an admin see them, a stranger does not
-	inv := human.must("POST", "/api/v1/invites", nil, 201)
+	// 7. stats visibility: the owner (bob, whose link helper joined on) and an
+	// admin see them, a stranger does not
+	inv := bob.must("POST", "/api/v1/invites", nil, 201)
 	owned := &testClient{t: t, base: srv.URL}
 	out = owned.must("POST", "/api/v1/rooms/join", map[string]any{
-		"invite_code": inv["invite_code"], "name": "helper", "description": "helper",
+		"invite": inv["join_url"], "name": "helper", "description": "helper",
 	}, 201)
 	owned.token = out["token"].(string)
-	human.must("GET", "/api/v1/participants/helper/delivery", nil, 200)
+	bob.must("GET", "/api/v1/participants/helper/delivery", nil, 200)
 	alice.must("GET", "/api/v1/participants/helper/delivery", nil, 200)
-	if status, _ := bob.do("GET", "/api/v1/participants/helper/delivery", nil); status != 403 {
+	if status, _ := human.do("GET", "/api/v1/participants/helper/delivery", nil); status != 403 {
 		t.Fatalf("stranger stats: %d", status)
 	}
 }
@@ -232,7 +233,7 @@ func TestDeliveryBroadcastRecipients(t *testing.T) {
 	secret, alice, bob := setupRoom(t, srv.URL)
 	carol := &testClient{t: t, base: srv.URL}
 	out := carol.must("POST", "/api/v1/rooms/join", map[string]any{
-		"invite_code": secret, "name": "carol", "description": "carol",
+		"invite": secret, "name": "carol", "description": "carol",
 	}, 201)
 	carol.token = out["token"].(string)
 

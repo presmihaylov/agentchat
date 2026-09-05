@@ -104,7 +104,7 @@ const menuSlugs = (page) => page.$$eval('#ws-menu a.ws-item', (els) => els.map((
   await openMenu(pageA);
   if (await pageA.$eval('#ws-switcher', (el) => el.getAttribute('aria-expanded')) !== 'true') throw new Error('aria-expanded not true when open');
   const items = await pageA.$$eval('#ws-menu .ws-item', (els) => els.map((e) => e.textContent));
-  if (items.join('|') !== 'Invite member|Join with invite code|Settings') throw new Error('menu items: ' + items.join('|'));
+  if (items.join('|') !== 'Invite member|Join with invite link|Settings') throw new Error('menu items: ' + items.join('|'));
   if ((await menuSlugs(pageA)).length) throw new Error('menu still lists workspaces: ' + await menuSlugs(pageA));
   if (!await pageA.$('#ws-menu .ws-sep')) {} else throw new Error('menu still has a divider');
   if ((await railSlugs(pageA)).sort().join(',') !== [slug1, slug2].sort().join(',')) throw new Error('rail links: ' + await railSlugs(pageA));
@@ -134,7 +134,6 @@ const menuSlugs = (page) => page.$$eval('#ws-menu a.ws-item', (els) => els.map((
   const slug3 = three.room.slug;
   await pageA.goto(SERVER + '/w/' + slug3, { waitUntil: 'networkidle2' });
   await visible(pageA, '#enter-view');
-  if (await pageA.$('#join-view')) throw new Error('the legacy join view is still in the page');
   await pageA.waitForFunction((n) => document.querySelector('#enter-room-name').textContent.includes(n), { timeout: 8000 }, NAME3);
   await enterWithCode(pageA, three.invite_code);
   await pageA.waitForFunction((n) => document.querySelector('#ws-current').textContent === n, { timeout: 8000 }, NAME3);
@@ -156,7 +155,7 @@ const menuSlugs = (page) => page.$$eval('#ws-menu a.ws-item', (els) => els.map((
   await pageA.keyboard.press('Escape');
   await shot(pageA, 'entered.png');
 
-  // C has no workspace: "/" shows #no-ws-view, the invite form takes a link plus the code
+  // C has no workspace: "/" shows #no-ws-view, the join form takes an invite link
   const pageC = await freshPage();
   await loginPage(pageC, SERVER, uniqUser(), { displayName: 'Cy Newcomer' });
   await pageC.goto(SERVER + '/', { waitUntil: 'networkidle2' });
@@ -164,19 +163,28 @@ const menuSlugs = (page) => page.$$eval('#ws-menu a.ws-item', (els) => els.map((
   await atPath(pageC, '/');
   if (!await hiddenNow(pageC, '#login-view')) throw new Error('login form shown behind #no-ws-view');
   await shot(pageC, 'no-ws.png');
-  await pageC.type('#no-ws-enter-slug', SERVER + '/r/' + slug3);
-  await pageC.type('#no-ws-enter-code', 'inv-0000-0000-0000-0000');
+  await pageC.type('#no-ws-enter-link', 'inv-0000-0000-0000-0000 is not a link');
   await pageC.click('#no-ws-enter-form button[type=submit]');
   await visible(pageC, '#no-ws-enter-error');
-  await pageC.waitForFunction(() => /invite code/.test(document.querySelector('#no-ws-enter-error').textContent), { timeout: 8000 });
-  const wrong = lastResponse('/enter');
-  if (!wrong || wrong[1] !== 400 || wrong[2] !== 'invite_invalid') throw new Error('wrong code: ' + JSON.stringify(wrong));
-  await pageC.$eval('#no-ws-enter-code', (el) => { el.value = ''; });
-  await pageC.type('#no-ws-enter-code', three.invite_code);
+  await pageC.waitForFunction(() => /invite link/.test(document.querySelector('#no-ws-enter-error').textContent), { timeout: 8000 });
+  await pageC.$eval('#no-ws-enter-link', (el) => { el.value = ''; });
+  await pageC.type('#no-ws-enter-link', SERVER + '/join/inv-0000-0000-0000-0000');
   await Promise.all([
     pageC.waitForNavigation({ waitUntil: 'networkidle2', timeout: 8000 }),
     pageC.click('#no-ws-enter-form button[type=submit]'),
   ]);
+  await visible(pageC, '#join-view');
+  await pageC.waitForFunction(() => /no longer works/.test(document.querySelector('#join-title').textContent), { timeout: 8000 });
+  const wrong = lastResponse('/invites/peek');
+  if (!wrong || wrong[1] !== 404) throw new Error('wrong link: ' + JSON.stringify(wrong));
+  await pageC.goto(SERVER + '/', { waitUntil: 'networkidle2' });
+  await visible(pageC, '#no-ws-view');
+  await pageC.type('#no-ws-enter-link', three.invite);
+  await Promise.all([
+    pageC.waitForNavigation({ waitUntil: 'networkidle2', timeout: 8000 }),
+    pageC.click('#no-ws-enter-form button[type=submit]'),
+  ]);
+  await pageC.waitForFunction((p) => location.pathname === p || location.pathname.startsWith(p + '/'), { timeout: 8000 }, '/w/' + slug3);
   await atPath(pageC, '/w/' + slug3);
   await visible(pageC, '#chat-view');
   await pageC.waitForFunction(() => document.querySelector('#messages').textContent.includes('hello from the switcher'), { timeout: 8000 });
@@ -243,9 +251,9 @@ const menuSlugs = (page) => page.$$eval('#ws-menu a.ws-item', (els) => els.map((
 
   // the expected failures (403 non-member and revoked, 400 wrong code, 409
   // quota) log as console errors; nothing else may
-  const realErrors = errors.filter((e) => !e.includes('favicon') && !/status of (400|403|409)/.test(e));
+  const realErrors = errors.filter((e) => !e.includes('favicon') && !/status of (400|403|404|409)/.test(e));
   if (realErrors.length) throw new Error('page errors: ' + realErrors.join(' | '));
-  const okCodes = { 400: ['invite_invalid'], 403: ['workspace_forbidden'], 409: ['workspace_quota'] };
+  const okCodes = { 400: ['invite_invalid'], 403: ['workspace_forbidden'], 404: [null, undefined], 409: ['workspace_quota'] };
   const odd = statuses.filter(([, st, c]) => st >= 400 && !(okCodes[st] || []).includes(c));
   if (odd.length) throw new Error('unexpected error responses: ' + JSON.stringify(odd));
 

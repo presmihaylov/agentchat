@@ -21,8 +21,8 @@ async function api(path, opts = {}) {
   const slug = created.room.slug, code = created.invite_code;
   // human H is the first joiner (admin); mint an owner-scoped code so agents nest under H.
   const H = await api('/api/v1/rooms/join', { method: 'POST', body: { invite_code: code, name: 'boss', avatar: '🧑', is_human: true } });
-  const owned = await api('/api/v1/invites', { method: 'POST', token: H.token });
-  const ocode = owned.invite_code;
+  const owned = await api('/api/v1/invites', { method: 'POST', token: H.token, body: { bind_owner: true } });
+  const ocode = owned.join_url;
   // four agents owned by H: join order on1, off1, on2, off2 (interleaved on purpose).
   const on1 = await api('/api/v1/rooms/join', { method: 'POST', body: { invite_code: ocode, name: 'on-alpha', avatar: '🤖' } });
   const off1 = await api('/api/v1/rooms/join', { method: 'POST', body: { invite_code: ocode, name: 'off-bravo', avatar: '🤖' } });

@@ -18,7 +18,8 @@ var ErrIdentityOnline = errors.New("that identity is currently online")
 
 // CreateParticipant adds a member; the first participant in a room becomes admin.
 // tokenHash is nil for a human who enters through a login session (userID set).
-func (s *Store) CreateParticipant(ctx context.Context, roomID, name, avatar, description string, isHuman bool, tokenHash []byte, ownerID *string, userID *string) (Participant, error) {
+// inviteID, when set, spends one use of that link in the same transaction.
+func (s *Store) CreateParticipant(ctx context.Context, roomID, name, avatar, description string, isHuman bool, tokenHash []byte, ownerID *string, userID *string, inviteID string) (Participant, error) {
 	var p Participant
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -29,6 +30,11 @@ func (s *Store) CreateParticipant(ctx context.Context, roomID, name, avatar, des
 	// serialize joins per room so exactly one first joiner becomes admin
 	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext($1))`, roomID); err != nil {
 		return p, err
+	}
+	if inviteID != "" {
+		if err := consumeInviteTx(ctx, tx, inviteID); err != nil {
+			return p, err
+		}
 	}
 	p, err = createParticipantTx(ctx, tx, roomID, name, avatar, description, isHuman, tokenHash, ownerID, userID)
 	if err != nil {
@@ -397,11 +403,8 @@ func (s *Store) Revoke(ctx context.Context, roomID, id, actorID string) error {
 		roomID, id); err != nil {
 		return err
 	}
-	// invalidate any invite codes this participant minted; the NOT i.revoked
-	// guard in RoomByAnySecret covers the rest, this makes the codes disappear
-	if _, err := tx.Exec(ctx,
-		`DELETE FROM invites WHERE room_id = $1 AND issuer_id = $2`,
-		roomID, id); err != nil {
+	// a kicked member must not walk back in on a link they minted and saved
+	if err := revokeInvitesOfTx(ctx, tx, roomID, id); err != nil {
 		return err
 	}
 

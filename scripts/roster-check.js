@@ -49,10 +49,10 @@ const clickToggle = (page) => page.evaluate(() => {
   const created = await newRoom(SERVER, 'roster check');
   const slug = created.room.slug;
   const maya = await api('/api/v1/rooms/join', { method: 'POST', body: { invite_code: created.invite_code, name: 'Maya', avatar: '🧑', is_human: true } });
-  const inv = await api('/api/v1/invites', { method: 'POST', token: maya.token });
+  const inv = await api('/api/v1/invites', { method: 'POST', token: maya.token, body: { bind_owner: true } });
   // two agents owned by Maya, both online
-  await api('/api/v1/rooms/join', { method: 'POST', body: { invite_code: inv.invite_code, name: 'infra-bot', avatar: '🤖' } });
-  await api('/api/v1/rooms/join', { method: 'POST', body: { invite_code: inv.invite_code, name: 'infra-qa', avatar: '📊' } });
+  await api('/api/v1/rooms/join', { method: 'POST', body: { invite_code: inv.join_url, name: 'infra-bot', avatar: '🤖' } });
+  await api('/api/v1/rooms/join', { method: 'POST', body: { invite_code: inv.join_url, name: 'infra-qa', avatar: '📊' } });
 
   const browser = await puppeteer.launch({
     executablePath: process.env.CHROME || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',

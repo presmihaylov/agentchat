@@ -80,14 +80,14 @@ const roomApi = (p, session, slug, opts = {}) => call(SERVER, p, Object.assign({
   const meA = await roomApi('/api/v1/me', sessionA, slug);
   if (meA.role !== 'admin' || meA.name !== 'Alice Creator' || !meA.user_id) throw new Error('creator identity: ' + JSON.stringify(meA));
   const roomA = await roomApi('/api/v1/room', sessionA, slug);
-  const code = roomA.invite_code;
-  if (!code) throw new Error('admin sees no invite code');
+  if (roomA.admin !== true) throw new Error('creator is not flagged admin: ' + JSON.stringify(roomA));
+  const code = (await roomApi('/api/v1/invites', sessionA, slug)).invites[0].url;
+  if (!/\/join\/inv-/.test(code)) throw new Error('admin sees no invite link: ' + code);
 
   // B is signed in but not a member: the enter view, wrong code, right code
   const pageB = await freshPage();
   const sessionB = await loginPage(pageB, SERVER, uniqUser(), { displayName: 'Bob Entrant', next: '/r/' + slug });
   await visible(pageB, '#enter-view');
-  if (await pageB.$('#join-view')) throw new Error('the legacy join view is still in the page');
   await pageB.waitForFunction(() => document.querySelector('#enter-room-name').textContent.includes('enter check'), { timeout: 8000 });
   const forbidden = lastResponse('/api/v1/me');
   if (!forbidden || forbidden[1] !== 403) throw new Error('non-member /me: ' + JSON.stringify(forbidden));
@@ -117,7 +117,6 @@ const roomApi = (p, session, slug, opts = {}) => call(SERVER, p, Object.assign({
   await pageC.goto(SERVER + '/r/' + slug, { waitUntil: 'networkidle2' });
   await pageC.waitForFunction(() => location.pathname === '/login', { timeout: 8000 });
   if (new URL(pageC.url()).searchParams.get('next') !== '/r/' + slug) throw new Error('no-identity visit: ' + pageC.url());
-  if (await pageC.$('#join-view')) throw new Error('the legacy join view is still in the page');
   // a legacy act_ human (a /join before accounts existed) no longer boots on
   // the per-slug token since 000027: sign in first, and the key is scrubbed
   const legacy = await call(SERVER, '/api/v1/rooms/join', { method: 'POST', body: { invite_code: code, name: 'Legacy Human', is_human: true } });

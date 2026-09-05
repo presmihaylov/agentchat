@@ -29,7 +29,7 @@ func sessionRoom(t *testing.T, base, name string) (creator *testClient, user, ro
 	creator, reg := register(t, base, uniqUser(), "correct horse")
 	out := creator.must("POST", "/api/v1/rooms", roomBody(name), 201)
 	room = out["room"].(map[string]any)
-	room["invite_code"] = out["invite_code"]
+	room["invite"] = out["invite"]
 	creator.slug = room["slug"].(string)
 	return creator, reg["user"].(map[string]any), room
 }
@@ -74,8 +74,11 @@ func TestRoomCreateRequiresSession(t *testing.T) {
 	if len(parts) != 1 || parts[0].(map[string]any)["user_id"] != user["id"] {
 		t.Fatalf("participants: %v", parts)
 	}
-	if overview["invite_code"] != room["invite_code"] {
-		t.Fatalf("admin creator must see the invite code: %v", overview["invite_code"])
+	if overview["admin"] != true {
+		t.Fatalf("admin creator must see the admin flag: %v", overview["admin"])
+	}
+	if !strings.HasPrefix(room["invite"].(string), "http://public.test/join/inv-") {
+		t.Fatalf("create must return an invite link: %v", room["invite"])
 	}
 	chans := creator.must("GET", "/api/v1/channels", nil, 200)["channels"].([]any)
 	if len(chans) != 1 || chans[0].(map[string]any)["name"] != "general" {
@@ -138,12 +141,12 @@ func TestAgentJoinRowUnchanged(t *testing.T) {
 	ctx := context.Background()
 	db := testDB(t)
 	out := createRoom(t, srv.URL, "agents")
-	code := out["invite_code"].(string)
+	code := out["invite"].(string)
 	roomID := out["room"].(map[string]any)["id"].(string)
 
 	c := &testClient{t: t, base: srv.URL}
 	joined := c.must("POST", "/api/v1/rooms/join", map[string]any{
-		"invite_code": code, "name": "worker", "description": "does things",
+		"invite": code, "name": "worker", "description": "does things",
 	}, 201)
 	token := joined["token"].(string)
 	pid := joined["participant"].(map[string]any)["id"].(string)
@@ -211,7 +214,7 @@ func TestJoinCannotReclaimLinkedHuman(t *testing.T) {
 	}
 	c := &testClient{t: t, base: srv.URL}
 	st, out := c.do("POST", "/api/v1/rooms/join", map[string]any{
-		"invite_code": room["invite_code"], "name": me["name"], "is_human": true,
+		"invite": room["invite"], "name": me["name"], "is_human": true,
 	})
 	if st != 409 || !strings.Contains(out["error"].(string), "logged-in") {
 		t.Fatalf("reclaim of a linked human: %d %v", st, out)
@@ -283,7 +286,7 @@ func TestRevokedHumanIs403FromEnterAndRoom(t *testing.T) {
 	creator, _, room := sessionRoom(t, srv.URL, "kicked")
 	member, _ := register(t, srv.URL, uniqUser(), "correct horse")
 	member.slug = room["slug"].(string)
-	entered := member.must("POST", "/api/v1/workspaces/"+member.slug+"/enter", map[string]any{"invite_code": room["invite_code"]}, 200)
+	entered := member.must("POST", "/api/v1/workspaces/"+member.slug+"/enter", map[string]any{"invite": room["invite"]}, 200)
 	pid := entered["participant"].(map[string]any)["id"].(string)
 	member.must("GET", "/api/v1/me", nil, 200)
 
@@ -293,7 +296,7 @@ func TestRevokedHumanIs403FromEnterAndRoom(t *testing.T) {
 		t.Fatalf("revoked on a room route: %d %v", st, out)
 	}
 	// a valid code does not reopen the door: the kick is sticky
-	st, out = member.do("POST", "/api/v1/workspaces/"+member.slug+"/enter", map[string]any{"invite_code": room["invite_code"]})
+	st, out = member.do("POST", "/api/v1/workspaces/"+member.slug+"/enter", map[string]any{"invite": room["invite"]})
 	if st != 403 || out["code"] != "workspace_forbidden" || out["reason"] != "revoked" {
 		t.Fatalf("revoked on enter: %d %v", st, out)
 	}
@@ -301,18 +304,18 @@ func TestRevokedHumanIs403FromEnterAndRoom(t *testing.T) {
 
 func TestEnterWithInviteCodeCreatesLinkedParticipant(t *testing.T) {
 	srv, _ := newTestServer(t)
-	_, _, room := sessionRoom(t, srv.URL, "open")
+	creator, _, room := sessionRoom(t, srv.URL, "open")
 	slug := room["slug"].(string)
 
 	member, reg := registerAs(t, srv.URL, "Newcomer")
 	member.slug = slug
-	out := member.must("POST", "/api/v1/workspaces/"+slug+"/enter", map[string]any{"invite_code": room["invite_code"]}, 200)
+	out := member.must("POST", "/api/v1/workspaces/"+slug+"/enter", map[string]any{"invite": room["invite"]}, 200)
 	p := out["participant"].(map[string]any)
 	userID := reg["user"].(map[string]any)["id"]
 	if p["user_id"] != userID || p["is_human"] != true || p["role"] != "member" || p["name"] != "Newcomer" {
 		t.Fatalf("entered participant: %v", p)
 	}
-	if _, has := out["room"].(map[string]any)["invite_code"]; has {
+	if _, has := out["room"].(map[string]any)["invite"]; has {
 		t.Fatalf("enter must not echo the invite code: %v", out["room"])
 	}
 	// idempotent for a live member, no code needed
@@ -333,13 +336,14 @@ func TestEnterWithInviteCodeCreatesLinkedParticipant(t *testing.T) {
 		t.Fatalf("participant.joined for /enter: %v", payload)
 	}
 
-	// an owner-scoped code opens the room but binds no human to its issuer,
-	// as /join does (humans are their own principal); a taken display name
-	// gets the -2 suffix
-	inv := member.must("POST", "/api/v1/invites", nil, 201)
+	// a bound link opens the room but binds no human to its issuer, as /join
+	// does (humans are their own principal); a taken display name gets the
+	// -2 suffix. A plain human member cannot mint at all.
+	member.must("POST", "/api/v1/invites", nil, 403)
+	inv := creator.must("POST", "/api/v1/invites", map[string]any{"bind_owner": true}, 201)
 	third, _ := registerAs(t, srv.URL, "Newcomer")
 	third.slug = slug
-	tp := third.must("POST", "/api/v1/workspaces/"+slug+"/enter", map[string]any{"invite_code": inv["invite_code"]}, 200)["participant"].(map[string]any)
+	tp := third.must("POST", "/api/v1/workspaces/"+slug+"/enter", map[string]any{"invite": inv["join_url"]}, 200)["participant"].(map[string]any)
 	if _, has := tp["owner_id"]; has || tp["name"] != "Newcomer-2" {
 		t.Fatalf("owner-scoped enter: %v", tp)
 	}
@@ -360,7 +364,7 @@ func TestEnterDoesNotAdoptByName(t *testing.T) {
 	// an unlinked human row with the newcomer's display name, offline
 	c := &testClient{t: t, base: srv.URL}
 	legacy := c.must("POST", "/api/v1/rooms/join", map[string]any{
-		"invite_code": room["invite_code"], "name": "Newcomer", "is_human": true,
+		"invite": room["invite"], "name": "Newcomer", "is_human": true,
 	}, 201)["participant"].(map[string]any)
 	if err := store.BackdateSeen(context.Background(), legacy["id"].(string)); err != nil {
 		t.Fatal(err)
@@ -368,7 +372,7 @@ func TestEnterDoesNotAdoptByName(t *testing.T) {
 
 	member, reg := registerAs(t, srv.URL, "Newcomer")
 	member.slug = slug
-	p := member.must("POST", "/api/v1/workspaces/"+slug+"/enter", map[string]any{"invite_code": room["invite_code"]}, 200)["participant"].(map[string]any)
+	p := member.must("POST", "/api/v1/workspaces/"+slug+"/enter", map[string]any{"invite": room["invite"]}, 200)["participant"].(map[string]any)
 	if p["id"] == legacy["id"] || p["name"] != "Newcomer-2" || p["user_id"] != reg["user"].(map[string]any)["id"] {
 		t.Fatalf("enter adopted or misnamed: %v", p)
 	}
@@ -384,13 +388,13 @@ func TestEnterWrongCodeIs400(t *testing.T) {
 	_, _, other := sessionRoom(t, srv.URL, "elsewhere")
 	slug := room["slug"].(string)
 	member, _ := register(t, srv.URL, uniqUser(), "correct horse")
-	for _, code := range []any{"inv-not-a-code", other["invite_code"], ""} {
-		st, out := member.do("POST", "/api/v1/workspaces/"+slug+"/enter", map[string]any{"invite_code": code})
+	for _, code := range []any{"inv-not-a-code", other["invite"], ""} {
+		st, out := member.do("POST", "/api/v1/workspaces/"+slug+"/enter", map[string]any{"invite": code})
 		if st != 400 || out["code"] != "invite_invalid" {
 			t.Fatalf("enter with %q: %d %v", code, st, out)
 		}
 	}
-	if st, _ := member.do("POST", "/api/v1/workspaces/no-such-room/enter", map[string]any{"invite_code": room["invite_code"]}); st != 404 {
+	if st, _ := member.do("POST", "/api/v1/workspaces/no-such-room/enter", map[string]any{"invite": room["invite"]}); st != 404 {
 		t.Fatalf("unknown slug: %d", st)
 	}
 	member.slug = slug
@@ -421,7 +425,7 @@ func TestUserRoomsListsLiveParticipations(t *testing.T) {
 	}
 
 	for _, room := range []map[string]any{first, third, second} {
-		user.must("POST", "/api/v1/workspaces/"+room["slug"].(string)+"/enter", map[string]any{"invite_code": room["invite_code"]}, 200)
+		user.must("POST", "/api/v1/workspaces/"+room["slug"].(string)+"/enter", map[string]any{"invite": room["invite"]}, 200)
 	}
 	// open first, then second: last_active follows the most recent room route
 	user.slug = first["slug"].(string)
@@ -508,7 +512,7 @@ func TestLinkedHumanCarriesUsernameOnLists(t *testing.T) {
 	me := creator.must("GET", "/api/v1/me", nil, 200)
 
 	agent := &testClient{t: t, base: srv.URL}
-	joined := agent.must("POST", "/api/v1/rooms/join", map[string]any{"invite_code": room["invite_code"], "name": "worker"}, 201)
+	joined := agent.must("POST", "/api/v1/rooms/join", map[string]any{"invite": room["invite"], "name": "worker"}, 201)
 	agent.token = joined["token"].(string)
 
 	find := func(list []any, id any) map[string]any {
@@ -551,7 +555,7 @@ func TestRoomAvatar(t *testing.T) {
 	creator, _, room := sessionRoom(t, srv.URL, "Acme Research")
 	member, _ := registerAs(t, srv.URL, "Mem")
 	member.slug = creator.slug
-	member.must("POST", "/api/v1/workspaces/"+creator.slug+"/enter", map[string]any{"invite_code": room["invite_code"]}, 200)
+	member.must("POST", "/api/v1/workspaces/"+creator.slug+"/enter", map[string]any{"invite": room["invite"]}, 200)
 
 	// every room has a colour slot from birth, and the switcher payload carries it
 	color, ok := room["color"].(float64)
@@ -632,7 +636,7 @@ func TestUserWorkspacesUnreadAndMentions(t *testing.T) {
 	ann.must("POST", "/api/v1/rooms", roomBody("room a"), 201)
 	bob, _, roomB := sessionRoom(t, srv.URL, "room b")
 	annB := &testClient{t: t, base: srv.URL, token: ann.token, slug: roomB["slug"].(string)}
-	annB.must("POST", "/api/v1/workspaces/"+annB.slug+"/enter", map[string]any{"invite_code": roomB["invite_code"]}, 200)
+	annB.must("POST", "/api/v1/workspaces/"+annB.slug+"/enter", map[string]any{"invite": roomB["invite"]}, 200)
 
 	state := func() (unread bool, mentions float64) {
 		t.Helper()
@@ -687,12 +691,12 @@ func TestDeleteWorkspace(t *testing.T) {
 	slug := room["slug"].(string)
 	other, _ := register(t, srv.URL, uniqUser(), "correct horse")
 	other.slug = slug
-	entered := other.must("POST", "/api/v1/workspaces/"+slug+"/enter", map[string]any{"invite_code": room["invite_code"]}, 200)
+	entered := other.must("POST", "/api/v1/workspaces/"+slug+"/enter", map[string]any{"invite": room["invite"]}, 200)
 	otherPID := entered["participant"].(map[string]any)["id"].(string)
 	owner.must("POST", "/api/v1/participants/"+otherPID+"/role", map[string]any{"role": "admin"}, 200)
 	agent := &testClient{t: t, base: srv.URL}
 	joined := agent.must("POST", "/api/v1/rooms/join", map[string]any{
-		"invite_code": room["invite_code"], "name": "bot", "description": "a test agent",
+		"invite": room["invite"], "name": "bot", "description": "a test agent",
 	}, 201)
 	agent.token = joined["token"].(string)
 	ownerPID := owner.must("GET", "/api/v1/me", nil, 200)["id"].(string)
@@ -703,7 +707,7 @@ func TestDeleteWorkspace(t *testing.T) {
 
 	member, _ := register(t, srv.URL, uniqUser(), "correct horse")
 	member.slug = slug
-	member.must("POST", "/api/v1/workspaces/"+slug+"/enter", map[string]any{"invite_code": room["invite_code"]}, 200)
+	member.must("POST", "/api/v1/workspaces/"+slug+"/enter", map[string]any{"invite": room["invite"]}, 200)
 
 	if st, out := agent.do("DELETE", "/api/v1/room", map[string]any{"name": "doomed"}); st != 403 {
 		t.Fatalf("agent delete: %d %v", st, out)
@@ -752,7 +756,7 @@ func TestKickMembers(t *testing.T) {
 	enter := func(name string) (*testClient, string) {
 		c, _ := register(t, srv.URL, uniqUser(), "correct horse")
 		c.slug = slug
-		out := c.must("POST", "/api/v1/workspaces/"+slug+"/enter", map[string]any{"invite_code": room["invite_code"]}, 200)
+		out := c.must("POST", "/api/v1/workspaces/"+slug+"/enter", map[string]any{"invite": room["invite"]}, 200)
 		return c, out["participant"].(map[string]any)["id"].(string)
 	}
 	admin, adminPID := enter("admin")
@@ -760,7 +764,7 @@ func TestKickMembers(t *testing.T) {
 	human, humanPID := enter("human")
 	agent := &testClient{t: t, base: srv.URL}
 	joined := agent.must("POST", "/api/v1/rooms/join", map[string]any{
-		"invite_code": room["invite_code"], "name": "bot", "description": "a test agent",
+		"invite": room["invite"], "name": "bot", "description": "a test agent",
 	}, 201)
 	agent.token = joined["token"].(string)
 	agentPID := joined["participant"].(map[string]any)["id"].(string)

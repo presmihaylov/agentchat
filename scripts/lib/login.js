@@ -40,7 +40,7 @@ async function registerAndLogin(base, username = uniqUser(), displayName = '') {
   return (await call(base, '/api/v1/auth/password/login', { method: 'POST', body: { username, password: PASSWORD } })).token;
 }
 
-// createRoom is POST /api/v1/rooms with a session: {room, join_url, invite_code}
+// createRoom is POST /api/v1/rooms with a session: {room, join_url, invite (link), invite_code (bare token alias)}
 // the slug is unique per call: a repeated name would collide on the dev db
 // a unique slug per create (the server rejects a taken one), kept under the 60-char cap
 const uniqSlug = (name) => {
@@ -86,7 +86,8 @@ async function enterWithCode(page, code) {
 }
 
 // enterAs is the swept checks' one-liner: a fresh account named displayName
-// signs in, opens the room page, meets #enter-view and gets in with code.
+// signs in, opens the room page, meets #enter-view and gets in with code (an
+// invite link or its bare inv- token; the field takes both).
 // Returns the ses_ token.
 async function enterAs(page, base, slug, code, displayName) {
   const session = await loginPage(page, base, uniqUser(), { displayName, next: '/r/' + slug });

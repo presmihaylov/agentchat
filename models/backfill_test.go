@@ -50,7 +50,7 @@ func TestBackfillUsers(t *testing.T) {
 	roomA, roomB, roomC := mkRoomSlug("alpha", "alpha-slug"), mkRoomSlug("beta", "beta-slug"), mkRoomSlug("gamma", "gamma-slug")
 	human := func(roomID, name string, userID *string) Participant {
 		_, hash := secrets.NewToken()
-		p, err := s.CreateParticipant(ctx, roomID, name, "🧑", "", true, hash, nil, userID)
+		p, err := s.CreateParticipant(ctx, roomID, name, "🧑", "", true, hash, nil, userID, "")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -78,8 +78,9 @@ func TestBackfillUsers(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	// Store.Revoke needs the 000033 invites shape; the fixture only needs the flag
 	for _, r := range []Participant{eve, olgaC} {
-		if err := s.Revoke(ctx, r.RoomID, r.ID, ""); err != nil {
+		if _, err := pool.Exec(ctx, `UPDATE participants SET revoked = true WHERE id = $1`, r.ID); err != nil {
 			t.Fatal(err)
 		}
 	}

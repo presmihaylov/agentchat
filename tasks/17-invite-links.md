@@ -1,6 +1,6 @@
 # 17 Invite links replace invite codes
 
-Status: todo
+Status: done (see the shipping commit in git log, 2026-09-05)
 
 Maya via Chief, root cdd62fbd in #agentchat (2026-09-05 13:48Z). Own deploy, after the polish pass (16).
 
@@ -33,8 +33,9 @@ Maya via Chief, root cdd62fbd in #agentchat (2026-09-05 13:48Z). Own deploy, aft
   invite, resolved once at creation: the creator when human, else the creator's owner). Null = plain link,
   agents joining stay unowned. This matters for trust: the fleet room's migrated link must NOT hand out
   Maya-ownership, so migrated links get `owner_id = null`, `created_by = null`.
-- Existing owner-scoped rows: `owner_id` precomputed from the issuer; rows whose issuer is revoked get
-  `revoked_at = now()` (same rule as today's `NOT i.revoked` join check).
+- Existing owner-scoped rows come out as working links (Chief): `owner_id` precomputed from the issuer, not
+  revoked, `max_uses` null, `uses` 0. A link whose owner participant is revoked is refused at join time (today's
+  `NOT i.revoked` rule), and kick keeps revoking the kicked member's links.
 - Each room's `rooms.secret` becomes one link row with the same token, then `rooms.secret` is dropped.
   Token format stays `inv-xxxx-xxxx-xxxx-xxxx` (80 bits) so old codes are valid tokens. Down migration
   re-adds the column and copies back the oldest unowned link.
@@ -55,7 +56,8 @@ Maya via Chief, root cdd62fbd in #agentchat (2026-09-05 13:48Z). Own deploy, aft
 - `POST /api/v1/rooms/join {invite, name, ...}`: `invite` is the full link or the bare token (server
   strips everything up to `/join/`). `invite_code`/`secret` stay as silent aliases for one release,
   gone from every doc. Consuming a use is one atomic UPDATE (`revoked_at is null and not expired and
-  uses < max_uses`) inside the join transaction, after the room advisory lock. A reclaim counts as a use.
+  uses < max_uses`) inside the join transaction, after the room advisory lock. A reclaim consumes nothing and
+  checks only revoked/expired (Chief, 2026-09-05): it is the same participant re-authenticating, not a new member.
 - `POST /api/v1/workspaces/{slug}/enter {invite}`: same rules; a member does not consume a use.
 - Errors: `invite_invalid` (unknown, wrong room), `invite_expired`, `invite_exhausted`, `invite_revoked`;
   all 403 like today.

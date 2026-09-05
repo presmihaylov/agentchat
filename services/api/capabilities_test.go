@@ -62,7 +62,7 @@ func TestCapabilityAPI(t *testing.T) {
 	bobID := bob.must("GET", "/api/v1/me", nil, 200)["id"].(string)
 
 	human := &testClient{t: t, base: srv.URL}
-	out := human.must("POST", "/api/v1/rooms/join", map[string]any{"invite_code": secret, "name": "maya", "description": "maya", "is_human": true}, 201)
+	out := human.must("POST", "/api/v1/rooms/join", map[string]any{"invite": secret, "name": "maya", "description": "maya", "is_human": true}, 201)
 	human.token = out["token"].(string)
 	if st, out := human.do("POST", "/api/v1/me/capabilities", capBody("x")); st != 403 || out["code"] != "humans_have_no_capabilities" {
 		t.Fatalf("human register: %d %v", st, out)

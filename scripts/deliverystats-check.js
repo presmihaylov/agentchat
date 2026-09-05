@@ -45,8 +45,8 @@ const closeProfile = async (page) => {
 
   // maya (a human) enters, mints an owner invite; agentbot joins owned by maya
   const maya = await enterAs(page, SERVER, slug, roomCode, 'maya');
-  const ownerCode = (await call(SERVER, '/api/v1/invites', { method: 'POST', token: maya, headers: { 'X-Workspace-Slug': slug } })).invite_code;
-  const bot = await call(SERVER, '/api/v1/rooms/join', { method: 'POST', body: { invite_code: ownerCode, name: 'agentbot', description: 'agent', avatar: '🤖' } });
+  const ownerCode = (await call(SERVER, '/api/v1/invites', { method: 'POST', token: maya, headers: { 'X-Workspace-Slug': slug }, body: { bind_owner: true } })).join_url;
+  const bot = await call(SERVER, '/api/v1/rooms/join', { method: 'POST', body: { invite: ownerCode, name: 'agentbot', description: 'agent', avatar: '🤖' } });
   await call(SERVER, '/api/v1/channels/general/messages', { method: 'POST', token: maya, headers: { 'X-Workspace-Slug': slug }, body: { body: '@agentbot hello there' } });
   await page.waitForFunction(() => [...document.querySelectorAll('.msg')].some((m) => m.textContent.includes('hello there')), { timeout: 8000 });
 

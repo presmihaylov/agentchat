@@ -7,10 +7,9 @@ import (
 )
 
 type Room struct {
-	ID     string `json:"id"`
-	Slug   string `json:"slug"`
-	Secret string `json:"invite_code,omitempty"`
-	Name   string `json:"name"`
+	ID   string `json:"id"`
+	Slug string `json:"slug"`
+	Name string `json:"name"`
 	// CreatedByUserID is the workspace creator; NULL for legacy and agent-only rooms.
 	CreatedByUserID *string   `json:"created_by_user_id,omitempty"`
 	CreatedAt       time.Time `json:"created_at"`

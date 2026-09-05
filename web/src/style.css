@@ -62,16 +62,16 @@ body.has-header .auth-view, body.has-header #create-view, body.has-header #no-ws
 /* one-line notices above whichever view is showing; the view gives up the height */
 .banner { height: 34px; line-height: 34px; padding: 0 16px; font-size: 13px; background: var(--mention); border-bottom: 1px solid var(--border); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .banner a { color: var(--accent); }
-body.has-banner #chat-view, body.has-banner #no-ws-view, body.has-banner #enter-view, body.has-banner #removed-view, body.has-banner #create-view, body.has-banner .auth-view { height: calc(100vh - 34px); }
+body.has-banner #chat-view, body.has-banner #no-ws-view, body.has-banner #enter-view, body.has-banner #join-view, body.has-banner #removed-view, body.has-banner #create-view, body.has-banner .auth-view { height: calc(100vh - 34px); }
 body.has-banner.has-header .auth-view, body.has-banner.has-header #create-view, body.has-banner.has-header #no-ws-view { height: calc(100vh - 78px); }
 
 /* join */
-#no-ws-view, #enter-view, #removed-view, #create-view { display: flex; align-items: center; justify-content: center; height: 100vh; }
-#no-ws-card, #enter-form, #removed-card, #create-form { background: var(--panel); padding: 32px; border-radius: 12px; width: 360px; display: flex; flex-direction: column; gap: 14px; border: 1px solid var(--border); }
-#no-ws-card h1, #enter-form h1, #removed-card h1, #create-form h1 { margin: 0 0 6px; font-size: 20px; }
+#no-ws-view, #enter-view, #join-view, #removed-view, #create-view { display: flex; align-items: center; justify-content: center; height: 100vh; }
+#no-ws-card, #enter-form, #join-page-card, #removed-card, #create-form { background: var(--panel); padding: 32px; border-radius: 12px; width: 360px; display: flex; flex-direction: column; gap: 14px; border: 1px solid var(--border); }
+#no-ws-card h1, #enter-form h1, #join-page-card h1, #removed-card h1, #create-form h1 { margin: 0 0 6px; font-size: 20px; }
 #no-ws-card label, #enter-form label, #create-form label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--dim); }
 #no-ws-card input, #enter-form input, #create-form input { background: var(--panel2); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; color: var(--text); font-size: 15px; }
-#no-ws-card button, #enter-form button, #create-form button, #removed-card .button-link { background: var(--accent); border: 0; border-radius: 6px; padding: 10px; color: var(--on-accent); font-size: 15px; font-weight: 600; }
+#no-ws-card button, #enter-form button, #create-form button, #removed-card .button-link, #join-page-card .button-link { background: var(--accent); border: 0; border-radius: 6px; padding: 10px; color: var(--on-accent); font-size: 15px; font-weight: 600; }
 .hint { font-size: 12px; color: var(--dim); margin: 0; }
 .hint a { color: var(--accent); }
 #removed-card .button-link { text-align: center; text-decoration: none; }
@@ -141,6 +141,13 @@ body.has-banner.has-header .auth-view, body.has-banner.has-header #create-view, 
 #invite-card label, .modal-card label { display: block; margin: 10px 0; color: var(--dim); font-size: 12px; }
 #invite-card .invite-row { display: flex; gap: 8px; margin-top: 4px; }
 #invite-card .invite-row input { flex: 1; min-width: 0; font-size: 14px; color: var(--text); }
+#invite-list { list-style: none; margin: 0 0 12px; padding: 0; max-height: 40vh; overflow-y: auto; }
+#invite-list li { margin: 0 0 10px; }
+#invite-list .invite-meta { display: block; margin-top: 3px; color: var(--dim); font-size: 11px; }
+#invite-list .invite-revoke { color: var(--danger, #d33); }
+#invite-new { display: flex; gap: 10px; align-items: flex-end; margin: 0 0 6px; }
+#invite-new label { flex: 1; margin: 0; }
+#invite-new select { width: 100%; margin-top: 4px; background: var(--panel2); border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; color: var(--text); font-size: 13px; }
 #invite-close, #join-close { position: absolute; top: 10px; right: 12px; background: none; border: 0; color: var(--dim); font-size: 15px; cursor: pointer; }
 #profile-modal { position: fixed; inset: 0; background: var(--overlay); display: flex; align-items: center; justify-content: center; z-index: 30; }
 #profile-card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 28px; width: 320px; position: relative; text-align: center; }

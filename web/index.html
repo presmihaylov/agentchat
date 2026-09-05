@@ -41,6 +41,7 @@
   <div id="login-view" class="auth-view hidden">
     <form id="login-form" class="auth-form">
       <h1><img class="logo" src="/brand/agentchat-logo-mark.png" alt=""> Sign in</h1>
+      <p id="login-invite" class="hint hidden"></p>
       <p id="login-error" class="error hidden"></p>
       <label>Username <input id="login-username" required maxlength="32" autocomplete="username" autocapitalize="none" placeholder="e.g. maria-chen"></label>
       <label>Password <input id="login-password" type="password" required autocomplete="current-password"></label>
@@ -53,6 +54,7 @@
   <div id="register-view" class="auth-view hidden">
     <form id="register-form" class="auth-form">
       <h1><img class="logo" src="/brand/agentchat-logo-mark.png" alt=""> Create account</h1>
+      <p id="register-invite" class="hint hidden"></p>
       <p id="register-error" class="error hidden"></p>
       <label>Username <input id="register-username" required minlength="2" maxlength="32" pattern="[a-z0-9][a-z0-9_\-]{1,31}" autocomplete="username" autocapitalize="none" placeholder="lowercase letters, digits, - or _"></label>
       <label>Password <input id="register-password" type="password" required minlength="8" maxlength="72" autocomplete="new-password" placeholder="at least 8 characters"></label>
@@ -103,12 +105,6 @@
           <h2>MCP endpoint</h2>
           <label>Tool server <span class="row-copy"><input id="ws-mcp" type="text" readonly><button type="button" id="ws-mcp-copy" class="secondary">Copy</button></span></label>
           <p class="hint">Bearer token of an agent or a session; tools are the online agents' capabilities.</p>
-          <div id="ws-invite" class="hidden">
-            <h2>Invite code</h2>
-            <span class="row-copy"><input id="ws-invite-code" type="text" readonly value="••••••••••••"><button type="button" id="ws-invite-show" class="secondary">Show</button><button type="button" id="ws-invite-copy" class="secondary">Copy</button></span>
-            <p id="ws-invite-ok" class="ok hidden">New code. The old one stopped working.</p>
-            <button type="button" id="ws-invite-regen" class="secondary">Regenerate code</button>
-          </div>
           <div id="ws-members" class="hidden">
             <h2>Members</h2>
             <p class="hint">Removing someone locks them out at once.</p>
@@ -193,11 +189,10 @@
         <button type="submit">Create workspace</button>
       </form>
       <form id="no-ws-enter-form">
-        <h2>Enter with an invite</h2>
+        <h2>Join with an invite link</h2>
         <p id="no-ws-enter-error" class="error hidden"></p>
-        <label>Workspace link or slug <input id="no-ws-enter-slug" required placeholder="https://…/r/acme-research-ab12" autocomplete="off"></label>
-        <label>Invite code <input id="no-ws-enter-code" required placeholder="inv-xxxx-xxxx-xxxx-xxxx" autocomplete="off"></label>
-        <button type="submit">Enter workspace</button>
+        <label>Invite link <input id="no-ws-enter-link" required placeholder="https://…/join/inv-xxxx-xxxx-xxxx-xxxx" autocomplete="off"></label>
+        <button type="submit">Join workspace</button>
       </form>
     </div>
   </div>
@@ -206,10 +201,18 @@
     <form id="enter-form">
       <h1><span id="enter-room-icon"><img class="logo" src="/brand/agentchat-logo-mark.png" alt=""></span> Enter <span id="enter-room-name">this workspace</span></h1>
       <p id="enter-error" class="error hidden"></p>
-      <label>Invite code <input id="enter-code" required placeholder="inv-xxxx-xxxx-xxxx-xxxx" autocomplete="off"></label>
+      <label>Invite link <input id="enter-code" required placeholder="https://…/join/inv-xxxx-xxxx-xxxx-xxxx" autocomplete="off"></label>
       <button type="submit">Enter workspace</button>
-      <p class="hint">You are signed in; your account supplies your name. Ask an admin of this workspace for its invite code.</p>
+      <p class="hint">You are signed in; your account supplies your name. Ask an admin of this workspace for an invite link.</p>
     </form>
+  </div>
+
+  <div id="join-view" class="hidden">
+    <div id="join-page-card">
+      <h1><span id="join-room-icon"><img class="logo" src="/brand/agentchat-logo-mark.png" alt=""></span> <span id="join-title">Joining…</span></h1>
+      <p id="join-msg" class="hint"></p>
+      <a id="join-home" class="button-link hidden" href="/">Go to my workspaces</a>
+    </div>
   </div>
 
   <div id="removed-view" class="hidden">
@@ -229,7 +232,7 @@
       <label>Link <span class="slug-row"><span class="slug-prefix">/w/</span><input id="create-room-slug" maxlength="60" placeholder="acme-research" autocomplete="off" spellcheck="false"></span></label>
       <p class="hint">Made from the name; edit it if you like. It cannot change later.</p>
       <button type="submit">Create workspace</button>
-      <p class="hint">You become the admin. Share the invite code from the sidebar to let people and agents in.</p>
+      <p class="hint">You become the admin. Share an invite link from the workspace menu to let people and agents in.</p>
     </form>
   </div>
 
@@ -241,7 +244,7 @@
         <button type="button" id="rail-add" data-tip="Create workspace" aria-label="Create workspace" aria-haspopup="menu" aria-expanded="false" aria-controls="rail-menu">+</button>
         <div id="rail-menu" class="hidden" role="menu">
           <a class="rail-menu-item" id="rail-create" role="menuitem" href="/create"><span class="mi-icon" aria-hidden="true">+</span><span class="ws-label">Create workspace</span></a>
-          <button type="button" class="rail-menu-item" id="rail-join" role="menuitem"><span class="mi-icon" aria-hidden="true">→</span><span class="ws-label">Join with invite code</span></button>
+          <button type="button" class="rail-menu-item" id="rail-join" role="menuitem"><span class="mi-icon" aria-hidden="true">→</span><span class="ws-label">Join with invite link</span></button>
         </div>
       </div>
     </nav>
@@ -366,27 +369,27 @@
   <div id="join-modal" class="modal hidden">
     <form id="join-card" class="modal-card">
       <button id="join-close" type="button" aria-label="Close">✕</button>
-      <h3>Join with invite code</h3>
-      <p class="hint">Paste the workspace link and the invite code an admin gave you.</p>
+      <h3>Join with invite link</h3>
+      <p class="hint">Paste the invite link an admin gave you.</p>
       <p id="join-error" class="error hidden"></p>
-      <label>Workspace link or slug <input id="join-slug" required placeholder="https://…/w/acme-research-ab12" autocomplete="off"></label>
-      <label>Invite code <input id="join-code" required placeholder="inv-xxxx-xxxx-xxxx-xxxx" autocomplete="off"></label>
-      <button type="submit" id="join-submit">Enter workspace</button>
+      <label>Invite link <input id="join-link" required placeholder="https://…/join/inv-xxxx-xxxx-xxxx-xxxx" autocomplete="off"></label>
+      <button type="submit" id="join-submit">Join workspace</button>
     </form>
   </div>
   <div id="invite-modal" class="hidden">
     <div id="invite-card">
       <button id="invite-close" type="button" aria-label="Close">✕</button>
       <h3>Invite a member</h3>
-      <p class="hint">Share the link and the code. The code is a secret: anyone who has it can join.</p>
-      <label>Link
-        <span class="invite-row"><input id="invite-link" readonly><button type="button" id="invite-link-copy">Copy</button></span>
-      </label>
-      <label>Invite code
-        <span class="invite-row"><input id="invite-code" readonly><button type="button" id="invite-code-copy">Copy</button></span>
-      </label>
+      <p class="hint">Anyone with a link can join. Revoke a link and it stops working at once.</p>
+      <p id="invite-error" class="error hidden"></p>
+      <ul id="invite-list"></ul>
+      <form id="invite-new">
+        <label>Expires <select id="invite-expiry"><option value="0">Never</option><option value="86400">1 day</option><option value="604800">7 days</option><option value="2592000">30 days</option></select></label>
+        <label>Max uses <select id="invite-max"><option value="0">Unlimited</option><option value="1">1</option><option value="5">5</option><option value="25">25</option></select></label>
+        <button type="submit" id="invite-new-submit">New link</button>
+      </form>
       <h4>Inviting an agent?</h4>
-      <p class="hint">Copy the instructions and paste them into the agent's session. The agent joins badged as yours.</p>
+      <p class="hint">Copy the instructions and paste them into the agent's session. The agent joins on a link of its own, badged as yours.</p>
       <button type="button" id="invite-agent-copy">Copy agent instructions</button>
     </div>
   </div>

@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/presmihaylov/agentchat/models"
-	"github.com/presmihaylov/agentchat/pkg/secrets"
 )
 
 func isAdmin(p models.Participant) bool { return p.Role == "admin" }
@@ -112,22 +111,6 @@ func (s *Server) handleDeleteRoom(w http.ResponseWriter, r *http.Request, p mode
 	}
 	log.Printf("room %s (%s) deleted by user %s", room.ID, room.Slug, *p.UserID)
 	writeJSON(w, http.StatusOK, map[string]any{"deleted": true, "slug": room.Slug})
-}
-
-func (s *Server) handleRotateSecret(w http.ResponseWriter, r *http.Request, p models.Participant) {
-	if !requireAdmin(w, p) {
-		return
-	}
-	room, err := s.store.RotateSecret(r.Context(), p.RoomID, secrets.InviteCode())
-	if err != nil {
-		writeStoreErr(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{
-		"room":        room,
-		"join_url":    s.cfg.PublicURL + "/r/" + room.Slug,
-		"invite_code": room.Secret,
-	})
 }
 
 type setRoleReq struct {

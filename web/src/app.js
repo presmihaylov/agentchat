@@ -3,26 +3,29 @@ import { wsAvatarEl } from './wsavatar.js';
 /* AgentChat human web client — vanilla JS, talks to the same REST API as agents. */
 import { createComposer } from './composer.js';
 import { emojify, searchEmoji, rememberEmoji, shortcodeOf } from './emoji.js';
-import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fetchWorkspaces, signOut, authApi, slugFromLink, noWorkspaceError, wireSlugPreview } from './auth.js';
+import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fetchWorkspaces, signOut, authApi, noWorkspaceError, inviteErrorText, inviteTokenFrom, wireSlugPreview } from './auth.js';
 
 (() => {
   'use strict';
 
-  // the URL carries only the public slug; joining needs a separate invite code
+  // the URL carries only the public slug; joining needs a separate invite link
   const isCreatePage = location.pathname.replace(/\/+$/, '') === '/create';
   // path shape: /r/<slug>[/c/<channel>[/t/<thread-id>]] — channel/thread are
   // restored on load and kept in sync so refresh, back/forward and deep links work.
   // /w/<slug> is the switcher's alias of /r/<slug>; the page keeps whichever it got
   const pathSegs = location.pathname.split('/').filter(Boolean);
   const roomPrefix = pathSegs[0] === 'w' ? '/w/' : '/r/';
-  const slug = isCreatePage ? '' : decodeURIComponent(pathSegs[1] || '');
+  // /join/<token> is an invite link: the page enters the workspace it opens
+  const isJoinPage = pathSegs[0] === 'join';
+  const joinToken = isJoinPage ? decodeURIComponent(pathSegs[1] || '') : '';
+  const slug = (isCreatePage || isJoinPage) ? '' : decodeURIComponent(pathSegs[1] || '');
   const storeKey = 'agentchat:' + slug;
   const $ = (id) => document.getElementById(id);
 
   let me = null;
   let room = null;
   let joinURL = null;
-  let inviteCode = null;
+  let isAdmin = false;
   let channels = [];
   let groups = [];           // personal sidebar sections (channel groups)
   let participants = [];
@@ -1264,7 +1267,7 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
     const out = await api('/api/v1/room');
     room = out.room;
     joinURL = out.join_url;
-    inviteCode = out.invite_code || null;
+    isAdmin = !!out.admin;
     channels = out.channels || [];
     participants = out.participants || [];
     await fetchGroups();
@@ -1861,7 +1864,7 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
   // ---------- join / boot ----------
 
   // the workspace entry for a signed-in non-member: the account supplies the
-  // name, only the invite code is asked for
+  // name, only the invite link is asked for
   const showEnter = async () => {
     document.title = 'AgentChat';
     $('chat-view').classList.add('hidden');
@@ -1889,12 +1892,12 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
     btn.disabled = true;
     try {
       await api('/api/v1/workspaces/' + encodeURIComponent(slug) + '/enter', {
-        method: 'POST', body: { invite_code: $('enter-code').value.trim() },
+        method: 'POST', body: { invite: $('enter-code').value.trim() },
       });
       location.reload();
     } catch (e) {
       btn.disabled = false;
-      $('enter-error').textContent = e.message;
+      $('enter-error').textContent = inviteErrorText(e) || e.message;
       $('enter-error').classList.remove('hidden');
     }
   });
@@ -1959,8 +1962,8 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
     const menu = $('ws-menu');
     menu.innerHTML = '';
     // only admins get the code from /room, and only they may hand it out
-    if (inviteCode) menu.appendChild(wsMenuItem('Invite member', { id: 'ws-invite-member', icon: '✉', onclick: () => { setMenuOpen(false); openInviteModal(); } }));
-    menu.appendChild(wsMenuItem('Join with invite code', { id: 'ws-join', icon: '→', onclick: () => { setMenuOpen(false); openJoinModal(); } }));
+    if (isAdmin) menu.appendChild(wsMenuItem('Invite member', { id: 'ws-invite-member', icon: '✉', onclick: () => { setMenuOpen(false); openInviteModal(); } }));
+    menu.appendChild(wsMenuItem('Join with invite link', { id: 'ws-join', icon: '→', onclick: () => { setMenuOpen(false); openJoinModal(); } }));
     menu.appendChild(wsMenuItem('Settings', { icon: '⚙', href: '/settings?next=' + encodeURIComponent(here) }));
     $('ws-current').textContent = room.name;
     paintRoomMark();
@@ -2071,15 +2074,14 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
     items[(i + step + items.length) % items.length].focus();
   });
 
-  // Join with invite code: the #no-ws-view enter form, in a modal on a room page
+  // Join with invite link: the #no-ws-view form, in a modal on a room page
   const openJoinModal = () => {
     setRailMenuOpen(false);
     $('join-error').classList.add('hidden');
-    $('join-slug').value = '';
-    $('join-code').value = '';
+    $('join-link').value = '';
     $('join-submit').disabled = false;
     $('join-modal').classList.remove('hidden');
-    $('join-slug').focus();
+    $('join-link').focus();
   };
   const closeJoinModal = () => { $('join-modal').classList.add('hidden'); $('rail-add').focus(); };
   $('rail-join').onclick = openJoinModal;
@@ -2088,22 +2090,15 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
   document.addEventListener('keydown', (ev) => {
     if (ev.key === 'Escape' && !$('join-modal').classList.contains('hidden')) closeJoinModal();
   });
-  $('join-card').addEventListener('submit', async (ev) => {
+  $('join-card').addEventListener('submit', (ev) => {
     ev.preventDefault();
     const err = $('join-error');
     err.classList.add('hidden');
-    const target = slugFromLink($('join-slug').value);
-    if (!target) { err.textContent = 'Paste a workspace link (…/w/<slug>) or its slug.'; err.classList.remove('hidden'); return; }
+    // the join page does the work: it knows the workspace from the link
+    const token = inviteTokenFrom($('join-link').value);
+    if (!token) { err.textContent = 'Paste an invite link (…/join/inv-…).'; err.classList.remove('hidden'); return; }
     $('join-submit').disabled = true;
-    try {
-      // the session alone: the enter call names its workspace in the path, not the header
-      await authApi('/api/v1/workspaces/' + encodeURIComponent(target) + '/enter', { method: 'POST', body: { invite_code: $('join-code').value.trim() } });
-      location.href = '/w/' + encodeURIComponent(target);
-    } catch (e) {
-      err.textContent = noWorkspaceError(e);
-      err.classList.remove('hidden');
-      $('join-submit').disabled = false;
-    }
+    location.href = '/join/' + encodeURIComponent(token);
   });
 
   $('ws-switcher').addEventListener('click', (ev) => {
@@ -2659,11 +2654,57 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
   };
 
   // ---------- invite modal (workspace menu > Invite member, admins only) ----------
-  const openInviteModal = () => {
-    $('invite-link').value = joinURL || location.href;
-    $('invite-code').value = inviteCode || '';
+  const showInviteErr = (msg) => { $('invite-error').textContent = msg; $('invite-error').classList.toggle('hidden', !msg); };
+  const inviteMeta = (v) => {
+    const parts = [v.created_by_name ? 'by ' + v.created_by_name : 'workspace link'];
+    parts.push(v.max_uses ? `${v.uses}/${v.max_uses} uses` : `${v.uses} ${v.uses === 1 ? 'use' : 'uses'}`);
+    if (v.expires_at) parts.push((v.status === 'expired' ? 'expired ' : 'expires ') + new Date(v.expires_at).toLocaleDateString());
+    if (v.status === 'exhausted') parts.push('used up');
+    if (v.owner_id) parts.push('binds agents to ' + (v.owner_id === (me && me.id) ? 'you' : 'its owner'));
+    return parts.join(' · ');
+  };
+  const renderInvites = async () => {
+    let out;
+    try { out = await api('/api/v1/invites'); } catch (e) { showInviteErr(e.message); return; }
+    const list = $('invite-list');
+    list.replaceChildren();
+    for (const v of out.invites || []) {
+      const li = document.createElement('li');
+      li.className = 'invite-item';
+      li.dataset.id = v.id;
+      const row = document.createElement('span');
+      row.className = 'invite-row';
+      const input = document.createElement('input');
+      input.readOnly = true;
+      input.value = v.url;
+      const copy = document.createElement('button');
+      copy.type = 'button';
+      copy.className = 'invite-copy';
+      copy.textContent = 'Copy';
+      copy.onclick = async () => flashCopy(copy, await copyText(v.url), 'Copy');
+      const revoke = document.createElement('button');
+      revoke.type = 'button';
+      revoke.className = 'invite-revoke secondary';
+      revoke.textContent = 'Revoke';
+      revoke.onclick = async () => {
+        if (!confirm('Revoke this link? Anyone holding it can no longer join.')) return;
+        try { await api('/api/v1/invites/' + encodeURIComponent(v.id), { method: 'DELETE' }); } catch (e) { showInviteErr(e.message); return; }
+        await renderInvites();
+      };
+      row.append(input, copy, revoke);
+      const meta = document.createElement('span');
+      meta.className = 'invite-meta';
+      meta.textContent = inviteMeta(v);
+      li.append(row, meta);
+      list.appendChild(li);
+    }
+  };
+  const openInviteModal = async () => {
+    showInviteErr('');
     $('invite-modal').classList.remove('hidden');
-    $('invite-link-copy').focus();
+    await renderInvites();
+    const first = $('invite-list').querySelector('.invite-copy');
+    if (first) first.focus();
   };
   const closeInviteModal = () => { $('invite-modal').classList.add('hidden'); $('ws-switcher').focus(); };
   $('invite-close').onclick = closeInviteModal;
@@ -2671,40 +2712,40 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
   document.addEventListener('keydown', (ev) => {
     if (ev.key === 'Escape' && !$('invite-modal').classList.contains('hidden')) closeInviteModal();
   });
-  $('invite-link-copy').onclick = async () => {
-    // the link alone can't join: the modal is admin-only, so the code rides along
-    const ok = await copyText(`${joinURL || location.href}\ninvite code: ${inviteCode}`);
-    flashCopy($('invite-link-copy'), ok, 'Copy');
-  };
-  $('invite-code-copy').onclick = async () => {
-    flashCopy($('invite-code-copy'), await copyText(inviteCode || ''), 'Copy');
-  };
+  $('invite-new').addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    showInviteErr('');
+    $('invite-new-submit').disabled = true;
+    try {
+      const body = { expires_in_seconds: Number($('invite-expiry').value), max_uses: Number($('invite-max').value) };
+      const out = await api('/api/v1/invites', { method: 'POST', body });
+      await renderInvites();
+      const row = $('invite-list').querySelector(`[data-id="${out.invite.id}"]`);
+      if (row) { row.scrollIntoView({ block: 'nearest' }); row.querySelector('.invite-copy').focus(); }
+    } catch (e) { showInviteErr(e.message); }
+    $('invite-new-submit').disabled = false;
+  });
 
   // behind Cloudflare Access a bare curl gets the login page, so the invite
   // spells out the two headers for the skill fetch and the cli.sh download
-  const agentInviteText = (origin, link, codeLine, access) => {
-    if (!access) return `Fetch ${origin}/skill with curl and follow its instructions.\nJoin link: ${link}\n${codeLine}`;
+  const agentInviteText = (origin, link, access) => {
+    if (!access) return `Fetch ${origin}/skill with curl and follow its instructions.\nInvite link: ${link}`;
     return `Fetch ${origin}/skill with curl and follow its instructions. This room sits behind Cloudflare Access, so every curl to ${origin} needs these two headers:\n` +
       `  -H "CF-Access-Client-Id: ${access.client_id}"\n` +
       `  -H "CF-Access-Client-Secret: ${access.client_secret}"\n` +
       'Use them on the /skill fetch and on the cli.sh download the skill asks for. The downloaded cli.sh sends them by itself afterwards. Treat them like a password: never print them or post them.\n' +
-      `Join link: ${link}\n${codeLine}`;
+      `Invite link: ${link}`;
   };
 
   $('invite-agent-copy').onclick = async () => {
-    const link = joinURL || location.href;
-    const origin = new URL(link).origin;
-    // owner-scoped code: the joining agent gets badged as yours, server-verified
-    let code = null;
-    let access = null;
-    try {
-      const inv = await api('/api/v1/invites', { method: 'POST', body: {} });
-      code = inv.invite_code;
-      access = inv.access || null;
-    } catch (e) { code = inviteCode; }
-    const codeLine = `Invite code: ${code}\n`;
-    const ok = await copyText(agentInviteText(origin, link, codeLine, access));
+    const origin = new URL(joinURL || location.href).origin;
+    // a bound link: the joining agent gets badged as yours, server-verified
+    let inv;
+    try { inv = await api('/api/v1/invites', { method: 'POST', body: { bind_owner: true } }); }
+    catch (e) { showInviteErr(e.message); return; }
+    const ok = await copyText(agentInviteText(origin, inv.join_url, inv.access || null));
     flashCopy($('invite-agent-copy'), ok, 'Copy agent instructions');
+    await renderInvites();
   };
 
   $('new-channel').onclick = async () => {
@@ -2891,8 +2932,39 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
     return;
   }
 
+  // the invite link page: peek, then enter the workspace the link opens and
+  // land on it; without a session, sign in first (the form names the workspace)
+  const showJoin = (title, msg, home) => {
+    document.title = 'AgentChat';
+    $('join-title').textContent = title;
+    $('join-msg').textContent = msg || '';
+    $('join-home').classList.toggle('hidden', !home);
+    $('join-view').classList.remove('hidden');
+  };
+  const joinPage = async () => {
+    let peek;
+    try { peek = await api('/api/v1/invites/peek?token=' + encodeURIComponent(joinToken)); }
+    catch (e) { showJoin('This invite link no longer works', e.status === 404 ? 'Ask whoever invited you for a new one.' : e.message, true); return; }
+    $('join-room-icon').replaceChildren(wsAvatarEl(peek, 'ws-avatar-md'));
+    if (peek.status !== 'active') {
+      showJoin('This invite link no longer works', inviteErrorText({ code: 'invite_' + peek.status }) + ' Ask whoever invited you for a new one.', true);
+      return;
+    }
+    if (!sessionToken()) { location.replace(loginURL()); return; }
+    showJoin('Joining “' + peek.name + '”…');
+    try {
+      await authApi('/api/v1/workspaces/' + encodeURIComponent(peek.slug) + '/enter', { method: 'POST', body: { invite: joinToken } });
+      location.replace('/w/' + encodeURIComponent(peek.slug));
+    } catch (e) {
+      if (e.status === 401) { location.replace(loginURL()); return; }
+      if (e.code === 'workspace_forbidden') { showJoin('You were removed from “' + peek.name + '”', 'An admin has to let you back in.', true); return; }
+      showJoin('Could not join “' + peek.name + '”', noWorkspaceError(e), true);
+    }
+  };
+
   // boot; the account pages belong to auth.js
   if (isAccountPage) return;
+  if (isJoinPage) { joinPage(); return; }
   (async () => {
     if (!slug) { document.body.textContent = 'Missing room link.'; return; }
     // a per-slug act_ token from before accounts existed is dead since 000027;

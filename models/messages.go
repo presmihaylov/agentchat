@@ -95,7 +95,7 @@ func (s *Store) CreateMessage(ctx context.Context, p CreateMessageParams) (Messa
 
 	// advisory lock first: this tx takes FK row locks (FOR KEY SHARE on rooms via
 	// the messages insert) before appendEventTx, so without locking advisory-first
-	// it would deadlock AB-BA against RotateSecret's key-column UPDATE on rooms.
+	// it would deadlock AB-BA against a rooms-row UPDATE such as RenameRoom.
 	if err := lockRoomEvents(ctx, tx, p.RoomID); err != nil {
 		return Message{}, err
 	}
@@ -334,7 +334,7 @@ func (s *Store) UpdateMessageBody(ctx context.Context, roomID, id, body string) 
 	defer tx.Rollback(ctx)
 
 	// advisory-first, like CreateMessage: the UPDATE takes an FK key-share lock on
-	// rooms before appendEventTx, else it deadlocks AB-BA against RotateSecret.
+	// rooms before appendEventTx, else it deadlocks AB-BA against RenameRoom.
 	if err := lockRoomEvents(ctx, tx, roomID); err != nil {
 		return Message{}, err
 	}
@@ -377,7 +377,7 @@ func (s *Store) DeleteMessage(ctx context.Context, roomID, id string) error {
 	}
 	defer tx.Rollback(ctx)
 
-	// advisory-first, like CreateMessage, to avoid the AB-BA deadlock vs RotateSecret.
+	// advisory-first, like CreateMessage, to avoid the AB-BA deadlock vs RenameRoom.
 	if err := lockRoomEvents(ctx, tx, roomID); err != nil {
 		return err
 	}

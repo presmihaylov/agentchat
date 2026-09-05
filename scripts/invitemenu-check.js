@@ -1,7 +1,8 @@
-// E2E for "Invite member" in the workspace menu (task 10). An admin opens the
-// menu, clicks Invite member, and the modal shows the join link and the invite
-// code; the copied code lets a second user in. A member has no Invite member
-// item, and the old header buttons (copy invite, invite agent) are gone.
+// E2E for "Invite member" in the workspace menu (tasks 10, 17). An admin opens
+// the menu, clicks Invite member, and the modal lists the workspace's invite
+// links: Copy copies the link, New link mints one, Revoke kills one. The copied
+// link lets a second user in. A member has no Invite member item, and the old
+// header buttons (copy invite, invite agent) are gone.
 // Run: NODE_PATH=<dir with puppeteer-core> SERVER=http://localhost:8095 OUT=<dir> node scripts/invitemenu-check.js
 const fs = require('fs');
 const puppeteer = require('puppeteer-core');
@@ -15,9 +16,11 @@ const stubClipboard = (page) => page.evaluate(() => {
   Object.defineProperty(navigator, 'clipboard', { value: { writeText: async (t) => { window.__copied = t; } }, configurable: true });
 });
 const noOldButtons = async (page) => {
-  const old = await page.evaluate(() => ['copy-link', 'invite-agent'].filter((id) => document.getElementById(id)));
-  assert(old.length === 0, 'old header buttons still exist: ' + JSON.stringify(old));
+  const old = await page.evaluate(() => ['copy-link', 'invite-agent', 'invite-code', 'invite-code-copy'].filter((id) => document.getElementById(id)));
+  assert(old.length === 0, 'old invite buttons still exist: ' + JSON.stringify(old));
 };
+const links = (page) => page.$$eval('#invite-list .invite-item input', (els) => els.map((e) => e.value));
+const rows = (page) => page.$$eval('#invite-list .invite-item', (els) => els.map((e) => e.querySelector('.invite-meta').textContent));
 
 (async () => {
   fs.mkdirSync(OUT, { recursive: true });
@@ -29,28 +32,37 @@ const noOldButtons = async (page) => {
   });
   const page = await browser.newPage();
   await page.setViewport({ width: 1280, height: 800 });
-  await enterAs(page, SERVER, slug, room.invite_code, 'Alice');
+  page.on('dialog', (d) => d.accept());
+  await enterAs(page, SERVER, slug, room.invite, 'Alice');
   await noOldButtons(page);
 
-  // 1. admin: menu > Invite member shows the link and the code
+  // 1. admin: menu > Invite member lists the workspace link; Copy copies it
   await openInviteModal(page);
-  const shown = await page.evaluate(() => ({ link: document.getElementById('invite-link').value, code: document.getElementById('invite-code').value }));
-  assert(shown.link === room.join_url, 'modal link: ' + shown.link + ' vs ' + room.join_url);
-  assert(shown.code === room.invite_code, 'modal code: ' + shown.code);
+  await page.waitForSelector('#invite-list .invite-item', { timeout: 8000 });
+  assert((await links(page)).join() === room.invite, 'modal links: ' + (await links(page)).join());
+  assert(/workspace link/.test((await rows(page))[0]), 'meta: ' + (await rows(page))[0]);
   await page.screenshot({ path: OUT + '/invite-modal.png' });
   await stubClipboard(page);
-  await page.click('#invite-code-copy');
+  await page.click('#invite-list .invite-copy');
   await page.waitForFunction(() => window.__copied !== null, { timeout: 5000 });
   const copied = await page.evaluate(() => window.__copied);
-  assert(copied.includes(room.invite_code), 'copied text lacks the code: ' + copied);
-  await page.click('#invite-link-copy');
-  await page.waitForFunction(() => /invite code/.test(window.__copied || ''), { timeout: 5000 });
-  const copiedLink = await page.evaluate(() => window.__copied);
-  assert(copiedLink.startsWith(room.join_url) && copiedLink.includes(room.invite_code), 'copied link lacks link+code: ' + copiedLink);
+  assert(copied === room.invite, 'copied text is not the link: ' + copied);
+
+  // 2. New link with a 1-use cap, then Revoke it: the list follows
+  await page.select('#invite-max', '1');
+  await page.click('#invite-new-submit');
+  await page.waitForFunction(() => document.querySelectorAll('#invite-list .invite-item').length === 2, { timeout: 8000 });
+  const [, minted] = await links(page);
+  assert(/\/join\/inv-/.test(minted) && minted !== room.invite, 'minted link: ' + minted);
+  assert(/by Alice/.test((await rows(page))[1]) && /0\/1 uses/.test((await rows(page))[1]), 'minted meta: ' + (await rows(page))[1]);
+  await page.screenshot({ path: OUT + '/invite-modal-two.png' });
+  await page.$$eval('#invite-list .invite-revoke', (els) => els[1].click());
+  await page.waitForFunction(() => document.querySelectorAll('#invite-list .invite-item').length === 1, { timeout: 8000 });
+  assert((await links(page)).join() === room.invite, 'revoke removed the wrong row');
   await page.keyboard.press('Escape');
   await page.waitForSelector('#invite-modal.hidden', { timeout: 5000 });
 
-  // 2. a second user enters with the copied code, and sees no Invite member item
+  // 3. a second user enters with the copied link, and sees no Invite member item
   const ctx = await browser.createBrowserContext();
   const bob = await ctx.newPage();
   await bob.setViewport({ width: 1280, height: 800 });
@@ -63,6 +75,12 @@ const noOldButtons = async (page) => {
   assert(!items.includes('Invite member'), 'member sees Invite member: ' + JSON.stringify(items));
   assert(!items.includes('Create workspace') && items.includes('Settings'), 'member menu: ' + JSON.stringify(items));
   assert(!(await bob.$('#ws-invite-member')), 'member has the invite item in the DOM');
+  // the workspace link counted Alice and Bob
+  await page.reload({ waitUntil: 'networkidle2' });
+  await page.waitForSelector('#chat-view:not(.hidden)', { timeout: 8000 });
+  await openInviteModal(page);
+  await page.waitForSelector('#invite-list .invite-item', { timeout: 8000 });
+  assert(/2 uses/.test((await rows(page))[0]), 'uses did not count: ' + (await rows(page))[0]);
 
   await browser.close();
   console.log('INVITEMENU_CHECK_OK');

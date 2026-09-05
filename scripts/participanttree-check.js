@@ -20,7 +20,7 @@ async function api(path, opts = {}) {
 }
 const join = (code, name, avatar, human) => api('/api/v1/rooms/join',
   { method: 'POST', body: { invite_code: code, name, avatar, is_human: !!human } });
-const mint = (tok) => api('/api/v1/invites', { method: 'POST', token: tok }).then((r) => r.invite_code);
+const mint = (tok) => api('/api/v1/invites', { method: 'POST', token: tok, body: { bind_owner: true } }).then((r) => r.join_url);
 
 (async () => {
   const created = await newRoom(SERVER, 'participant tree check');
@@ -28,6 +28,8 @@ const mint = (tok) => api('/api/v1/invites', { method: 'POST', token: tok }).the
 
   const maya = await join(roomCode, 'maya', '🧑', true);
   const dana = await join(roomCode, 'dana', '👩', true);
+  // only admins and agents mint links: maya (first joiner, admin) promotes dana first
+  await api('/api/v1/participants/' + dana.participant.id + '/role', { method: 'POST', token: maya.token, body: { role: 'admin' } });
   const mayaCode = await mint(maya.token), danaCode = await mint(dana.token);
   await join(mayaCode, 'mayabot1', '🤖');   // owned by maya
   await join(mayaCode, 'mayabot2', '🛰️');    // owned by maya

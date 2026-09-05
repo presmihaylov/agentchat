@@ -46,8 +46,10 @@ async function api(path, opts = {}) {
   const text = await page.evaluate(() => window.__copied);
 
   if (!text.includes('/skill with curl')) throw new Error('invite lost the skill line: ' + text);
-  if (!text.includes('Join link: ' + created.join_url)) throw new Error('invite lost the join link: ' + text);
-  if (!/Invite code: inv-/.test(text)) throw new Error('invite lost the code: ' + text);
+  const m = text.match(/Invite link: (\S+)$/);
+  if (!m || !m[1].startsWith(SERVER + '/join/inv-')) throw new Error('invite lost the link: ' + text);
+  if (m[1] === created.invite) throw new Error('agent instructions reuse the workspace link instead of a bound one');
+  if (/Invite code:|Join link:/.test(text)) throw new Error('invite still carries the old lines: ' + text);
   if (ACCESS_ID) {
     if (!text.includes(`-H "CF-Access-Client-Id: ${ACCESS_ID}"`)) throw new Error('gated invite lacks the client id header: ' + text);
     if (!text.includes(`-H "CF-Access-Client-Secret: ${ACCESS_SECRET}"`)) throw new Error('gated invite lacks the client secret header: ' + text);

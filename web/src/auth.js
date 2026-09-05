@@ -132,9 +132,28 @@ export const slugFromLink = (raw) => {
   try { return decodeURIComponent(segs[1]); } catch (e) { return ''; }
 };
 
+// inviteTokenFrom pulls the token out of a pasted invite link, or accepts the
+// bare token; anything else is ''
+export const inviteTokenFrom = (raw) => {
+  let text = String(raw || '').trim();
+  const i = text.lastIndexOf('/join/');
+  if (i >= 0) text = text.slice(i + 6);
+  text = text.replace(/[?#].*$/, '').replace(/^\/+|\/+$/g, '');
+  return /^inv-[a-z0-9-]+$/i.test(text) ? text : '';
+};
+
+export const inviteErrorText = (e) => {
+  if (e.code === 'invite_invalid') return 'That invite link does not open this workspace.';
+  if (e.code === 'invite_expired') return 'This invite link has expired.';
+  if (e.code === 'invite_exhausted') return 'This invite link has reached its use limit.';
+  if (e.code === 'invite_revoked') return 'This invite link was revoked.';
+  return null;
+};
+
 export const noWorkspaceError = (e) => {
   if (e.code === 'workspace_quota') return 'You already own the maximum number of workspaces.';
-  if (e.code === 'invite_invalid') return 'That invite code does not open this workspace.';
+  const inv = inviteErrorText(e);
+  if (inv) return inv;
   if (e.status === 404) return 'This link does not point to a workspace.';
   return e.message;
 };
@@ -163,10 +182,10 @@ const showNoWorkspace = () => {
     location.href = '/w/' + encodeURIComponent(out.room.slug);
   });
   wire('no-ws-enter-form', 'no-ws-enter-error', async () => {
-    const slug = slugFromLink($('no-ws-enter-slug').value);
-    if (!slug) throw new Error('Paste a workspace link (…/r/<slug>) or its slug.');
-    await authApi('/api/v1/workspaces/' + encodeURIComponent(slug) + '/enter', { method: 'POST', body: { invite_code: $('no-ws-enter-code').value.trim() } });
-    location.href = '/w/' + encodeURIComponent(slug);
+    // the join page does the work: it knows the workspace from the link
+    const token = inviteTokenFrom($('no-ws-enter-link').value);
+    if (!token) throw new Error('Paste an invite link (…/join/inv-…).');
+    location.href = '/join/' + encodeURIComponent(token);
   });
 };
 
@@ -240,6 +259,7 @@ const loginPage = async () => {
   const provs = await providers();
   if (!provs.registration_enabled) $('login-register-hint').classList.add('hidden');
   keepNext('login-register-link');
+  inviteHint('login-invite');
   const list = provs.providers || [];
   if (!list.includes('password')) $('login-form').querySelectorAll('label, button[type=submit]').forEach((el) => el.classList.add('hidden'));
   // an extra provider (Clerk) gets its redirect flow with its own task; the
@@ -277,6 +297,19 @@ const loginPage = async () => {
   if (sessionToken() && await refreshUser()) { $('login-view').classList.add('hidden'); await go(nextParam(), lastUserPayload); }
 };
 
+// a ?next= into /join/<token> means the visitor followed an invite link:
+// say which workspace it opens, so the form makes sense
+const inviteHint = async (id) => {
+  const m = /^\/join\/([^/?#]+)/.exec(nextParam());
+  if (!m) return;
+  try {
+    const peek = await authApi('/api/v1/invites/peek?token=' + encodeURIComponent(m[1]));
+    if (peek.status !== 'active') return;
+    $(id).textContent = 'You were invited to “' + peek.name + '”. ' + (id === 'login-invite' ? 'Sign in to join.' : 'Create an account to join.');
+    $(id).classList.remove('hidden');
+  } catch (e) { /* the join page says why */ }
+};
+
 const registerPage = async () => {
   // an already valid session skips the form
   if (sessionToken() && await refreshUser()) { await go(nextParam(), lastUserPayload); return; }
@@ -287,6 +320,7 @@ const registerPage = async () => {
   }
   $('register-view').classList.remove('hidden');
   keepNext('register-login-link');
+  inviteHint('register-invite');
   $('register-form').addEventListener('submit', async (ev) => {
     ev.preventDefault();
     hideErr('register-error');
@@ -346,7 +380,8 @@ const showTab = (name, remember = true) => {
   history.replaceState(null, '', u.pathname + u.search);
 };
 
-// Workspace tab: name, link, invite code. Admins edit; members read.
+// Workspace tab: name, link, members. Admins edit; members read. Invite
+// links live in the workspace menu, not here.
 const workspaceTab = async (slug) => {
   let out;
   try { out = await wsApi(slug, '/api/v1/room'); } catch (e) {
@@ -355,8 +390,7 @@ const workspaceTab = async (slug) => {
     $('ws-none').classList.remove('hidden');
     return null;
   }
-  const admin = !!out.invite_code;
-  let code = out.invite_code || '';
+  const admin = !!out.admin;
   $('ws-panel').classList.remove('hidden');
   let room = out.room;
   const wsHeaders = { 'Authorization': 'Bearer ' + sessionToken(), 'X-Workspace-Slug': slug };
@@ -384,7 +418,6 @@ const workspaceTab = async (slug) => {
   $('ws-slug-copy').onclick = () => copyText($('ws-slug-copy'), $('ws-slug').value);
   $('ws-mcp').value = location.origin + '/api/v1/w/' + out.room.slug + '/mcp';
   $('ws-mcp-copy').onclick = () => copyText($('ws-mcp-copy'), $('ws-mcp').value);
-  $('ws-invite').classList.toggle('hidden', !admin);
   $('ws-name-form').addEventListener('submit', async (ev) => {
     ev.preventDefault();
     hideErr('ws-name-error');
@@ -403,22 +436,6 @@ const workspaceTab = async (slug) => {
   if (!admin) return out;
   membersSection(slug, () => room);
   dangerZone(slug, () => room);
-  let shown = false;
-  const paintCode = () => { $('ws-invite-code').value = shown ? code : '••••••••••••'; $('ws-invite-show').textContent = shown ? 'Hide' : 'Show'; };
-  $('ws-invite-show').onclick = () => { shown = !shown; paintCode(); };
-  $('ws-invite-copy').onclick = () => copyText($('ws-invite-copy'), code);
-  $('ws-invite-regen').onclick = async () => {
-    if (!confirm('Regenerate the invite code? The current code stops working at once.')) return;
-    $('ws-invite-regen').disabled = true;
-    try {
-      const res = await wsApi(slug, '/api/v1/room/rotate-secret', { method: 'POST' });
-      code = res.invite_code;
-      shown = true;
-      paintCode();
-      $('ws-invite-ok').classList.remove('hidden');
-    } catch (e) { alert(e.message); }
-    $('ws-invite-regen').disabled = false;
-  };
   return out;
 };
 

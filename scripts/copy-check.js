@@ -32,6 +32,7 @@ async function api(path, opts = {}) {
   const page = await browser.newPage();
   await enterAs(page, SERVER, slug, created.invite_code, 'copytester');
   await openInviteModal(page);
+  await page.waitForSelector('#invite-list .invite-copy', { timeout: 8000 });
 
   // instrument: hide the clipboard API (as plain HTTP does) and stub execCommand
   // so we can drive both the success and failure branches deterministically
@@ -47,7 +48,7 @@ async function api(path, opts = {}) {
     };
   }, execResult);
 
-  const clickCopy = () => page.evaluate(() => document.getElementById('invite-link-copy').click());
+  const clickCopy = () => page.evaluate(() => document.querySelector('#invite-list .invite-copy').click());
   // the composer is itself a textarea, so count the baseline and assert the
   // fallback adds none net (it must remove its scratch textarea after copying)
   const baselineTextareas = await page.evaluate(() => document.querySelectorAll('textarea').length);
@@ -55,7 +56,7 @@ async function api(path, opts = {}) {
   // success path: execCommand returns true -> button confirms, textarea was used
   await install(true);
   await clickCopy();
-  await page.waitForFunction(() => document.getElementById('invite-link-copy').textContent.includes('copied'), { timeout: 5000 });
+  await page.waitForFunction(() => document.querySelector('#invite-list .invite-copy').textContent.includes('copied'), { timeout: 5000 });
   const okState = await page.evaluate(() => ({
     calls: window.__execCalls, sawTextarea: window.__sawTextarea,
     textareas: document.querySelectorAll('textarea').length,
@@ -65,10 +66,10 @@ async function api(path, opts = {}) {
   if (okState.textareas !== baselineTextareas) throw new Error('fallback left a scratch textarea in the DOM: ' + JSON.stringify(okState));
 
   // let the label restore, then drive the failure path
-  await page.waitForFunction(() => document.getElementById('invite-link-copy').textContent === 'Copy', { timeout: 5000 });
+  await page.waitForFunction(() => document.querySelector('#invite-list .invite-copy').textContent === 'Copy', { timeout: 5000 });
   await install(false);
   await clickCopy();
-  await page.waitForFunction(() => document.getElementById('invite-link-copy').textContent.includes('failed'), { timeout: 5000 });
+  await page.waitForFunction(() => document.querySelector('#invite-list .invite-copy').textContent.includes('failed'), { timeout: 5000 });
 
   await browser.close();
   console.log('COPY_CHECK_OK');

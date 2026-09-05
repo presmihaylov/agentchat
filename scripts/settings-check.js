@@ -9,7 +9,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const puppeteer = require('puppeteer-core');
-const { newRoom, enterAs, loginPage, enterWithCode, openSettings, backToRoom, PASSWORD, sleep } = require('./lib/login.js');
+const { newRoom, enterAs, loginPage, enterWithCode, openSettings, openInviteModal, backToRoom, PASSWORD, sleep } = require('./lib/login.js');
 const SERVER = process.env.SERVER || 'http://localhost:8095';
 const OUT = process.env.OUT || 'tmp';
 
@@ -70,16 +70,19 @@ const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR
   await backToRoom(page);
   assert((await page.$eval('#ws-current', (el) => el.textContent)) === 'Renamed by settings', 'sidebar did not follow the rename');
 
-  // 3. regenerate the invite: the old code is dead, the new one enters
-  await openSettings(page, SERVER, 'workspace');
-  await page.waitForSelector('#ws-invite:not(.hidden)', { timeout: 8000 });
-  assert((await page.$eval('#ws-invite-code', (el) => el.value)) !== room.invite_code, 'code is masked until Show');
-  await page.click('#ws-invite-show');
-  assert((await page.$eval('#ws-invite-code', (el) => el.value)) === room.invite_code, 'Show reveals the code');
-  await page.click('#ws-invite-regen');
-  await page.waitForSelector('#ws-invite-ok:not(.hidden)', { timeout: 8000 });
-  const newCode = await page.$eval('#ws-invite-code', (el) => el.value);
-  assert(newCode && newCode !== room.invite_code, 'regenerate did not change the code');
+  // 3. invite links live in the workspace menu: New link mints one, Revoke
+  // kills the original, so the old code is dead and the new link enters
+  await openInviteModal(page);
+  await page.waitForSelector('#invite-list .invite-item', { timeout: 8000 });
+  assert((await page.$$eval('#invite-list .invite-item input', (els) => els.map((e) => e.value))).join() === room.invite, 'first link is not the workspace link');
+  await page.click('#invite-new-submit');
+  await page.waitForFunction(() => document.querySelectorAll('#invite-list .invite-item').length === 2, { timeout: 8000 });
+  const newLink = await page.$$eval('#invite-list .invite-item input', (els) => els[1].value);
+  assert(/\/join\/inv-/.test(newLink) && newLink !== room.invite, 'new link: ' + newLink);
+  await page.screenshot({ path: path.join(OUT, 'invite-links.png') });
+  await page.click('#invite-list .invite-item .invite-revoke');
+  await page.waitForFunction(() => document.querySelectorAll('#invite-list .invite-item').length === 1, { timeout: 8000 });
+  await page.keyboard.press('Escape');
   const bobCtx = await browser.createBrowserContext();
   const bob = await bobCtx.newPage();
   await loginPage(bob, SERVER, undefined, { displayName: 'Bob', next: '/r/' + slug });
@@ -87,17 +90,19 @@ const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR
   await bob.type('#enter-code', room.invite_code);
   await bob.click('#enter-form button[type=submit]');
   await bob.waitForSelector('#enter-error:not(.hidden)', { timeout: 8000 });
-  await enterWithCode(bob, newCode);
+  assert(/revoked/.test(await bob.$eval('#enter-error', (el) => el.textContent)), 'revoked link error text');
+  await enterWithCode(bob, newLink);
 
   // 4. a member sees the Workspace tab read-only
   await openSettings(bob, SERVER, 'workspace');
   await bob.waitForSelector('#ws-panel:not(.hidden)', { timeout: 8000 });
   assert(await bob.$eval('#ws-name', (el) => el.disabled), 'member must not edit the name');
   assert(await bob.$eval('#ws-name-save', (el) => el.classList.contains('hidden')), 'member has no Rename button');
-  assert(await bob.$eval('#ws-invite', (el) => el.classList.contains('hidden')), 'member must not see the invite code');
+  assert(!(await bob.$('#ws-invite')), 'the settings invite block is gone');
   await bob.screenshot({ path: path.join(OUT, 'settings-workspace-member.png') });
 
   // 5. Personal: avatar upload and remove, a notification pref, the password
+  await openSettings(page, SERVER, 'workspace');
   await page.click('#tab-personal');
   await page.waitForSelector('#avatar-section:not(.hidden)', { timeout: 8000 });
   assert((await page.$eval('#avatar-ws-name', (el) => el.textContent)) === 'Renamed by settings', 'avatar section names the workspace');

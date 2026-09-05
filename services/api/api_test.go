@@ -134,7 +134,7 @@ func createRoom(t *testing.T, base, name string) map[string]any {
 func setupRoom(t *testing.T, base string) (secret string, alice, bob *testClient) {
 	t.Helper()
 	out := createRoom(t, base, "test room")
-	secret = out["invite_code"].(string)
+	secret = out["invite"].(string)
 	if !strings.HasPrefix(out["join_url"].(string), "http://public.test/r/") {
 		t.Fatalf("bad join_url: %v", out["join_url"])
 	}
@@ -145,7 +145,7 @@ func setupRoom(t *testing.T, base string) (secret string, alice, bob *testClient
 	join := func(name string, human bool) *testClient {
 		cc := &testClient{t: t, base: base}
 		out := cc.must("POST", "/api/v1/rooms/join", map[string]any{
-			"invite_code": secret, "name": name, "description": name + " the test agent", "is_human": human,
+			"invite": secret, "name": name, "description": name + " the test agent", "is_human": human,
 		}, 201)
 		cc.token = out["token"].(string)
 		return cc
@@ -157,12 +157,12 @@ func TestFullFlow(t *testing.T) {
 	srv, _ := newTestServer(t)
 	secret, alice, bob := setupRoom(t, srv.URL)
 
-	// duplicate name rejected (legacy "secret" field still accepted), bad code 404
+	// duplicate name rejected (legacy "secret" field still accepted), bad link 400
 	c := &testClient{t: t, base: srv.URL}
 	c.must("POST", "/api/v1/rooms/join", map[string]any{
 		"secret": secret, "name": "alice",
 	}, 409)
-	c.must("POST", "/api/v1/rooms/join", map[string]any{"invite_code": "wrong-code", "name": "eve"}, 404)
+	c.must("POST", "/api/v1/rooms/join", map[string]any{"invite": "wrong-code", "name": "eve"}, 400)
 
 	// room overview
 	out := alice.must("GET", "/api/v1/room", nil, 200)
@@ -390,7 +390,7 @@ func TestRolesAndModeration(t *testing.T) {
 
 	// member cannot do admin things
 	bob.must("PATCH", "/api/v1/room", map[string]any{"name": "hijacked"}, 403)
-	bob.must("POST", "/api/v1/room/rotate-secret", nil, 403)
+	bob.must("GET", "/api/v1/invites", nil, 403)
 	bob.must("POST", "/api/v1/participants/alice/role", map[string]any{"role": "member"}, 403)
 	bob.must("DELETE", "/api/v1/participants/alice", nil, 403)
 
@@ -402,7 +402,7 @@ func TestRolesAndModeration(t *testing.T) {
 
 	// channel rules: bob creates one, carol (member) cannot archive it, bob (creator) can
 	cc := &testClient{t: t, base: srv.URL}
-	out := cc.must("POST", "/api/v1/rooms/join", map[string]any{"invite_code": secret, "name": "carol"}, 201)
+	out := cc.must("POST", "/api/v1/rooms/join", map[string]any{"invite": secret, "name": "carol"}, 201)
 	cc.token = out["token"].(string)
 
 	bob.must("POST", "/api/v1/channels", map[string]any{"name": "bobs-place"}, 201)
@@ -456,16 +456,22 @@ func TestRolesAndModeration(t *testing.T) {
 	alice.must("DELETE", "/api/v1/participants/me", nil, 200)
 	alice.must("GET", "/api/v1/me", nil, 401)
 
-	// rotate secret: old secret dies, new one works
-	rot := bob.must("POST", "/api/v1/room/rotate-secret", nil, 200)
-	newSecret := rot["invite_code"].(string)
-	if newSecret == secret {
-		t.Fatal("secret did not change")
+	// revoke the room's link: it dies, a fresh one works
+	links := bob.must("GET", "/api/v1/invites", nil, 200)["invites"].([]any)
+	if len(links) != 1 || links[0].(map[string]any)["url"] != secret {
+		t.Fatalf("room links: %v", links)
 	}
+	bob.must("DELETE", "/api/v1/invites/"+links[0].(map[string]any)["id"].(string), nil, 204)
 	dead := &testClient{t: t, base: srv.URL}
-	dead.must("POST", "/api/v1/rooms/join", map[string]any{"invite_code": secret, "name": "late"}, 404)
+	if st, out := dead.do("POST", "/api/v1/rooms/join", map[string]any{"invite": secret, "name": "late"}); st != 403 || out["code"] != "invite_revoked" {
+		t.Fatalf("join on revoked link: %d %v", st, out)
+	}
+	newSecret := bob.must("POST", "/api/v1/invites", nil, 201)["join_url"].(string)
+	if newSecret == secret {
+		t.Fatal("link did not change")
+	}
 	fresh := &testClient{t: t, base: srv.URL}
-	fresh.must("POST", "/api/v1/rooms/join", map[string]any{"invite_code": newSecret, "name": "late"}, 201)
+	fresh.must("POST", "/api/v1/rooms/join", map[string]any{"invite": newSecret, "name": "late"}, 201)
 }
 
 func TestEventFiltering(t *testing.T) {
@@ -1023,13 +1029,13 @@ func TestReclaimIdentity(t *testing.T) {
 
 	// while bob is online, an invite code alone must not hijack him
 	c := &testClient{t: t, base: srv.URL}
-	c.must("POST", "/api/v1/rooms/join", map[string]any{"invite_code": secret, "name": "bob"}, 409)
+	c.must("POST", "/api/v1/rooms/join", map[string]any{"invite": secret, "name": "bob"}, 409)
 
 	// offline bob is reclaimable: same id, fresh token, old token dead
 	if err := store.GoOffline(context.Background(), roomID, bobID); err != nil {
 		t.Fatal(err)
 	}
-	out := c.must("POST", "/api/v1/rooms/join", map[string]any{"invite_code": secret, "name": "bob"}, 200)
+	out := c.must("POST", "/api/v1/rooms/join", map[string]any{"invite": secret, "name": "bob"}, 200)
 	if out["reclaimed"] != true {
 		t.Fatalf("want reclaimed=true, got %v", out)
 	}
@@ -1044,18 +1050,18 @@ func TestReclaimIdentity(t *testing.T) {
 
 	// a revoked identity stays locked out even when offline
 	alice.must("DELETE", "/api/v1/participants/"+bobID, nil, 200)
-	c.must("POST", "/api/v1/rooms/join", map[string]any{"invite_code": secret, "name": "bob"}, 409)
+	c.must("POST", "/api/v1/rooms/join", map[string]any{"invite": secret, "name": "bob"}, 409)
 }
 
 func TestOwnership(t *testing.T) {
 	srv, _ := newTestServer(t)
 
-	roomCode := createRoom(t, srv.URL, "owned room")["invite_code"].(string)
+	roomCode := createRoom(t, srv.URL, "owned room")["invite"].(string)
 
 	join := func(code, name string, human bool) (*testClient, map[string]any) {
 		cc := &testClient{t: t, base: srv.URL}
 		out := cc.must("POST", "/api/v1/rooms/join", map[string]any{
-			"invite_code": code, "name": name, "is_human": human,
+			"invite": code, "name": name, "is_human": human,
 		}, 201)
 		cc.token = out["token"].(string)
 		return cc, out["participant"].(map[string]any)
@@ -1066,22 +1072,22 @@ func TestOwnership(t *testing.T) {
 		t.Fatalf("room-code joiner has an owner: %v", mayaP)
 	}
 
-	// agent joined via maya's invite is owned by maya, server-verified
-	inv := maya.must("POST", "/api/v1/invites", nil, 201)
-	agent1, a1 := join(inv["invite_code"].(string), "helper", false)
+	// agent joined via maya's bound link is owned by maya, server-verified
+	inv := maya.must("POST", "/api/v1/invites", map[string]any{"bind_owner": true}, 201)
+	agent1, a1 := join(inv["join_url"].(string), "helper", false)
 	if a1["owner_id"] != mayaP["id"] {
 		t.Fatalf("want owner %v, got %v", mayaP["id"], a1["owner_id"])
 	}
 
 	// ownership chains through an agent-issued invite to the human principal
 	inv2 := agent1.must("POST", "/api/v1/invites", nil, 201)
-	_, a2 := join(inv2["invite_code"].(string), "subhelper", false)
+	_, a2 := join(inv2["join_url"].(string), "subhelper", false)
 	if a2["owner_id"] != mayaP["id"] {
 		t.Fatalf("chained owner: want %v, got %v", mayaP["id"], a2["owner_id"])
 	}
 
 	// humans never get an owner, whatever code they use
-	_, h2 := join(inv["invite_code"].(string), "visitor", true)
+	_, h2 := join(inv["join_url"].(string), "visitor", true)
 	if h2["owner_id"] != nil {
 		t.Fatalf("human got an owner: %v", h2)
 	}
@@ -1097,9 +1103,9 @@ func TestOwnership(t *testing.T) {
 		t.Fatalf("owner_name missing: %v %v", byName["helper"], byName["subhelper"])
 	}
 
-	// a bad code still 404s
+	// a bad link is 400
 	cc := &testClient{t: t, base: srv.URL}
-	cc.must("POST", "/api/v1/rooms/join", map[string]any{"invite_code": "inv-nope-nope-nope-nope", "name": "nobody"}, 404)
+	cc.must("POST", "/api/v1/rooms/join", map[string]any{"invite": "inv-nope-nope-nope-nope", "name": "nobody"}, 400)
 }
 
 func TestReplyBarData(t *testing.T) {
@@ -1151,30 +1157,100 @@ func TestReplyBarData(t *testing.T) {
 	}
 }
 
-// TestInviteDiesOnRotate locks in that rotating the room secret kills every
-// outstanding owner-scoped invite. Without it a kicked member walks back in on
-// a code they minted and saved, and eviction never sticks.
-func TestInviteDiesOnRotate(t *testing.T) {
+// TestInviteLinkRevoke locks in the admin's link management: every link of
+// the room is listed, a revoked one dies for joiners, and a member's link
+// binds joiners to the member.
+func TestInviteLinkRevoke(t *testing.T) {
 	srv, _ := newTestServer(t)
-	_, alice, bob := setupRoom(t, srv.URL)
+	secret, alice, bob := setupRoom(t, srv.URL)
 
-	// a member mints an owner-scoped invite (the legit "invite my agent" flow)
-	code := bob.must("POST", "/api/v1/invites", nil, 201)["invite_code"].(string)
+	// an agent mints a link (the legit "invite my helper" flow)
+	inv := bob.must("POST", "/api/v1/invites", nil, 201)["invite"].(map[string]any)
+	code := inv["url"].(string)
+	if !strings.HasPrefix(code, "http://public.test/join/inv-") || inv["created_by_name"] != "bob" || inv["status"] != "active" {
+		t.Fatalf("minted link: %v", inv)
+	}
 
-	// valid before rotation
 	pre := &testClient{t: t, base: srv.URL}
-	pre.must("POST", "/api/v1/rooms/join", map[string]any{"invite_code": code, "name": "preagent"}, 201)
+	out := pre.must("POST", "/api/v1/rooms/join", map[string]any{"invite": code, "name": "preagent"}, 201)
+	bobID := bob.must("GET", "/api/v1/me", nil, 200)["id"]
+	if out["participant"].(map[string]any)["owner_id"] != bobID {
+		t.Fatalf("agent link must bind to the agent: %v", out["participant"])
+	}
 
-	// admin rotates to evict
-	out := alice.must("POST", "/api/v1/room/rotate-secret", nil, 200)
-	newSecret := out["invite_code"].(string)
+	// the admin sees both links, with uses; a member sees none
+	links := alice.must("GET", "/api/v1/invites", nil, 200)["invites"].([]any)
+	if len(links) != 2 || links[0].(map[string]any)["url"] != secret || links[1].(map[string]any)["uses"] != 1.0 {
+		t.Fatalf("links: %v", links)
+	}
+	bob.must("GET", "/api/v1/invites", nil, 403)
+	bob.must("DELETE", "/api/v1/invites/"+inv["id"].(string), nil, 403)
 
-	// the saved owner-scoped code is now dead
+	// admin revokes the agent's link
+	alice.must("DELETE", "/api/v1/invites/"+inv["id"].(string), nil, 204)
+	alice.must("DELETE", "/api/v1/invites/"+inv["id"].(string), nil, 404)
 	post := &testClient{t: t, base: srv.URL}
-	post.must("POST", "/api/v1/rooms/join", map[string]any{"invite_code": code, "name": "postagent"}, 404)
+	if st, out := post.do("POST", "/api/v1/rooms/join", map[string]any{"invite": code, "name": "postagent"}); st != 403 || out["code"] != "invite_revoked" {
+		t.Fatalf("join on revoked link: %d %v", st, out)
+	}
+	if n := len(alice.must("GET", "/api/v1/invites", nil, 200)["invites"].([]any)); n != 1 {
+		t.Fatalf("revoked link still listed: %d", n)
+	}
 
-	// the freshly rotated room code still works
-	post.must("POST", "/api/v1/rooms/join", map[string]any{"invite_code": newSecret, "name": "postagent"}, 201)
+	// the room's own link still works, as a full URL or a bare token
+	post.must("POST", "/api/v1/rooms/join", map[string]any{"invite": secret, "name": "postagent"}, 201)
+	bare := strings.TrimPrefix(secret, "http://public.test/join/")
+	(&testClient{t: t, base: srv.URL}).must("POST", "/api/v1/rooms/join", map[string]any{"invite": bare, "name": "bareagent"}, 201)
+}
+
+// TestInviteLinkLimits: expiry and use limits refuse new members, but a
+// reclaim is the same participant coming back and spends nothing.
+func TestInviteLinkLimits(t *testing.T) {
+	srv, _ := newTestServer(t)
+	_, alice, _ := setupRoom(t, srv.URL)
+
+	if st, _ := alice.do("POST", "/api/v1/invites", map[string]any{"max_uses": -1}); st != 400 {
+		t.Fatalf("negative max_uses: %d", st)
+	}
+	once := alice.must("POST", "/api/v1/invites", map[string]any{"max_uses": 1, "expires_in_seconds": 3600}, 201)["invite"].(map[string]any)
+	if once["max_uses"] != 1.0 || once["expires_at"] == nil {
+		t.Fatalf("bounded link: %v", once)
+	}
+	url := once["url"].(string)
+	first := &testClient{t: t, base: srv.URL}
+	first.token = first.must("POST", "/api/v1/rooms/join", map[string]any{"invite": url, "name": "solo"}, 201)["token"].(string)
+	if st, out := (&testClient{t: t, base: srv.URL}).do("POST", "/api/v1/rooms/join", map[string]any{"invite": url, "name": "second"}); st != 403 || out["code"] != "invite_exhausted" {
+		t.Fatalf("second use: %d %v", st, out)
+	}
+	// solo restarts and reclaims its name on the same, exhausted link
+	first.must("POST", "/api/v1/me/offline", nil, 200)
+	out := (&testClient{t: t, base: srv.URL}).must("POST", "/api/v1/rooms/join", map[string]any{"invite": url, "name": "solo"}, 200)
+	if out["reclaimed"] != true {
+		t.Fatalf("reclaim: %v", out)
+	}
+	for _, v := range alice.must("GET", "/api/v1/invites", nil, 200)["invites"].([]any) {
+		vm := v.(map[string]any)
+		if vm["id"] == once["id"] && (vm["uses"] != 1.0 || vm["status"] != "exhausted") {
+			t.Fatalf("reclaim spent a use: %v", vm)
+		}
+	}
+
+	// an expired link refuses even a reclaim
+	expired := alice.must("POST", "/api/v1/invites", map[string]any{"expires_in_seconds": 1}, 201)["invite"].(map[string]any)
+	joiner := &testClient{t: t, base: srv.URL}
+	joiner.token = joiner.must("POST", "/api/v1/rooms/join", map[string]any{"invite": expired["url"], "name": "quick"}, 201)["token"].(string)
+	joiner.must("POST", "/api/v1/me/offline", nil, 200)
+	time.Sleep(1100 * time.Millisecond)
+	if st, out := (&testClient{t: t, base: srv.URL}).do("POST", "/api/v1/rooms/join", map[string]any{"invite": expired["url"], "name": "quick"}); st != 403 || out["code"] != "invite_expired" {
+		t.Fatalf("reclaim on expired: %d %v", st, out)
+	}
+
+	// peek answers for a live and a dead link, never for an unknown one
+	peek := (&testClient{t: t, base: srv.URL}).must("GET", "/api/v1/invites/peek?token="+strings.TrimPrefix(url, "http://public.test/join/"), nil, 200)
+	if peek["name"] != "test room" || peek["status"] != "exhausted" || peek["slug"] == nil {
+		t.Fatalf("peek: %v", peek)
+	}
+	(&testClient{t: t, base: srv.URL}).must("GET", "/api/v1/invites/peek?token=inv-nope-nope-nope-nope", nil, 404)
 }
 
 // TestInviteDiesOnRevoke locks in that revoking a member kills the invites that
@@ -1194,12 +1270,12 @@ func TestInviteDiesOnRevoke(t *testing.T) {
 		t.Fatal("bob not found")
 	}
 
-	code := bob.must("POST", "/api/v1/invites", nil, 201)["invite_code"].(string)
+	code := bob.must("POST", "/api/v1/invites", nil, 201)["join_url"].(string)
 
 	alice.must("DELETE", "/api/v1/participants/"+bobID, nil, 200)
 
 	c := &testClient{t: t, base: srv.URL}
-	c.must("POST", "/api/v1/rooms/join", map[string]any{"invite_code": code, "name": "ghost"}, 404)
+	c.must("POST", "/api/v1/rooms/join", map[string]any{"invite": code, "name": "ghost"}, 403)
 }
 
 // TestReclaimRebindsOwner locks in that a reclaim binds ownership to the
@@ -1209,12 +1285,12 @@ func TestInviteDiesOnRevoke(t *testing.T) {
 func TestReclaimRebindsOwner(t *testing.T) {
 	srv, store := newTestServer(t)
 
-	roomCode := createRoom(t, srv.URL, "owned")["invite_code"].(string)
+	roomCode := createRoom(t, srv.URL, "owned")["invite"].(string)
 
 	join := func(code, name string, human bool, want int) (*testClient, map[string]any) {
 		cc := &testClient{t: t, base: srv.URL}
 		out := cc.must("POST", "/api/v1/rooms/join", map[string]any{
-			"invite_code": code, "name": name, "is_human": human,
+			"invite": code, "name": name, "is_human": human,
 		}, want)
 		if tok, ok := out["token"].(string); ok {
 			cc.token = tok
@@ -1224,7 +1300,7 @@ func TestReclaimRebindsOwner(t *testing.T) {
 
 	maya, mayaP := join(roomCode, "maya", true, 201)
 	mayaID := mayaP["id"].(string)
-	mayaCode := maya.must("POST", "/api/v1/invites", nil, 201)["invite_code"].(string)
+	mayaCode := maya.must("POST", "/api/v1/invites", map[string]any{"bind_owner": true}, 201)["join_url"].(string)
 
 	// helper first joins on the room code: no owner
 	_, helperP := join(roomCode, "helper", false, 201)
@@ -1294,12 +1370,12 @@ func TestArchiveEmitsEvent(t *testing.T) {
 func TestReclaimDropsToMember(t *testing.T) {
 	srv, store := newTestServer(t)
 
-	roomCode := createRoom(t, srv.URL, "takeover")["invite_code"].(string)
+	roomCode := createRoom(t, srv.URL, "takeover")["invite"].(string)
 
 	join := func(code, name string, want int) (*testClient, map[string]any) {
 		cc := &testClient{t: t, base: srv.URL}
 		out := cc.must("POST", "/api/v1/rooms/join", map[string]any{
-			"invite_code": code, "name": name, "is_human": false,
+			"invite": code, "name": name, "is_human": false,
 		}, want)
 		if tok, ok := out["token"].(string); ok {
 			cc.token = tok
@@ -1672,7 +1748,7 @@ func TestPrivateChannels(t *testing.T) {
 	// a third member, carol, joins the room (member role, not admin)
 	carol := &testClient{t: t, base: srv.URL}
 	cj := carol.must("POST", "/api/v1/rooms/join",
-		map[string]any{"invite_code": secret, "name": "carol", "description": "carol the test agent"}, 201)
+		map[string]any{"invite": secret, "name": "carol", "description": "carol the test agent"}, 201)
 	carol.token = cj["token"].(string)
 
 	// alice creates a private #war-room and is auto-joined as its creator
@@ -1887,7 +1963,7 @@ func TestChannelMembersList(t *testing.T) {
 	secret, alice, bob := setupRoom(t, srv.URL)
 	carol := &testClient{t: t, base: srv.URL}
 	out := carol.must("POST", "/api/v1/rooms/join", map[string]any{
-		"invite_code": secret, "name": "carol", "is_human": true,
+		"invite": secret, "name": "carol", "is_human": true,
 	}, 201)
 	carol.token = out["token"].(string)
 
@@ -1933,7 +2009,7 @@ func TestChannelPrivacyConversion(t *testing.T) {
 	join := func(name string) *testClient {
 		cc := &testClient{t: t, base: srv.URL}
 		out := cc.must("POST", "/api/v1/rooms/join", map[string]any{
-			"invite_code": secret, "name": name, "description": "t",
+			"invite": secret, "name": name, "description": "t",
 		}, 201)
 		cc.token = out["token"].(string)
 		return cc
@@ -2113,7 +2189,7 @@ func TestRemovalEventDelivery(t *testing.T) {
 
 	carol := &testClient{t: t, base: srv.URL}
 	out := carol.must("POST", "/api/v1/rooms/join", map[string]any{
-		"invite_code": secret, "name": "carol", "description": "carol the test agent",
+		"invite": secret, "name": "carol", "description": "carol the test agent",
 	}, 201)
 	carol.token = out["token"].(string)
 	bobID := bob.must("GET", "/api/v1/me", nil, 200)["id"].(string)
@@ -2993,7 +3069,7 @@ func TestAgentRosterExpiry(t *testing.T) {
 	ctx := context.Background()
 	maya := &testClient{t: t, base: srv.URL}
 	out := maya.must("POST", "/api/v1/rooms/join", map[string]any{
-		"invite_code": secret, "name": "maya", "description": "the human", "is_human": true,
+		"invite": secret, "name": "maya", "description": "the human", "is_human": true,
 	}, 201)
 	maya.token = out["token"].(string)
 	mayaID := out["participant"].(map[string]any)["id"].(string)
@@ -3257,7 +3333,7 @@ func TestChannelRename(t *testing.T) {
 
 	// a non-member is not told about a channel they cannot see
 	carol := &testClient{t: t, base: srv.URL}
-	carolOut := carol.must("POST", "/api/v1/rooms/join", map[string]any{"invite_code": secret, "name": "carol"}, 201)
+	carolOut := carol.must("POST", "/api/v1/rooms/join", map[string]any{"invite": secret, "name": "carol"}, 201)
 	carol.token = carolOut["token"].(string)
 	alice.must("POST", "/api/v1/channels", map[string]any{"name": "hush", "private": true}, 201)
 	cur = carol.must("GET", "/api/v1/events", nil, 200)
@@ -3277,7 +3353,7 @@ func TestWorkspaceSystemEntries(t *testing.T) {
 	srv, _ := newTestServer(t)
 	secret, alice, bob := setupRoom(t, srv.URL)
 	cc := &testClient{t: t, base: srv.URL}
-	out := cc.must("POST", "/api/v1/rooms/join", map[string]any{"invite_code": secret, "name": "carol"}, 201)
+	out := cc.must("POST", "/api/v1/rooms/join", map[string]any{"invite": secret, "name": "carol"}, 201)
 	cc.token = out["token"].(string)
 
 	alice.must("PATCH", "/api/v1/room", map[string]any{"name": "New Name"}, 200)

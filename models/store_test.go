@@ -34,17 +34,25 @@ func testStore(t *testing.T) *Store {
 
 func mkRoom(t *testing.T, s *Store) Room {
 	t.Helper()
-	r, err := s.CreateRoom(context.Background(), "test room", secrets.RoomSlug(), secrets.InviteCode())
+	r, _ := mkRoomLink(t, s)
+	return r
+}
+
+// mkRoomLink also hands back the token of the room's first invite link.
+func mkRoomLink(t *testing.T, s *Store) (Room, string) {
+	t.Helper()
+	token := secrets.InviteCode()
+	r, err := s.CreateRoom(context.Background(), "test room", secrets.RoomSlug(), token)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return r
+	return r, token
 }
 
 func mkParticipant(t *testing.T, s *Store, roomID, name string) (Participant, string) {
 	t.Helper()
 	token, hash := secrets.NewToken()
-	p, err := s.CreateParticipant(context.Background(), roomID, name, "🤖", "test agent", false, hash, nil, nil)
+	p, err := s.CreateParticipant(context.Background(), roomID, name, "🤖", "test agent", false, hash, nil, nil, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -63,13 +71,13 @@ func generalChannel(t *testing.T, s *Store, roomID string) Channel {
 func TestRoomLifecycle(t *testing.T) {
 	s := testStore(t)
 	ctx := context.Background()
-	r := mkRoom(t, s)
+	r, token := mkRoomLink(t, s)
 
-	got, err := s.RoomBySecret(ctx, r.Secret)
-	if err != nil || got.ID != r.ID {
-		t.Fatalf("RoomBySecret: %v %+v", err, got)
+	inv, got, err := s.InviteByToken(ctx, token)
+	if err != nil || got.ID != r.ID || inv.Status != "active" || inv.CreatedBy != nil || inv.OwnerID != nil {
+		t.Fatalf("InviteByToken: %v %+v %+v", err, inv, got)
 	}
-	if _, err := s.RoomBySecret(ctx, "nope"); err != ErrNotFound {
+	if _, _, err := s.InviteByToken(ctx, "nope"); err != ErrNotFound {
 		t.Fatalf("expected ErrNotFound, got %v", err)
 	}
 
@@ -89,7 +97,7 @@ func TestParticipantsAuthPresenceTags(t *testing.T) {
 
 	if _, _, err := func() (Participant, string, error) {
 		_, hash := secrets.NewToken()
-		p, err := s.CreateParticipant(ctx, r.ID, "alice", "x", "", false, hash, nil, nil)
+		p, err := s.CreateParticipant(ctx, r.ID, "alice", "x", "", false, hash, nil, nil, "")
 		return p, "", err
 	}(); err == nil {
 		t.Fatal("expected duplicate-name conflict")
@@ -417,7 +425,7 @@ func scratchDB(t *testing.T) string {
 func TestMigrateTo(t *testing.T) {
 	ctx := context.Background()
 	dbURL := scratchDB(t)
-	const latest = 32
+	const latest = 33
 	// 000024 created users; rolling to the version before it drops the table
 	const beforeUsers = 23
 
@@ -474,10 +482,11 @@ func TestMigrateTo(t *testing.T) {
 func legacyRoom(t *testing.T, s *Store, name, slug string) Room {
 	t.Helper()
 	var r Room
+	var secret string
 	err := s.pool.QueryRow(context.Background(),
 		`INSERT INTO rooms (name, slug, secret) VALUES ($1, $2, $3) RETURNING id, slug, secret, name, created_by_user_id, created_at`,
 		name, slug, secrets.InviteCode(),
-	).Scan(&r.ID, &r.Slug, &r.Secret, &r.Name, &r.CreatedByUserID, &r.CreatedAt)
+	).Scan(&r.ID, &r.Slug, &secret, &r.Name, &r.CreatedByUserID, &r.CreatedAt)
 	if err != nil {
 		t.Fatalf("legacy room %s: %v", name, err)
 	}

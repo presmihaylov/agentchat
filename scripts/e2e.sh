@@ -44,12 +44,12 @@ REG=$(curl -fsS -X POST "$SERVER/api/v1/auth/password/register" -H 'Content-Type
 SESSION=$(echo "$REG" | python3 -c 'import sys,json;print(json.load(sys.stdin)["token"])')
 expect_fail "create-room without a session is refused" $CLI create-room "no session" --server "$SERVER"
 CREATED=$($CLI create-room "e2e sim $(date +%s) $RANDOM" --server "$SERVER" --session "$SESSION")
-LINK=$(echo "$CREATED" | awk '/join link/{print $3}')
-CODE=$(echo "$CREATED" | awk '/^invite code:/{print $3}')
+LINK=$(echo "$CREATED" | awk '/^room link:/{print $3}')
+CODE=$(echo "$CREATED" | awk '/^invite link:/{print $3}')
 SLUG=${LINK##*/}
 [ -n "$LINK" ] && [ -n "$CODE" ] && ok "room created ($LINK)" || fail "room created"
-case "$LINK" in *"$CODE"*) fail "join link must not contain the invite code";; *) ok "invite code not in the link";; esac
-$CLI join "$CODE" --server "$SERVER" --name orchestrator --description "coordinates the others" --profile orch >/dev/null
+case "$CODE" in "$SERVER"/join/inv-*) ok "invite link is a /join/ link on the server";; *) fail "invite link shape: $CODE";; esac
+$CLI join "$CODE" --name orchestrator --description "coordinates the others" --profile orch >/dev/null
 $CLI join "$CODE" --server "$SERVER" --name researcher --avatar 🔎 --description "digs up facts" --profile res >/dev/null
 $CLI join "$CODE" --server "$SERVER" --name writer --avatar ✍️ --description "writes summaries" --profile wri >/dev/null
 $CLI join "$CODE" --server "$SERVER" --name human-pm --human --avatar 🧑 --description "the human PM" --profile pm >/dev/null
@@ -115,8 +115,14 @@ check "author edits own message" $CLI edit "$MSG_ID" "kubernetes pods OOM-killed
 expect_fail "non-author cannot edit" $CLI edit "$MSG_ID" "vandalism" --profile wri
 check "admin deletes a channel" bash -c "./bin/agentchat channel-delete findings --profile orch"
 expect_fail "kicked member loses access" bash -c "./bin/agentchat kick writer --profile orch && ./bin/agentchat whoami --profile wri"
-check "rotate invite code" $CLI rotate-secret --profile orch
-expect_fail "old invite code is dead" $CLI join "$CODE" --server "$SERVER" --name late-agent --profile late
+INV_ID=$($CLI invites --profile orch | awk 'NR==1{print $1}')
+[ -n "$INV_ID" ] && ok "admin lists invite links" || fail "admin lists invite links"
+expect_fail "member cannot list invite links" $CLI invites --profile res
+check "admin revokes the workspace link" $CLI invite-revoke "$INV_ID" --profile orch
+expect_fail "revoked invite link is dead" $CLI join "$CODE" --name late-agent --profile late
+NEW_LINK=$($CLI invite --profile orch --max-uses 1 | awk '{print $2}')
+check "a fresh link with one use joins once" $CLI join "$NEW_LINK" --name late-agent --profile late
+expect_fail "the one-use link is exhausted" $CLI join "$NEW_LINK" --name later-agent --profile later
 
 echo
 echo "e2e: $PASS passed, $FAIL failed"

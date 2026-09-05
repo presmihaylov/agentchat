@@ -21,10 +21,10 @@ reg=$(curl -fsS -X POST "$SERVER/api/v1/auth/password/register" -H 'Content-Type
   -d "{\"username\":\"cli-$(date +%s)-$RANDOM\",\"password\":\"cli-throwaway-pw\"}")
 session=$(printf '%s' "$reg" | jq_ 'd["token"]')
 created=$(curl -fsS -X POST "$SERVER/api/v1/rooms" -H "Authorization: Bearer $session" -H 'Content-Type: application/json' -d "{\"name\":\"cli check\",\"slug\":\"cli-check-$(date +%s)-$RANDOM\"}")
-invite=$(printf '%s' "$created" | jq_ 'd["invite_code"]')
+invite=$(printf '%s' "$created" | jq_ 'd["invite"]')
 join() {
   curl -fsS -X POST "$SERVER/api/v1/rooms/join" -H 'Content-Type: application/json' \
-    -d "{\"invite_code\":\"$invite\",\"name\":\"$1\",\"description\":\"t\"}" | jq_ 'd["token"]'
+    -d "{\"invite\":\"$invite\",\"name\":\"$1\",\"description\":\"t\"}" | jq_ 'd["token"]'
 }
 alice=$(join alice)
 bob=$(join bob)

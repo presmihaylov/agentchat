@@ -13,7 +13,7 @@ import (
 func TestRoomUsersMigrationRoundTrip(t *testing.T) {
 	ctx := context.Background()
 	dbURL := scratchDB(t)
-	const latest = 32
+	const latest = 33
 	// the version before 000025, where the room-users columns do not exist
 	const beforeRoomUsers = 24
 

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/presmihaylov/agentchat/models"
 	"github.com/presmihaylov/agentchat/pkg/secrets"
@@ -37,7 +38,8 @@ func (s *Server) handleCreateRoom(w http.ResponseWriter, r *http.Request, u mode
 		writeErrCode(w, http.StatusBadRequest, "slug_invalid", "the workspace URL needs lowercase letters, digits and hyphens, 1-60 characters")
 		return
 	}
-	room, _, err := s.store.CreateRoomAs(r.Context(), req.Name, req.Slug, secrets.InviteCode(), u)
+	token := secrets.InviteCode()
+	room, _, err := s.store.CreateRoomAs(r.Context(), req.Name, req.Slug, token, u)
 	if errors.Is(err, models.ErrConflict) {
 		writeErrCode(w, http.StatusConflict, "slug_taken", "that workspace URL is taken, pick another name or edit the slug")
 		return
@@ -47,19 +49,33 @@ func (s *Server) handleCreateRoom(w http.ResponseWriter, r *http.Request, u mode
 		return
 	}
 	writeJSON(w, http.StatusCreated, map[string]any{
-		"room":        room,
-		"join_url":    s.cfg.PublicURL + "/r/" + room.Slug,
-		"invite_code": room.Secret,
+		"room":     room,
+		"join_url": s.cfg.PublicURL + "/r/" + room.Slug,
+		"invite":   s.inviteURL(token),
+		// bare token, kept one release for older clients
+		"invite_code": token,
 	})
 }
 
 type enterWorkspaceReq struct {
+	Invite string `json:"invite"`
+	// older clients sent the bare code under these names
 	InviteCode string `json:"invite_code"`
+	Secret     string `json:"secret"`
+}
+
+func (q enterWorkspaceReq) token() string {
+	for _, v := range []string{q.Invite, q.InviteCode, q.Secret} {
+		if v != "" {
+			return inviteToken(v)
+		}
+	}
+	return ""
 }
 
 // handleEnterWorkspace makes a logged-in user a member of the room behind
 // {slug}. A live member is idempotent, a revoked one stays out, and a
-// newcomer needs a code that opens this very room. Never adopts a row by name.
+// newcomer needs a link that opens this very room. Never adopts a row by name.
 func (s *Server) handleEnterWorkspace(w http.ResponseWriter, r *http.Request, u models.User) {
 	var req enterWorkspaceReq
 	if !readJSON(w, r, &req) {
@@ -70,7 +86,6 @@ func (s *Server) handleEnterWorkspace(w http.ResponseWriter, r *http.Request, u 
 		writeStoreErr(w, err)
 		return
 	}
-	room.Secret = ""
 
 	p, err := s.store.ParticipantForUser(r.Context(), room.ID, u.ID)
 	if err == nil && p.Revoked {
@@ -86,7 +101,7 @@ func (s *Server) handleEnterWorkspace(w http.ResponseWriter, r *http.Request, u 
 		return
 	}
 
-	target, _, err := s.store.RoomByAnySecret(r.Context(), normalizeCode(req.InviteCode))
+	inv, target, err := s.store.InviteByToken(r.Context(), req.token())
 	if errors.Is(err, models.ErrNotFound) || (err == nil && target.ID != room.ID) {
 		writeStoreErr(w, models.ErrInviteInvalid)
 		return
@@ -95,7 +110,7 @@ func (s *Server) handleEnterWorkspace(w http.ResponseWriter, r *http.Request, u 
 		writeStoreErr(w, err)
 		return
 	}
-	p, err = s.store.EnterRoom(r.Context(), room.ID, u)
+	p, err = s.store.EnterRoom(r.Context(), room.ID, u, inv.ID)
 	if err != nil {
 		writeStoreErr(w, err)
 		return
@@ -112,8 +127,10 @@ func writeWorkspaceForbidden(w http.ResponseWriter, reason string) {
 }
 
 type joinRoomReq struct {
+	Invite string `json:"invite"`
+	// older clients sent the bare code under these names
 	InviteCode  string `json:"invite_code"`
-	Secret      string `json:"secret"` // legacy alias for invite_code
+	Secret      string `json:"secret"`
 	Name        string `json:"name"`
 	Avatar      string `json:"avatar"`
 	Description string `json:"description"`
@@ -129,10 +146,7 @@ func (s *Server) handleJoinRoom(w http.ResponseWriter, r *http.Request) {
 	if !readJSON(w, r, &req) {
 		return
 	}
-	if req.InviteCode == "" {
-		req.InviteCode = req.Secret
-	}
-	req.InviteCode = normalizeCode(req.InviteCode)
+	token := enterWorkspaceReq{Invite: req.Invite, InviteCode: req.InviteCode, Secret: req.Secret}.token()
 	if !validParticipantName(req.Name) {
 		writeErr(w, http.StatusBadRequest, "name must be 2-32 chars: letters, digits, spaces, - or _; no leading/trailing/double spaces")
 		return
@@ -152,19 +166,29 @@ func (s *Server) handleJoinRoom(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	room, ownerID, err := s.store.RoomByAnySecret(r.Context(), req.InviteCode)
-	if err != nil {
+	inv, room, err := s.store.InviteByToken(r.Context(), token)
+	if errors.Is(err, models.ErrNotFound) {
+		err = models.ErrInviteInvalid
+	}
+	// a reclaim is the same participant re-authenticating, not a new member:
+	// it spends no use, so an exhausted link still lets it back in
+	exhausted := errors.Is(err, models.ErrInviteExhausted)
+	if err != nil && !exhausted {
 		writeStoreErr(w, err)
 		return
 	}
-	room.Secret = ""
+	ownerID := inv.OwnerID
 	if req.IsHuman {
 		// humans are their own principal; only agents get bound to an owner
 		ownerID = nil
 	}
 
 	token, hash := secrets.NewToken()
-	p, err := s.store.CreateParticipant(r.Context(), room.ID, req.Name, req.Avatar, req.Description, req.IsHuman, hash, ownerID, nil)
+	var p models.Participant
+	err = models.ErrConflict
+	if !exhausted {
+		p, err = s.store.CreateParticipant(r.Context(), room.ID, req.Name, req.Avatar, req.Description, req.IsHuman, hash, ownerID, nil, inv.ID)
+	}
 	if errors.Is(err, models.ErrConflict) {
 		// same name = same identity: re-claim it with a fresh token so a
 		// restarted agent does not pile up orphan duplicates
@@ -172,6 +196,10 @@ func (s *Server) handleJoinRoom(w http.ResponseWriter, r *http.Request) {
 		if errors.Is(err, models.ErrIdentityOnline) {
 			writeErr(w, http.StatusConflict,
 				"that name is taken by a participant that is online right now; wait for it to go offline (~90s idle) or pick another name")
+			return
+		}
+		if exhausted && errors.Is(err, models.ErrNotFound) {
+			writeStoreErr(w, models.ErrInviteExhausted)
 			return
 		}
 		if err != nil {
@@ -197,22 +225,58 @@ func (s *Server) handleJoinRoom(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// handleCreateInvite mints an owner-scoped invite code: agents joining with it
-// are bound to the issuer's principal, so ownership is server-verified.
+type createInviteReq struct {
+	ExpiresInSeconds int  `json:"expires_in_seconds"`
+	MaxUses          int  `json:"max_uses"`
+	BindOwner        bool `json:"bind_owner"`
+}
+
+// handleCreateInvite mints a link. An agent's link always binds joiners to
+// the agent's own principal, so ownership stays server-verified; an admin's
+// link binds only on request (the "agent instructions" flow). A plain human
+// member cannot invite.
 func (s *Server) handleCreateInvite(w http.ResponseWriter, r *http.Request, p models.Participant) {
-	code := secrets.InviteCode()
-	if err := s.store.CreateInvite(r.Context(), p.RoomID, p.ID, code); err != nil {
-		writeStoreErr(w, err)
+	var req createInviteReq
+	if r.ContentLength != 0 && !readJSON(w, r, &req) {
 		return
 	}
-	room, err := s.store.RoomByID(r.Context(), p.RoomID)
+	if p.IsHuman && !isAdmin(p) {
+		writeErr(w, http.StatusForbidden, "only admins and agents can create invite links")
+		return
+	}
+	if req.ExpiresInSeconds < 0 || req.MaxUses < 0 {
+		writeErr(w, http.StatusBadRequest, "expires_in_seconds and max_uses must be positive")
+		return
+	}
+	var ownerID *string
+	switch {
+	case !p.IsHuman:
+		ownerID = principalOf(p)
+	case req.BindOwner:
+		ownerID = &p.ID
+	}
+	// ten years: past that time.Duration overflows and the link is born expired
+	if req.ExpiresInSeconds > 10*365*24*3600 {
+		writeErr(w, http.StatusBadRequest, "expires_in_seconds is too large")
+		return
+	}
+	var expiresAt *time.Time
+	if req.ExpiresInSeconds > 0 {
+		t := time.Now().Add(time.Duration(req.ExpiresInSeconds) * time.Second)
+		expiresAt = &t
+	}
+	var maxUses *int
+	if req.MaxUses > 0 {
+		maxUses = &req.MaxUses
+	}
+	inv, err := s.store.CreateInvite(r.Context(), p.RoomID, secrets.InviteCode(), &p.ID, ownerID, expiresAt, maxUses)
 	if err != nil {
 		writeStoreErr(w, err)
 		return
 	}
 	out := map[string]any{
-		"invite_code": code,
-		"join_url":    s.cfg.PublicURL + "/r/" + room.Slug,
+		"invite":   s.inviteJSON(inv),
+		"join_url": s.inviteURL(inv.Token),
 	}
 	// behind Cloudflare Access a bare curl to /skill gets the login page, so the
 	// invite text has to carry the service token; the caller is already a member
@@ -223,6 +287,65 @@ func (s *Server) handleCreateInvite(w http.ResponseWriter, r *http.Request, p mo
 		}
 	}
 	writeJSON(w, http.StatusCreated, out)
+}
+
+// principalOf is the identity an agent's invitees get bound to: its owner,
+// or itself when nobody owns it.
+func principalOf(p models.Participant) *string {
+	if p.OwnerID != nil {
+		return p.OwnerID
+	}
+	return &p.ID
+}
+
+func (s *Server) handleListInvites(w http.ResponseWriter, r *http.Request, p models.Participant) {
+	if !requireAdmin(w, p) {
+		return
+	}
+	list, err := s.store.ListInvites(r.Context(), p.RoomID)
+	if err != nil {
+		writeStoreErr(w, err)
+		return
+	}
+	out := make([]models.Invite, 0, len(list))
+	for _, v := range list {
+		out = append(out, s.inviteJSON(v))
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"invites": out})
+}
+
+func (s *Server) handleRevokeInvite(w http.ResponseWriter, r *http.Request, p models.Participant) {
+	if !requireAdmin(w, p) {
+		return
+	}
+	if err := s.store.RevokeInvite(r.Context(), p.RoomID, r.PathValue("id")); err != nil {
+		writeStoreErr(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// handlePeekInvite shows what a link opens before the visitor has a session.
+// A dead link still answers, with its status, so the page can say why.
+func (s *Server) handlePeekInvite(w http.ResponseWriter, r *http.Request) {
+	if !s.joinLimit.Allow(s.clientIP(r)) {
+		writeErr(w, http.StatusTooManyRequests, "slow down")
+		return
+	}
+	inv, room, err := s.store.InviteByToken(r.Context(), inviteToken(r.URL.Query().Get("token")))
+	status := inv.Status
+	switch {
+	case errors.Is(err, models.ErrInviteRevoked):
+		status = "revoked"
+	case errors.Is(err, models.ErrInviteExpired):
+		status = "expired"
+	case errors.Is(err, models.ErrInviteExhausted):
+		status = "exhausted"
+	case err != nil:
+		writeStoreErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"name": room.Name, "color": room.Color, "slug": room.Slug, "status": status})
 }
 
 // handlePeekRoom shows the room name behind a join URL. The slug is not a
@@ -257,24 +380,36 @@ func (s *Server) handleGetRoom(w http.ResponseWriter, r *http.Request, p models.
 		writeStoreErr(w, err)
 		return
 	}
-	// The join URL (slug) is not a secret. The invite code is: only admins
-	// see it, otherwise any member could re-learn it after a rotation,
-	// making eviction (rotate then kick) impossible to ever make stick.
-	inviteCode := ""
-	if isAdmin(p) {
-		inviteCode = room.Secret
-	}
-	room.Secret = inviteCode
+	// invite links are secrets that live behind GET /api/v1/invites (admins
+	// only); this payload just says whether the caller may manage them
 	writeJSON(w, http.StatusOK, map[string]any{
 		"room":         room,
 		"join_url":     s.cfg.PublicURL + "/r/" + room.Slug,
-		"invite_code":  inviteCode,
+		"admin":        isAdmin(p),
 		"channels":     channels,
 		"participants": participants,
 	})
 }
 
-// normalizeCode tolerates surrounding whitespace and slashes in a pasted code.
-func normalizeCode(s string) string {
-	return strings.Trim(strings.TrimSpace(s), "/ ")
+func (s *Server) inviteURL(token string) string {
+	return s.cfg.PublicURL + "/join/" + token
+}
+
+// inviteJSON fills the link's URL; the token alone never leaves the store.
+func (s *Server) inviteJSON(v models.Invite) models.Invite {
+	v.URL = s.inviteURL(v.Token)
+	return v
+}
+
+// inviteToken accepts a full link or a bare token, with stray whitespace and
+// slashes around either.
+func inviteToken(s string) string {
+	s = strings.Trim(strings.TrimSpace(s), "/ ")
+	if i := strings.LastIndex(s, "/join/"); i >= 0 {
+		s = s[i+len("/join/"):]
+	}
+	if i := strings.IndexAny(s, "?#"); i >= 0 {
+		s = s[:i]
+	}
+	return strings.Trim(s, "/ ")
 }

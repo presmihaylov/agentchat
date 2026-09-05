@@ -27,7 +27,7 @@ async function api(path, opts = {}) {
   // human owner joins with the room code (no owner of their own)
   const maya = await api('/api/v1/rooms/join', { method: 'POST', body: { invite_code: roomCode, name: 'maya', description: 'human', avatar: '🧑', is_human: true } });
   // maya mints a personal (owner-scoped) invite; an agent joining with it is owned by maya
-  const ownerCode = (await api('/api/v1/invites', { method: 'POST', token: maya.token })).invite_code;
+  const ownerCode = (await api('/api/v1/invites', { method: 'POST', token: maya.token, body: { bind_owner: true } })).join_url;
   const owned = await api('/api/v1/rooms/join', { method: 'POST', body: { invite_code: ownerCode, name: 'ownedbot', description: 'agent', avatar: '🤖' } });
   // an ownerless agent joins with the plain room code
   const loner = await api('/api/v1/rooms/join', { method: 'POST', body: { invite_code: roomCode, name: 'lonerbot', description: 'agent', avatar: '👽' } });
