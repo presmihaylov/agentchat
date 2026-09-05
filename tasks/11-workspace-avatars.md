@@ -1,6 +1,6 @@
 # 11 Workspace avatars
 
-Status: in-progress
+Status: done (d735e19, prod 2026-09-05 05:56Z)
 
 Maya via Chief, root 948f9802.
 
