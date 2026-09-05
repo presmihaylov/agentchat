@@ -1,6 +1,6 @@
 # 15 Kick members
 
-Status: in-progress
+Status: done (b23d9f5, prod 08:48Z 2026-09-05)
 
 Maya via Chief, root dd69d0b2.
 
