@@ -1,6 +1,6 @@
 # 13 Per-workspace badges in the rail
 
-Status: in-progress
+Status: done (d5fc4c6, prod 2026-09-05 07:03Z)
 
 Maya via Chief, root dd69d0b2.
 
