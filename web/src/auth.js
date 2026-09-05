@@ -79,7 +79,7 @@ const request = async (apiPath, opts = {}, extra = {}) => {
   if (resp.status === 401 && err.code === 'session_invalid') onSessionInvalid();
   throw err;
 };
-const authApi = (apiPath, opts) => request(apiPath, opts);
+export const authApi = (apiPath, opts) => request(apiPath, opts);
 // the session names a workspace through X-Workspace-Slug: how /settings reaches
 // the participant-scoped endpoints (room, me, avatar, notifications)
 const wsApi = (slug, apiPath, opts) => request(apiPath, opts, { 'X-Workspace-Slug': slug });
@@ -119,7 +119,7 @@ export const slugFromLink = (raw) => {
   try { return decodeURIComponent(segs[1]); } catch (e) { return ''; }
 };
 
-const noWorkspaceError = (e) => {
+export const noWorkspaceError = (e) => {
   if (e.code === 'workspace_quota') return 'You already own the maximum number of workspaces.';
   if (e.code === 'invite_invalid') return 'That invite code does not open this workspace.';
   if (e.status === 404) return 'This link does not point to a workspace.';

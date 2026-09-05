@@ -2,7 +2,7 @@ import { wsAvatarEl } from './wsavatar.js';
 /* AgentChat human web client — vanilla JS, talks to the same REST API as agents. */
 import { createComposer } from './composer.js';
 import { emojify, searchEmoji, rememberEmoji, shortcodeOf } from './emoji.js';
-import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fetchWorkspaces, signOut } from './auth.js';
+import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fetchWorkspaces, signOut, authApi, slugFromLink, noWorkspaceError } from './auth.js';
 
 (() => {
   'use strict';
@@ -1808,6 +1808,7 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
     if (!opts.href) el.type = 'button';
     if (opts.onclick) el.onclick = opts.onclick;
     if (opts.id) el.id = opts.id;
+    if (opts.icon) el.dataset.icon = opts.icon;
     if (opts.current) el.setAttribute('aria-current', 'true');
     return el;
   };
@@ -1821,7 +1822,9 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
   // /w/<slug>, so the list never has to stay live
   const mountSwitcher = async () => {
     let out;
-    try { out = await fetchWorkspaces(); } catch (e) { console.error('switcher', e); return; }
+    const here = location.pathname + location.search;
+    // the current room is known locally, so the rail still gets its mark and "+"
+    try { out = await fetchWorkspaces(); } catch (e) { console.error('switcher', e); mountRail([], here); return; }
     const menu = $('ws-menu');
     menu.innerHTML = '';
     menu.appendChild(wsMenuItem(room.name, { current: true, avatar: wsAvatarEl(room, 'ws-avatar-sm', wsHeaders(room.slug)) }));
@@ -1831,17 +1834,97 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
     const sep = document.createElement('div');
     sep.className = 'ws-sep';
     menu.appendChild(sep);
-    const here = location.pathname + location.search;
     // only admins get the code from /room, and only they may hand it out
-    if (inviteCode) menu.appendChild(wsMenuItem('Invite member', { id: 'ws-invite-member', onclick: () => { setMenuOpen(false); openInviteModal(); } }));
-    menu.appendChild(wsMenuItem('Create workspace', { href: '/create?next=' + encodeURIComponent(here) }));
-    menu.appendChild(wsMenuItem('Settings', { href: '/settings?next=' + encodeURIComponent(here) }));
-    menu.appendChild(wsMenuItem('Sign out', { onclick: () => { setMenuOpen(false); signOut(); } }));
+    if (inviteCode) menu.appendChild(wsMenuItem('Invite member', { id: 'ws-invite-member', icon: '✉', onclick: () => { setMenuOpen(false); openInviteModal(); } }));
+    menu.appendChild(wsMenuItem('Create workspace', { icon: '+', href: '/create?next=' + encodeURIComponent(here) }));
+    menu.appendChild(wsMenuItem('Join with invite code', { id: 'ws-join', icon: '→', onclick: () => { setMenuOpen(false); openJoinModal(); } }));
+    menu.appendChild(wsMenuItem('Settings', { icon: '⚙', href: '/settings?next=' + encodeURIComponent(here) }));
+    menu.appendChild(wsMenuItem('Sign out', { icon: '↪', onclick: () => { setMenuOpen(false); signOut(); } }));
     $('ws-current').textContent = room.name;
     paintRoomMark();
     $('room-head').classList.add('hidden');
     $('ws-switcher-wrap').classList.remove('hidden');
+    mountRail(out.workspaces || [], here);
   };
+
+  // the rail: one round mark per workspace, the current one marked; a click is
+  // a full load of /w/<slug>. "+" opens create-or-join.
+  const mountRail = (workspaces, here) => {
+    const list = $('rail-list');
+    list.innerHTML = '';
+    const rows = workspaces.some((w) => w.slug === room.slug) ? workspaces : [room, ...workspaces];
+    for (const ws of rows) {
+      const cur = ws.slug === room.slug;
+      const a = document.createElement('a');
+      a.className = 'rail-item';
+      a.href = '/w/' + encodeURIComponent(ws.slug);
+      a.dataset.tip = ws.name;
+      a.setAttribute('aria-label', ws.name);
+      if (cur) a.setAttribute('aria-current', 'true');
+      // the current room's record is fresher than the /user list (an avatar set this session)
+      a.appendChild(wsAvatarEl(cur ? room : ws, 'ws-avatar-rail', wsHeaders(ws.slug)));
+      list.appendChild(a);
+    }
+    $('rail-create').href = '/create?next=' + encodeURIComponent(here);
+    $('ws-rail').classList.remove('hidden');
+  };
+
+  const setRailMenuOpen = (open) => {
+    $('rail-menu').classList.toggle('hidden', !open);
+    $('rail-add').setAttribute('aria-expanded', open ? 'true' : 'false');
+    if (open) $('rail-create').focus();
+  };
+  $('rail-add').addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    setRailMenuOpen($('rail-menu').classList.contains('hidden'));
+  });
+  $('rail-menu').addEventListener('click', (ev) => ev.stopPropagation());
+  document.addEventListener('click', () => setRailMenuOpen(false));
+  document.addEventListener('keydown', (ev) => {
+    if ($('rail-menu').classList.contains('hidden')) return;
+    if (ev.key === 'Escape') { setRailMenuOpen(false); $('rail-add').focus(); return; }
+    if (ev.key !== 'ArrowDown' && ev.key !== 'ArrowUp') return;
+    ev.preventDefault();
+    const items = [...$('rail-menu').querySelectorAll('.rail-menu-item')];
+    const i = items.indexOf(document.activeElement);
+    const step = ev.key === 'ArrowDown' ? 1 : -1;
+    items[(i + step + items.length) % items.length].focus();
+  });
+
+  // Join with invite code: the #no-ws-view enter form, in a modal on a room page
+  const openJoinModal = () => {
+    setRailMenuOpen(false);
+    $('join-error').classList.add('hidden');
+    $('join-slug').value = '';
+    $('join-code').value = '';
+    $('join-submit').disabled = false;
+    $('join-modal').classList.remove('hidden');
+    $('join-slug').focus();
+  };
+  const closeJoinModal = () => { $('join-modal').classList.add('hidden'); $('rail-add').focus(); };
+  $('rail-join').onclick = openJoinModal;
+  $('join-close').onclick = closeJoinModal;
+  $('join-modal').onclick = (ev) => { if (ev.target === $('join-modal')) closeJoinModal(); };
+  document.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Escape' && !$('join-modal').classList.contains('hidden')) closeJoinModal();
+  });
+  $('join-card').addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const err = $('join-error');
+    err.classList.add('hidden');
+    const target = slugFromLink($('join-slug').value);
+    if (!target) { err.textContent = 'Paste a workspace link (…/w/<slug>) or its slug.'; err.classList.remove('hidden'); return; }
+    $('join-submit').disabled = true;
+    try {
+      // the session alone: the enter call names its workspace in the path, not the header
+      await authApi('/api/v1/workspaces/' + encodeURIComponent(target) + '/enter', { method: 'POST', body: { invite_code: $('join-code').value.trim() } });
+      location.href = '/w/' + encodeURIComponent(target);
+    } catch (e) {
+      err.textContent = noWorkspaceError(e);
+      err.classList.remove('hidden');
+      $('join-submit').disabled = false;
+    }
+  });
 
   $('ws-switcher').addEventListener('click', (ev) => {
     ev.stopPropagation();

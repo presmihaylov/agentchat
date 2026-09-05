@@ -1,6 +1,6 @@
 # 12 Workspace rail (Discord style)
 
-Status: todo
+Status: in-progress
 
 Maya via Chief, root dd69d0b2 in #agentchat.
 

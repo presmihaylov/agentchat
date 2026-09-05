@@ -86,11 +86,11 @@ const menuSlugs = (page) => page.$$eval('#ws-menu a.ws-item', (els) => els.map((
   await pageA.waitForFunction(() => location.pathname.includes('/c/'), { timeout: 8000 });
   if (!pageA.url().startsWith(SERVER + '/w/' + slug2 + '/c/')) throw new Error('normalized path left /w/: ' + pageA.url());
 
-  // the menu: current workspace, the other one, Invite member (the creator is admin), Create, Settings, Sign out
+  // the menu: current workspace, the other one, Invite member (the creator is admin), Create, Join, Settings, Sign out
   await openMenu(pageA);
   if (await pageA.$eval('#ws-switcher', (el) => el.getAttribute('aria-expanded')) !== 'true') throw new Error('aria-expanded not true when open');
   const items = await pageA.$$eval('#ws-menu .ws-item', (els) => els.map((e) => e.textContent));
-  if (items.join('|') !== 'ws alpha|ws zulu|Invite member|Create workspace|Settings|Sign out') throw new Error('menu items: ' + items.join('|'));
+  if (items.join('|') !== 'ws alpha|ws zulu|Invite member|Create workspace|Join with invite code|Settings|Sign out') throw new Error('menu items: ' + items.join('|'));
   if ((await menuSlugs(pageA)).join(',') !== slug1) throw new Error('menu links: ' + await menuSlugs(pageA));
   await shot(pageA, 'menu.png');
   // Escape closes and returns focus to the button; click outside closes too

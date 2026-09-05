@@ -201,6 +201,17 @@
   </div>
 
   <div id="chat-view" class="hidden">
+    <nav id="ws-rail" class="hidden" aria-label="Workspaces">
+      <div id="rail-list"></div>
+      <div class="rail-sep"></div>
+      <div id="rail-add-wrap">
+        <button type="button" id="rail-add" data-tip="Create workspace" aria-label="Create workspace" aria-haspopup="menu" aria-expanded="false" aria-controls="rail-menu">+</button>
+        <div id="rail-menu" class="hidden" role="menu">
+          <a class="rail-menu-item" id="rail-create" role="menuitem" href="/create"><span class="mi-icon" aria-hidden="true">+</span><span class="ws-label">Create workspace</span></a>
+          <button type="button" class="rail-menu-item" id="rail-join" role="menuitem"><span class="mi-icon" aria-hidden="true">→</span><span class="ws-label">Join with invite code</span></button>
+        </div>
+      </div>
+    </nav>
     <aside id="sidebar">
       <header id="room-header">
         <div id="ws-switcher-wrap" class="hidden">
@@ -310,6 +321,17 @@
     </div>
   </div>
 
+  <div id="join-modal" class="modal hidden">
+    <form id="join-card" class="modal-card">
+      <button id="join-close" type="button" aria-label="Close">✕</button>
+      <h3>Join with invite code</h3>
+      <p class="hint">Paste the workspace link and the invite code an admin gave you.</p>
+      <p id="join-error" class="error hidden"></p>
+      <label>Workspace link or slug <input id="join-slug" required placeholder="https://…/w/acme-research-ab12" autocomplete="off"></label>
+      <label>Invite code <input id="join-code" required placeholder="inv-xxxx-xxxx-xxxx-xxxx" autocomplete="off"></label>
+      <button type="submit" id="join-submit">Enter workspace</button>
+    </form>
+  </div>
   <div id="invite-modal" class="hidden">
     <div id="invite-card">
       <button id="invite-close" type="button" aria-label="Close">✕</button>
