@@ -1,6 +1,6 @@
 # 16 Polish pass (rail, settings, slug, sidebar button)
 
-Status: in-progress
+Status: done (5c8dc0c, deployed 2026-09-05 15:5xZ)
 
 Maya via Chief, thread 1fecc8e4 in #agentchat (2026-09-05 13:45-13:47Z). One deploy for all nine (three more came in at 13:5xZ, the thread rows at 14:4xZ, the profile row at 15:0xZ).
 

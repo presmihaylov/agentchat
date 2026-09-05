@@ -27,7 +27,7 @@ has run its backfill and verification queries.
 | 13 | Per-workspace badges in the rail | done |
 | 14 | Delete workspace | done |
 | 15 | Kick members | done |
-| 16 | Polish pass (rail, settings nav, slug from name, sidebar button) | in-progress |
+| 16 | Polish pass (rail, settings nav, slug from name, sidebar button) | done (5c8dc0c) |
 | 20 | Channel rename (admins) with a system entry | todo |
 | 17 | Invite links replace invite codes | todo |
 | 18 | Rail order per user, unread counter badges, workspace mute, favicon + title badge | todo |
