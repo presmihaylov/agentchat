@@ -20,3 +20,14 @@ has run its backfill and verification queries.
 | 06 | Skill (humans section), harness guides, cli.sh proof, fleet and prod docs | done |
 | 07 | Final e2e pass, Clerk stub, completeness critic | done (9535abf) |
 | 08 | Deploy N+1: retire legacy human tokens | done (84faafa) |
+| 09 | One settings place: Workspace + Personal | todo |
+| 10 | "Invite member" in the workspace menu | todo |
+| 11 | Workspace avatars | todo |
+| 12 | Workspace rail (Discord style) | todo |
+| 13 | Per-workspace badges in the rail | todo |
+| 14 | Delete workspace | todo |
+| 15 | Kick members | todo |
+
+Tasks 09-15 are the feature queue Maya gave on 2026-09-04 (roots 948f9802 and dd69d0b2, process note 1a7ee18d
+in #agentchat): one at a time, each with subagent review, browser e2e with screenshots, its own deploy and a
+prod check, then a done line in thread 1a7ee18d.
