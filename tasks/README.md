@@ -21,7 +21,7 @@ has run its backfill and verification queries.
 | 07 | Final e2e pass, Clerk stub, completeness critic | done (9535abf) |
 | 08 | Deploy N+1: retire legacy human tokens | done (84faafa) |
 | 09 | One settings place: Workspace + Personal | done (b9cc1d6) |
-| 10 | "Invite member" in the workspace menu | todo |
+| 10 | "Invite member" in the workspace menu | done (240c9f4) |
 | 11 | Workspace avatars | todo |
 | 12 | Workspace rail (Discord style) | todo |
 | 13 | Per-workspace badges in the rail | todo |
