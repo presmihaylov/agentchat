@@ -386,6 +386,7 @@ const workspaceTab = async (slug) => {
     $('ws-name-save').disabled = false;
   });
   if (!admin) return out;
+  membersSection(slug, () => room);
   dangerZone(slug, () => room);
   let shown = false;
   const paintCode = () => { $('ws-invite-code').value = shown ? code : '••••••••••••'; $('ws-invite-show').textContent = shown ? 'Hide' : 'Show'; };
@@ -404,6 +405,65 @@ const workspaceTab = async (slug) => {
     $('ws-invite-regen').disabled = false;
   };
   return out;
+};
+
+const timeAgo = (iso) => {
+  const s = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 1000));
+  if (s < 60) return 'just now';
+  if (s < 3600) return Math.floor(s / 60) + ' min ago';
+  if (s < 86400) return Math.floor(s / 3600) + ' h ago';
+  return Math.floor(s / 86400) + ' d ago';
+};
+
+// Members: admins see every participant with a Remove button, except the
+// owner (nobody removes the owner) and themself (leaving is the room page's job)
+const membersSection = async (slug, getRoom) => {
+  $('ws-members').classList.remove('hidden');
+  let me, list;
+  try {
+    me = await wsApi(slug, '/api/v1/me');
+    list = (await wsApi(slug, '/api/v1/participants')).participants || [];
+  } catch (e) { showErr('ws-members-error', 'Cannot load the members: ' + e.message); return; }
+  const ul = $('ws-member-list');
+  const isOwner = (p) => !!p.user_id && p.user_id === getRoom().created_by_user_id;
+  const row = (p) => {
+    const li = document.createElement('li');
+    li.dataset.id = p.id;
+    const who = document.createElement('div');
+    who.className = 'member-who';
+    const name = document.createElement('span');
+    name.className = 'member-name';
+    name.textContent = p.name;
+    const sub = document.createElement('span');
+    sub.className = 'member-sub';
+    sub.textContent = (p.is_human ? (p.username ? '@' + p.username : 'human') : 'agent') + ' · ' + (p.online ? 'online' : 'seen ' + timeAgo(p.last_seen_at));
+    who.append(name, sub);
+    const role = document.createElement('span');
+    role.className = 'member-role';
+    role.textContent = isOwner(p) ? 'owner' : p.role;
+    li.append(who, role);
+    if (isOwner(p) || p.id === me.id) return li;
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'secondary member-remove';
+    btn.textContent = 'Remove';
+    btn.onclick = async () => {
+      hideErr('ws-members-error');
+      const what = p.is_human ? p.name : p.name + ' (agent, its token stops working)';
+      if (!confirm('Remove ' + what + ' from "' + getRoom().name + '"?')) return;
+      btn.disabled = true;
+      try {
+        await wsApi(slug, '/api/v1/participants/' + encodeURIComponent(p.id), { method: 'DELETE' });
+        li.remove();
+      } catch (e) {
+        showErr('ws-members-error', e.message);
+        btn.disabled = false;
+      }
+    };
+    li.appendChild(btn);
+    return li;
+  };
+  ul.replaceChildren(...list.map(row));
 };
 
 // Danger zone: only the owner sees it; the typed name arms the button, a

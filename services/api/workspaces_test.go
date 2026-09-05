@@ -737,3 +737,66 @@ func TestDeleteWorkspace(t *testing.T) {
 		t.Fatalf("room after delete: %v", err)
 	}
 }
+
+func TestKickMembers(t *testing.T) {
+	srv, _ := newTestServer(t)
+	owner, _, room := sessionRoom(t, srv.URL, "crew")
+	slug := room["slug"].(string)
+	enter := func(name string) (*testClient, string) {
+		c, _ := register(t, srv.URL, uniqUser(), "correct horse")
+		c.slug = slug
+		out := c.must("POST", "/api/v1/workspaces/"+slug+"/enter", map[string]any{"invite_code": room["invite_code"]}, 200)
+		return c, out["participant"].(map[string]any)["id"].(string)
+	}
+	admin, adminPID := enter("admin")
+	owner.must("POST", "/api/v1/participants/"+adminPID+"/role", map[string]any{"role": "admin"}, 200)
+	human, humanPID := enter("human")
+	agent := &testClient{t: t, base: srv.URL}
+	joined := agent.must("POST", "/api/v1/rooms/join", map[string]any{
+		"invite_code": room["invite_code"], "name": "bot", "description": "a test agent",
+	}, 201)
+	agent.token = joined["token"].(string)
+	agentPID := joined["participant"].(map[string]any)["id"].(string)
+	ownerPID := owner.must("GET", "/api/v1/me", nil, 200)["id"].(string)
+
+	// the owner is protected from admins and from themself
+	if st, out := admin.do("DELETE", "/api/v1/participants/"+ownerPID, nil); st != 403 || out["code"] != "owner_protected" {
+		t.Fatalf("admin removes owner: %d %v", st, out)
+	}
+	if st, out := owner.do("DELETE", "/api/v1/participants/me", nil); st != 400 || out["code"] != "owner_cannot_leave" {
+		t.Fatalf("owner self-remove: %d %v", st, out)
+	}
+	if st, out := admin.do("POST", "/api/v1/participants/"+ownerPID+"/role", map[string]any{"role": "member"}); st != 403 || out["code"] != "owner_protected" {
+		t.Fatalf("admin demotes owner: %d %v", st, out)
+	}
+	// a plain member cannot remove others, but may leave
+	if st, out := human.do("DELETE", "/api/v1/participants/"+agentPID, nil); st != 403 {
+		t.Fatalf("member removes agent: %d %v", st, out)
+	}
+	leaver, _ := enter("leaver")
+	leaver.must("DELETE", "/api/v1/participants/me", nil, 200)
+	if st, out := leaver.do("GET", "/api/v1/me", nil); st != 403 || out["reason"] != "revoked" {
+		t.Fatalf("member after leave: %d %v", st, out)
+	}
+
+	// an admin removes the human: the login survives, the workspace is gone for them
+	admin.must("DELETE", "/api/v1/participants/"+humanPID, nil, 200)
+	if st, out := human.do("GET", "/api/v1/me", nil); st != 403 || out["code"] != "workspace_forbidden" || out["reason"] != "revoked" {
+		t.Fatalf("kicked human on the room: %d %v", st, out)
+	}
+	for _, w := range human.must("GET", "/api/v1/user", nil, 200)["workspaces"].([]any) {
+		if w.(map[string]any)["slug"] == slug {
+			t.Fatalf("kicked human still lists the workspace")
+		}
+	}
+	// and the agent: its token dies
+	admin.must("DELETE", "/api/v1/participants/"+agentPID, nil, 200)
+	if st, out := agent.do("GET", "/api/v1/me", nil); st != 401 {
+		t.Fatalf("kicked agent: %d %v", st, out)
+	}
+	for _, p := range owner.must("GET", "/api/v1/participants", nil, 200)["participants"].([]any) {
+		if id := p.(map[string]any)["id"]; id == humanPID || id == agentPID {
+			t.Fatalf("kicked row still listed: %v", id)
+		}
+	}
+}

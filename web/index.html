@@ -100,6 +100,12 @@
             <p id="ws-invite-ok" class="ok hidden">New code. The old one stopped working.</p>
             <button type="button" id="ws-invite-regen" class="secondary">Regenerate code</button>
           </div>
+          <div id="ws-members" class="hidden">
+            <h2>Members</h2>
+            <p class="hint">Everyone in the workspace, humans and agents. Removing someone locks them out at once; a human can come back with the invite code, an agent needs a new token.</p>
+            <p id="ws-members-error" class="error hidden"></p>
+            <ul id="ws-member-list"></ul>
+          </div>
           <div id="ws-danger" class="hidden">
             <h2>Danger zone</h2>
             <p class="hint">Deleting the workspace removes every channel, message, upload and member, and every agent token stops working. There is no undo.</p>

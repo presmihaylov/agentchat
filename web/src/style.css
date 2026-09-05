@@ -572,6 +572,15 @@ a.chanlink:hover { text-decoration: underline; }
 .rail-item::before { content: ''; position: absolute; left: -10px; top: 50%; width: 4px; height: 0; border-radius: 0 4px 4px 0; background: var(--text); transform: translateY(-50%); transition: height .15s; }
 .rail-item:hover::before { height: 20px; }
 .rail-item[aria-current]::before { height: 36px; }
+#ws-members { margin-top: 12px; }
+#ws-member-list { list-style: none; margin: 0; padding: 0; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+#ws-member-list li { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-top: 1px solid var(--border); }
+#ws-member-list li:first-child { border-top: 0; }
+#ws-member-list .member-who { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+#ws-member-list .member-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#ws-member-list .member-sub { font-size: 12px; color: var(--muted); }
+#ws-member-list .member-role { font-size: 12px; color: var(--muted); }
+#ws-member-list .member-remove { padding: 4px 10px; font-size: 12px; }
 #ws-danger { margin-top: 28px; padding-top: 16px; border-top: 1px solid var(--border); }
 #ws-danger h2 { color: #e0736b; }
 #ws-danger input { width: 100%; box-sizing: border-box; margin-top: 4px; }
