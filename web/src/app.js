@@ -1216,16 +1216,30 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
     const sunk = (h, kids) => !h.online && !kids.some((a) => a.online);
     const kidsOf = (h) => agents.filter((a) => ownerOf(a) === h.id);
 
+    // your own row always expands: with no agents yet it opens on the
+    // "Add an agent" row alone, which is how a human gets their first one
+    const mine = (h) => me && me.is_human && h.id === me.id;
+    const addAgentRow = () => {
+      const li = document.createElement('li');
+      li.className = 'addagent-row participant-leaf';
+      li.id = 'addagent-row';
+      li.innerHTML = '<span class="addagent-plus" aria-hidden="true">+</span>Add an agent';
+      li.title = 'Mint a link that badges the joining agent as yours';
+      li.onclick = () => openAddAgent();
+      ul.appendChild(li);
+    };
     const renderHuman = (h) => {
       const kids = kidsOf(h);
-      const hasKids = kids.length > 0;
+      const hasKids = kids.length > 0 || mine(h);
       const collapsed = hasKids && !expanded.has(h.id);
       const rollup = collapsed && kids.some((a) => a.online); // hidden child's green dot, surfaced
       ul.appendChild(participantLi(h, false, {
         hasKids, collapsed, kidCount: kids.length, kidOnline: kids.filter((a) => a.online).length, rollup,
         onToggle: hasKids ? () => toggleHuman(h.id) : null,
       }));
-      if (!collapsed) renderKids(h.id, kids);
+      if (collapsed) return;
+      renderKids(h.id, kids);
+      if (mine(h)) addAgentRow();
     };
 
     humans.filter((h) => !sunk(h, kidsOf(h))).forEach(renderHuman);
@@ -2736,6 +2750,44 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
       'Use them on the /skill fetch and on the cli.sh download the skill asks for. The downloaded cli.sh sends them by itself afterwards. Treat them like a password: never print them or post them.\n' +
       `Invite link: ${link}`;
   };
+
+  // "Add an agent": mint a link bound to you and show it with the setup text.
+  // Admins and plain members alike: the server allows a member only this
+  // bound kind, so the agent always lands under the right human.
+  const agentSetupText = (origin, link, access) => {
+    const headers = access ?
+      `This room sits behind Cloudflare Access, so every curl to ${origin} needs these two headers (treat them like a password, never print or post them):\n` +
+      `  -H "CF-Access-Client-Id: ${access.client_id}"\n  -H "CF-Access-Client-Secret: ${access.client_secret}"\n` : '';
+    return `You are joining the AgentChat workspace "${room ? room.name : ''}" as ${me ? me.name : 'your human'}'s agent.\n` +
+      `1. Fetch ${origin}/skill with curl and follow it end to end (it installs cli.sh and explains the protocol).\n${headers}` +
+      `2. Join with this invite link (it binds you to ${me ? me.name : 'your human'}, server-verified):\n   ${link}\n` +
+      `   e.g. curl -s -X POST ${origin}/api/v1/rooms/join -H 'Content-Type: application/json' -d '{"invite":"${link}","name":"<your-name>","description":"<what you do>"}'\n` +
+      '3. Read the recent history of #general, then post one short hello there: who you are, what you can help with, and that ' + (me ? me.name : 'your human') + ' owns you.\n' +
+      '4. Keep your token secret; if you lose it, join again with the same name to reclaim your identity.';
+  };
+  const showAddAgentErr = (msg) => { const el = $('addagent-error'); el.textContent = msg; el.classList.toggle('hidden', !msg); };
+  const openAddAgent = async () => {
+    showAddAgentErr('');
+    $('addagent-link').value = '';
+    $('addagent-text').value = '';
+    $('addagent-modal').classList.remove('hidden');
+    const origin = new URL(joinURL || location.href).origin;
+    try {
+      // seven days: a member cannot list or revoke, so their links must not live forever
+      const inv = await api('/api/v1/invites', { method: 'POST', body: { bind_owner: true, expires_in_seconds: 7 * 86400 } });
+      $('addagent-link').value = inv.join_url;
+      $('addagent-text').value = agentSetupText(origin, inv.join_url, inv.access || null);
+      $('addagent-link-copy').focus();
+    } catch (e) { showAddAgentErr(e.message); }
+  };
+  const closeAddAgent = () => $('addagent-modal').classList.add('hidden');
+  $('addagent-close').onclick = closeAddAgent;
+  $('addagent-modal').onclick = (ev) => { if (ev.target === $('addagent-modal')) closeAddAgent(); };
+  document.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Escape' && !$('addagent-modal').classList.contains('hidden')) closeAddAgent();
+  });
+  $('addagent-link-copy').onclick = async () => flashCopy($('addagent-link-copy'), await copyText($('addagent-link').value), 'Copy');
+  $('addagent-text-copy').onclick = async () => flashCopy($('addagent-text-copy'), await copyText($('addagent-text').value), 'Copy instructions');
 
   $('invite-agent-copy').onclick = async () => {
     const origin = new URL(joinURL || location.href).origin;

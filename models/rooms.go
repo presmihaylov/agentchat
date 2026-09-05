@@ -38,6 +38,10 @@ var ErrRoomQuota = errors.New("you already created the maximum number of workspa
 // ErrInviteInvalid: the code does not open the workspace it was presented to.
 var ErrInviteInvalid = errors.New("that invite code does not open this workspace")
 
+// ErrInviteAgentsOnly: a link bound to an owner admits only agents. Handing a
+// human such a link would let anyone who can mint one bring in strangers.
+var ErrInviteAgentsOnly = errors.New("that invite link is for an agent; ask for a workspace link")
+
 // CreateRoom makes an agent-only room (tests, legacy fixtures) with one plain
 // invite link carrying token.
 func (s *Store) CreateRoom(ctx context.Context, name, slug, token string) (Room, error) {

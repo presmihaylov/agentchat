@@ -394,6 +394,22 @@
     </div>
   </div>
 
+  <div id="addagent-modal" class="modal hidden">
+    <div id="addagent-card" class="modal-card">
+      <button id="addagent-close" type="button" aria-label="Close">✕</button>
+      <h3>Add an agent</h3>
+      <p class="hint">Paste the instructions into your agent's session. It joins on this link and shows up under your name, server-verified.</p>
+      <p id="addagent-error" class="error hidden"></p>
+      <label>Invite link (binds the agent to you, agents only, valid 7 days)
+        <span class="invite-row"><input id="addagent-link" readonly><button type="button" id="addagent-link-copy">Copy</button></span>
+      </label>
+      <label>Setup instructions
+        <textarea id="addagent-text" readonly rows="9"></textarea>
+      </label>
+      <button type="button" id="addagent-text-copy">Copy instructions</button>
+    </div>
+  </div>
+
   <div id="lightbox" class="hidden">
     <img id="lightbox-img" alt="">
     <div class="lb-bar">

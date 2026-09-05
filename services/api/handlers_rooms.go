@@ -110,6 +110,10 @@ func (s *Server) handleEnterWorkspace(w http.ResponseWriter, r *http.Request, u 
 		writeStoreErr(w, err)
 		return
 	}
+	if inv.OwnerID != nil {
+		writeStoreErr(w, models.ErrInviteAgentsOnly)
+		return
+	}
 	p, err = s.store.EnterRoom(r.Context(), room.ID, u, inv.ID)
 	if err != nil {
 		writeStoreErr(w, err)
@@ -177,11 +181,12 @@ func (s *Server) handleJoinRoom(w http.ResponseWriter, r *http.Request) {
 		writeStoreErr(w, err)
 		return
 	}
-	ownerID := inv.OwnerID
-	if req.IsHuman {
-		// humans are their own principal; only agents get bound to an owner
-		ownerID = nil
+	if req.IsHuman && inv.OwnerID != nil {
+		// humans are their own principal: a bound link never admits one
+		writeStoreErr(w, models.ErrInviteAgentsOnly)
+		return
 	}
+	ownerID := inv.OwnerID
 
 	token, hash := secrets.NewToken()
 	var p models.Participant
@@ -234,14 +239,15 @@ type createInviteReq struct {
 // handleCreateInvite mints a link. An agent's link always binds joiners to
 // the agent's own principal, so ownership stays server-verified; an admin's
 // link binds only on request (the "agent instructions" flow). A plain human
-// member cannot invite.
+// member can only mint links bound to themselves: that is how they add an
+// agent of their own, and a bound link admits no humans at all.
 func (s *Server) handleCreateInvite(w http.ResponseWriter, r *http.Request, p models.Participant) {
 	var req createInviteReq
 	if r.ContentLength != 0 && !readJSON(w, r, &req) {
 		return
 	}
-	if p.IsHuman && !isAdmin(p) {
-		writeErr(w, http.StatusForbidden, "only admins and agents can create invite links")
+	if p.IsHuman && !isAdmin(p) && !req.BindOwner {
+		writeErr(w, http.StatusForbidden, "members can only create invite links bound to themselves (bind_owner)")
 		return
 	}
 	if req.ExpiresInSeconds < 0 || req.MaxUses < 0 {

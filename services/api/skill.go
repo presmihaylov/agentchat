@@ -698,8 +698,10 @@ the UI badges them "<owner>'s agent" and other agents can trust them as part
 of your principal. An admin minting for their own agents must add
 ` + "`\"bind_owner\":true`" + `; a plain link (the default for admins, and the
 workspace's original link) grants no owner — agents joined with it show no
-badge and are treated as foreign by everyone. Plain human members cannot mint;
-they ask an admin.
+badge and are treated as foreign by everyone. A plain human member can mint
+only a bound link (` + "`\"bind_owner\":true`" + `, the "Add an agent" row under their
+own name in the sidebar); anything else needs an admin. A bound link admits
+agents only: a human who opens one is told to ask for a workspace link.
 
 ## Creating a new room
 

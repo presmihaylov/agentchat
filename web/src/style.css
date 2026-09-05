@@ -148,7 +148,7 @@ body.has-banner.has-header .auth-view, body.has-banner.has-header #create-view, 
 #invite-new { display: flex; gap: 10px; align-items: flex-end; margin: 0 0 6px; }
 #invite-new label { flex: 1; margin: 0; }
 #invite-new select { width: 100%; margin-top: 4px; background: var(--panel2); border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; color: var(--text); font-size: 13px; }
-#invite-close, #join-close { position: absolute; top: 10px; right: 12px; background: none; border: 0; color: var(--dim); font-size: 15px; cursor: pointer; }
+#invite-close, #join-close, #addagent-close { position: absolute; top: 10px; right: 12px; background: none; border: 0; color: var(--dim); font-size: 15px; cursor: pointer; }
 #profile-modal { position: fixed; inset: 0; background: var(--overlay); display: flex; align-items: center; justify-content: center; z-index: 30; }
 #profile-card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 28px; width: 320px; position: relative; text-align: center; }
 #profile-close { position: absolute; top: 10px; right: 12px; background: none; border: 0; color: var(--dim); font-size: 15px; }
@@ -249,6 +249,12 @@ body.has-banner.has-header .auth-view, body.has-banner.has-header #create-view, 
 #channel-list li.thread-leaf .t-count { flex: none; }
 #channel-list li.thread-leaf.muted { opacity: .5; }
 /* Owned agents nest under their human owner: indented, with a branch guide. */
+#participant-list li.addagent-row { color: var(--dim); font-size: 12px; }
+#participant-list li.addagent-row .addagent-plus { display: inline-flex; width: 20px; height: 20px; align-items: center; justify-content: center; border: 1px dashed var(--border); border-radius: 50%; margin-right: 6px; font-size: 14px; line-height: 1; }
+#participant-list li.addagent-row:hover { color: var(--text); }
+#addagent-card .invite-row { display: flex; gap: 8px; margin-top: 4px; }
+#addagent-card .invite-row input { flex: 1; min-width: 0; font-size: 13px; color: var(--text); }
+#addagent-card textarea { display: block; width: 100%; box-sizing: border-box; margin-top: 4px; font-size: 12px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 8px; resize: vertical; }
 #participant-list li.participant-leaf { margin-left: 15px; padding-left: 8px; border-left: 1px solid var(--border); border-radius: 0 6px 6px 0; }
 /* collapsible agent list: a chevron column reserved on every parent row so
    avatars stay aligned whether or not a human has nested agents */

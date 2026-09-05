@@ -1086,8 +1086,14 @@ func TestOwnership(t *testing.T) {
 		t.Fatalf("chained owner: want %v, got %v", mayaP["id"], a2["owner_id"])
 	}
 
-	// humans never get an owner, whatever code they use
-	_, h2 := join(inv["join_url"].(string), "visitor", true)
+	// a bound link is an agent's key: a human on it is refused outright, and
+	// on the room link a human never gets an owner
+	if st, out := (&testClient{t: t, base: srv.URL}).do("POST", "/api/v1/rooms/join", map[string]any{
+		"invite": inv["join_url"], "name": "visitor", "is_human": true,
+	}); st != 403 || out["code"] != "invite_agents_only" {
+		t.Fatalf("human on a bound link: %d %v", st, out)
+	}
+	_, h2 := join(roomCode, "visitor", true)
 	if h2["owner_id"] != nil {
 		t.Fatalf("human got an owner: %v", h2)
 	}
@@ -1201,6 +1207,58 @@ func TestInviteLinkRevoke(t *testing.T) {
 	post.must("POST", "/api/v1/rooms/join", map[string]any{"invite": secret, "name": "postagent"}, 201)
 	bare := strings.TrimPrefix(secret, "http://public.test/join/")
 	(&testClient{t: t, base: srv.URL}).must("POST", "/api/v1/rooms/join", map[string]any{"invite": bare, "name": "bareagent"}, 201)
+}
+
+// TestMemberMintsOwnAgentLink: a plain human member can mint a link only when
+// it binds joiners to them (the "Add an agent" row); an unbound one is refused.
+func TestMemberMintsOwnAgentLink(t *testing.T) {
+	srv, _ := newTestServer(t)
+	_, _, room := sessionRoom(t, srv.URL, "open")
+	member, _ := registerAs(t, srv.URL, "Mia Member")
+	member.slug = room["slug"].(string)
+	member.must("POST", "/api/v1/workspaces/"+member.slug+"/enter", map[string]any{"invite": room["invite"]}, 200)
+	mia := member.must("GET", "/api/v1/me", nil, 200)
+
+	if st, out := member.do("POST", "/api/v1/invites", map[string]any{}); st != 403 {
+		t.Fatalf("unbound member link: %d %v", st, out)
+	}
+	out := member.must("POST", "/api/v1/invites", map[string]any{"bind_owner": true, "max_uses": 1}, 201)
+	inv := out["invite"].(map[string]any)
+	if inv["owner_id"] != mia["id"] || inv["created_by"] != mia["id"] {
+		t.Fatalf("member link must bind to the member: %v", inv)
+	}
+	bot := (&testClient{t: t, base: srv.URL}).must("POST", "/api/v1/rooms/join",
+		map[string]any{"invite": out["join_url"], "name": "miabot"}, 201)["participant"].(map[string]any)
+	if bot["owner_id"] != mia["id"] {
+		t.Fatalf("joined agent is not Mia's: %v", bot)
+	}
+	// the roster carries the server-verified owner name everyone sees
+	found := false
+	for _, x := range member.must("GET", "/api/v1/participants", nil, 200)["participants"].([]any) {
+		q := x.(map[string]any)
+		if q["name"] != "miabot" {
+			continue
+		}
+		found = true
+		if q["owner_name"] != "Mia Member" {
+			t.Fatalf("roster owner of miabot: %v", q)
+		}
+	}
+	if !found {
+		t.Fatal("miabot missing from the roster")
+	}
+	member.must("GET", "/api/v1/invites", nil, 403)
+	// the bound link is an agent's key only: no human gets in on it, so a
+	// member cannot smuggle a stranger through their own agent link
+	fresh := member.must("POST", "/api/v1/invites", map[string]any{"bind_owner": true}, 201)["join_url"]
+	stranger, _ := registerAs(t, srv.URL, "Stan Stranger")
+	stranger.slug = member.slug
+	if st, out := stranger.do("POST", "/api/v1/workspaces/"+member.slug+"/enter", map[string]any{"invite": fresh}); st != 403 || out["code"] != "invite_agents_only" {
+		t.Fatalf("stranger on a bound link: %d %v", st, out)
+	}
+	if st, out := (&testClient{t: t, base: srv.URL}).do("POST", "/api/v1/rooms/join", map[string]any{"invite": fresh, "name": "stan", "is_human": true}); st != 403 || out["code"] != "invite_agents_only" {
+		t.Fatalf("human join on a bound link: %d %v", st, out)
+	}
 }
 
 // TestInviteLinkLimits: expiry and use limits refuse new members, but a

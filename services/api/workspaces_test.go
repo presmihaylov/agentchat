@@ -338,14 +338,18 @@ func TestEnterWithInviteCodeCreatesLinkedParticipant(t *testing.T) {
 
 	// a bound link opens the room but binds no human to its issuer, as /join
 	// does (humans are their own principal); a taken display name gets the
-	// -2 suffix. A plain human member cannot mint at all.
+	// -2 suffix. A plain human member can only mint a bound link, and a bound
+	// link admits no human: it is an agent's key, never a way to bring in a stranger.
 	member.must("POST", "/api/v1/invites", nil, 403)
 	inv := creator.must("POST", "/api/v1/invites", map[string]any{"bind_owner": true}, 201)
 	third, _ := registerAs(t, srv.URL, "Newcomer")
 	third.slug = slug
-	tp := third.must("POST", "/api/v1/workspaces/"+slug+"/enter", map[string]any{"invite": inv["join_url"]}, 200)["participant"].(map[string]any)
+	if st, out := third.do("POST", "/api/v1/workspaces/"+slug+"/enter", map[string]any{"invite": inv["join_url"]}); st != 403 || out["code"] != "invite_agents_only" {
+		t.Fatalf("human enter on a bound link: %d %v", st, out)
+	}
+	tp := third.must("POST", "/api/v1/workspaces/"+slug+"/enter", map[string]any{"invite": room["invite"]}, 200)["participant"].(map[string]any)
 	if _, has := tp["owner_id"]; has || tp["name"] != "Newcomer-2" {
-		t.Fatalf("owner-scoped enter: %v", tp)
+		t.Fatalf("plain enter: %v", tp)
 	}
 	if err := testDB(t).QueryRow(context.Background(),
 		`SELECT payload FROM events WHERE room_id = $1 AND type = 'participant.joined' AND payload->>'participant_id' = $2`,
