@@ -3,6 +3,8 @@
   --bg: #1a1d21; --panel: #222529; --panel2: #2b2e33; --border: #3a3d42;
   --text: #d1d2d3; --dim: #9a9b9c; --accent: #4a9eda; --mention: #3d3222;
   --broadcast: #402b2b; --online: #2bac76;
+  /* --badge: the unread / mention count fill (Discord red), white bold count on it */
+  --badge: #ed4245;
   /* selection fill: translucent so the row reads as a highlight, not a slab */
   --accent-soft: rgba(74, 158, 218, .45);
   /* --hot is the "lit up" text (unread, active); --on-accent sits on accent fills */
@@ -14,7 +16,7 @@ html[data-theme="light"] {
   color-scheme: light;
   --bg: #fff; --panel: #f3f4f6; --panel2: #e8eaee; --border: #d3d7dd;
   --text: #1f2328; --dim: #667380; --accent: #1f6fb2; --mention: #fff1d0;
-  --broadcast: #fbe0e0; --online: #1a9e63;
+  --broadcast: #fbe0e0; --online: #1a9e63; --badge: #d83b3e;
   --accent-soft: rgba(31, 111, 178, .22);
   --hot: #0d1117; --glow: rgba(31, 111, 178, .3);
   --code-bg: #eef0f3; --overlay: var(--shadow); --shadow: rgba(0, 0, 0, .18);
@@ -78,7 +80,7 @@ body.has-banner.has-header .auth-view, body.has-banner.has-header #create-view, 
 #chat-view { display: flex; height: 100vh; }
 #sidebar { width: 240px; background: var(--panel); border-right: 1px solid var(--border); display: flex; flex-direction: column; overflow-y: auto; }
 #room-header { padding: 14px 16px; border-bottom: 1px solid var(--border); }
-#room-header h2 { margin: 0 0 10px; font-size: 16px; }
+#room-header h2 { margin: 0 0 10px; font-size: 15px; font-weight: 600; }
 #no-ws-card form { display: flex; flex-direction: column; gap: 10px; }
 /* the slug preview under the name: a fixed /w/ prefix and the editable segment */
 .slug-row { display: flex; align-items: center; background: var(--panel2); border: 1px solid var(--border); border-radius: 6px; }
@@ -89,7 +91,7 @@ body.has-banner.has-header .auth-view, body.has-banner.has-header #create-view, 
 #no-ws-card form h2 { margin: 4px 0 0; font-size: 15px; }
 /* workspace switcher: the current workspace is the button, the rest a menu */
 #ws-switcher-wrap { position: relative; margin: 0 0 10px; }
-#ws-switcher { display: flex; align-items: center; gap: 6px; width: 100%; background: none; border: 0; padding: 0; color: var(--text); font-size: 16px; font-weight: 700; text-align: left; cursor: pointer; }
+#ws-switcher { display: flex; align-items: center; gap: 6px; width: 100%; background: none; border: 0; padding: 0; color: var(--text); font-size: 15px; font-weight: 600; text-align: left; cursor: pointer; }
 #ws-switcher:hover, #ws-switcher[aria-expanded="true"] { color: var(--accent); }
 #ws-current { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ws-caret { font-size: 12px; color: var(--dim); }
@@ -108,7 +110,7 @@ body.has-banner.has-header .auth-view, body.has-banner.has-header #create-view, 
 #open-search .os-label { flex: 1; }
 #open-search .os-kbd { border: 1px solid var(--border); border-radius: 4px; padding: 1px 6px; font-size: 11px; color: var(--dim); }
 #sidebar section { padding: 12px 8px 4px; }
-#sidebar h3 { margin: 0 8px 6px; font-size: 12px; text-transform: uppercase; color: var(--dim); display: flex; justify-content: space-between; align-items: center; }
+#sidebar h3 { margin: 0 8px 6px; font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--dim); display: flex; justify-content: space-between; align-items: center; }
 /* both header affordances live in one aligned group so browse reads as an equal
    sibling of +, not an afterthought pushed to the far side of the row */
 #sidebar h3 .head-actions { display: flex; align-items: center; gap: 2px; }
@@ -122,12 +124,12 @@ body.has-banner.has-header .auth-view, body.has-banner.has-header #create-view, 
 #sidebar li.active { background: var(--accent-soft); color: var(--hot); }
 #sidebar li .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--dim); flex: none; opacity: .4; }
 #sidebar li .dot.online { background: var(--online); opacity: 1; }
-#sidebar li .tags { color: var(--dim); font-size: 11px; overflow: hidden; text-overflow: ellipsis; }
+#sidebar li .tags { color: var(--dim); font-size: 12px; overflow: hidden; text-overflow: ellipsis; }
 #sidebar li .pname { flex: none; }
-#sidebar li .desc-preview { color: var(--dim); font-size: 11px; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+#sidebar li .desc-preview { color: var(--dim); font-size: 12px; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 #sidebar li.offline { opacity: .55; }
-#sidebar li.offline-toggle { color: var(--dim); font-size: 11px; text-transform: uppercase; margin-top: 4px; }
-#sidebar li.group-label { color: var(--dim); font-size: 10px; text-transform: uppercase; letter-spacing: .06em; cursor: default; margin-top: 6px; }
+#sidebar li.offline-toggle { color: var(--dim); font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; margin-top: 4px; }
+#sidebar li.group-label { color: var(--dim); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; cursor: default; margin-top: 6px; }
 #sidebar li.group-label:hover { background: none; }
 
 /* participant profile popup */
@@ -148,7 +150,7 @@ body.has-banner.has-header .auth-view, body.has-banner.has-header #create-view, 
 #profile-meta { margin: 0 0 12px; color: var(--dim); font-size: 12px; }
 #profile-desc { margin: 0 0 8px; font-size: 14px; overflow-wrap: break-word; }
 #profile-tags { margin: 0; color: var(--dim); font-size: 12px; }
-#profile-actions { margin-top: 10px; display: flex; gap: 8px; justify-content: center; }
+#profile-actions { display: flex; gap: 8px; align-items: center; flex: none; }
 /* a muted channel stays dark on unread (mentions still glow); the bell says it will not ping */
 #channel-list li.muted { opacity: .7; }
 /* the muted mark: a bell-slash in the row's dim colour (a masked SVG, so it follows the theme) */
@@ -159,9 +161,9 @@ body.has-banner.has-header .auth-view, body.has-banner.has-header #create-view, 
 #sidebar li.archived { color: var(--dim); font-style: italic; }
 /* Unread with no @mention: bold + a soft accent glow on the name, no number. */
 #sidebar li.unread { font-weight: 700; color: var(--hot); text-shadow: 0 0 9px var(--glow); }
-.unread-badge { margin-left: auto; background: var(--accent); color: var(--on-accent); font-size: 11px; font-weight: 700; border-radius: 10px; padding: 0 7px; line-height: 17px; flex: none; }
+.unread-badge { margin-left: auto; background: var(--badge); color: #fff; font-size: 11px; font-weight: 700; border-radius: 10px; padding: 0 7px; line-height: 17px; flex: none; }
 /* Channel-group sections: a collapsible header above the channels it holds. */
-#channel-list li.section-header { color: var(--dim); font-size: 10px; text-transform: uppercase; letter-spacing: .06em; margin-top: 8px; font-weight: 700; }
+#channel-list li.section-header { color: var(--dim); font-size: 11px; text-transform: uppercase; letter-spacing: .06em; margin-top: 8px; font-weight: 600; }
 #channel-list li.section-header .sec-chevron { flex: none; font-size: 9px; width: 10px; opacity: .8; }
 #channel-list li.section-header .sec-name { overflow: hidden; text-overflow: ellipsis; }
 /* Drag-and-drop: sections are valid targets, the dragged row lifts, and a
@@ -235,20 +237,20 @@ body.has-banner.has-header .auth-view, body.has-banner.has-header #create-view, 
 #participant-list li .p-toggle { width: 12px; flex: none; text-align: center; color: var(--dim); font-size: 10px; cursor: pointer; }
 #participant-list li .p-toggle:hover { color: var(--text); }
 #participant-list li .p-toggle.spacer { cursor: default; }
-#participant-list li .p-agentcount { margin-left: auto; flex: none; font-size: 10px; color: var(--dim); background: var(--panel2); border: 1px solid var(--border); border-radius: 9px; padding: 0 6px; line-height: 15px; }
+#participant-list li .p-agentcount { margin-left: auto; flex: none; font-size: 11px; color: var(--dim); background: rgba(127, 127, 127, .12); border: 0; border-radius: 9px; padding: 0 6px; line-height: 16px; }
 /* rolled-up presence: a collapsed parent glows when a hidden agent is online.
    The parent's own dot keeps its true presence; only the name glows and the
    count badge lights up, so a live-but-hidden agent is never lost. */
 #participant-list li.rollup .pname { color: var(--hot); text-shadow: 0 0 9px var(--glow); }
-#participant-list li.rollup .p-agentcount { color: var(--text); border-color: rgba(74, 158, 218, .3); }
+#participant-list li.rollup .p-agentcount { color: var(--text); }
 /* online / total agents: the online part a touch brighter, all-off fully dim */
-#participant-list li .p-agentcount .on { color: var(--online); }
+#participant-list li .p-agentcount .on { color: var(--text); }
 #participant-list li .p-agentcount.all-off .on { color: inherit; }
 #participant-list li .p-agentcount.all-off { opacity: .8; }
 .owner-badge { flex: none; margin: 0 6px; padding: 0 6px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel2); color: var(--dim); font-size: 10px; line-height: 15px; white-space: nowrap; }
 /* the profile row: a full-width button with the personal menu popping up above it */
 #me-wrap { margin-top: auto; position: relative; border-top: 1px solid var(--border); }
-#me-footer { display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px 14px; background: none; border: 0; text-align: left; color: var(--text); font: inherit; font-size: 14px; cursor: pointer; }
+#me-footer { display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px 18px; background: none; border: 0; text-align: left; color: var(--text); font: inherit; font-size: 14px; cursor: pointer; }
 #me-footer:hover, #me-footer:focus-visible, #me-footer[aria-expanded="true"] { background: var(--panel2); outline: none; }
 #me-footer .me-avatar { position: relative; flex: none; width: 40px; height: 40px; }
 #me-footer .avatar-me { width: 40px; height: 40px; border-radius: 10px; font-size: 22px; display: inline-flex; align-items: center; justify-content: center; object-fit: cover; }
@@ -270,7 +272,7 @@ h1 .logo { width: 1.5em; height: 1.5em; vertical-align: -.42em; margin-right: 2p
 #splash img { width: 96px; height: 96px; object-fit: contain; animation: splash-pulse 1.6s ease-in-out .4s infinite; }
 @keyframes splash-in { from { opacity: 0; } to { opacity: 1; } }
 @keyframes splash-pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.06); } }
-body:has(> :not(#splash):not(#pw-banner):not(script):not(.hidden)) #splash { display: none; }
+body:not(.booting):has(> :not(#splash):not(#pw-banner):not(script):not(.hidden)) #splash { display: none; }
 #attach-label .ico, #thread-attach-label .ico { width: 16px; height: 16px; vertical-align: middle; }
 .msg-actions .ico { width: 14px; height: 14px; vertical-align: -3px; }
 
@@ -278,8 +280,15 @@ body:has(> :not(#splash):not(#pw-banner):not(script):not(.hidden)) #splash { dis
 #main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 #channel-header { padding: 12px 20px; border-bottom: 1px solid var(--border); background: var(--panel); display: flex; align-items: center; gap: 10px; }
 #channel-title { font-weight: 700; }
+/* the rename pencil shows on header hover or keyboard focus, so the title stays quiet */
+#rename-channel { background: none; border: 0; padding: 2px; margin-left: -6px; color: var(--dim); cursor: pointer; opacity: 0; transition: opacity .12s; display: inline-flex; border-radius: 4px; }
+#rename-channel .ico { width: 13px; height: 13px; }
+#channel-header:hover #rename-channel, #rename-channel:focus-visible { opacity: 1; }
+#rename-channel:hover { color: var(--text); background: var(--panel2); }
 #channel-topic { color: var(--dim); font-size: 13px; margin-left: 12px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-#messages, #thread-messages { flex: 1; overflow-y: auto; padding: 12px 20px; }
+#messages, #thread-messages { flex: 1; overflow-y: auto; padding: 0 20px 12px; }
+/* the top inset is a spacer, not padding, so a stuck day label sits on the scroll edge (msg 82b8a4be) */
+#messages::before, #thread-messages::before { content: ''; display: block; height: 12px; }
 .msg { display: flex; gap: 8px; padding: 3px 8px; border-radius: 6px; position: relative; }
 /* membership timeline entries: one muted line, no avatar, no hover actions */
 .msg.system-entry { padding: 2px 8px 2px 44px; align-items: baseline; gap: 8px; }
@@ -581,16 +590,38 @@ a.chanlink:hover { text-decoration: underline; }
    rows) and the section on the right; type sizes are the room UI's */
 /* the personal section is taller than a small viewport: top-aligned and scrollable, so Back stays reachable */
 #settings-view { align-items: flex-start; overflow-y: auto; padding: 24px 0; box-sizing: border-box; }
-.settings-card { width: 640px; max-width: calc(100vw - 32px); }
+.settings-card { width: 760px; max-width: calc(100vw - 32px); }
+.settings-card h1 { font-size: 17px; }
 #settings-body { display: flex; gap: 20px; align-items: flex-start; }
 #settings-nav { flex: none; width: 140px; display: flex; flex-direction: column; gap: 2px; padding-right: 12px; border-right: 1px solid var(--border); align-self: stretch; }
-#settings-nav [role=tab] { background: none; border: 0; border-radius: 6px; color: var(--dim); font: inherit; font-size: 14px; font-weight: 500; padding: 4px 10px; text-align: left; cursor: pointer; }
+/* the nav rows share the sidebar's channel-row style */
+#settings-nav [role=tab] { background: none; border: 0; border-radius: 6px; color: var(--dim); font: inherit; font-size: 14px; font-weight: 400; padding: 4px 10px; text-align: left; cursor: pointer; }
 #settings-nav [role=tab]:hover { background: var(--panel2); color: var(--text); }
 #settings-nav [role=tab].active { background: var(--accent-soft); color: var(--hot); }
-#settings-content { flex: 1; min-width: 0; }
-.settings-panel { display: flex; flex-direction: column; gap: 14px; }
-.settings-panel form { display: flex; flex-direction: column; gap: 10px; }
-.settings-panel h2 { margin: 10px 0 0; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--dim); }
+#settings-content { flex: 1; min-width: 0; max-width: 560px; }
+.settings-panel { display: flex; flex-direction: column; gap: 18px; align-items: flex-start; }
+.settings-panel > * { width: 100%; }
+/* the workspace tab wraps its sections in one div: same column rhythm inside it */
+#ws-panel { display: flex; flex-direction: column; gap: 18px; align-items: flex-start; }
+#ws-panel > * { width: 100%; }
+.settings-panel form { display: flex; flex-direction: column; gap: 10px; align-items: flex-start; }
+.settings-panel form > * { width: 100%; }
+/* settings type scale: body 15px for labels and inputs, section labels one step down in caps, title one step up */
+.settings-panel h2 { margin: 0 0 8px; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--dim); }
+.settings-panel label { font-size: 15px; color: var(--text); }
+.settings-panel input { padding: 7px 10px; font-size: 15px; }
+.settings-panel .hint { font-size: 12px; margin: 0; }
+.settings-panel button, .settings-panel .upload-btn { width: auto; align-self: flex-start; padding: 7px 12px; font-size: 14px; font-weight: 500; border-radius: 6px; }
+.settings-panel button.secondary { background: none; border: 1px solid var(--border); color: var(--text); }
+.settings-panel button.secondary:hover { background: var(--panel2); }
+.settings-panel button.ghost { background: none; border: 0; color: var(--dim); padding: 4px 0; }
+.settings-panel button.ghost:hover { color: var(--text); text-decoration: underline; }
+#avatar-row { display: flex; align-items: center; gap: 14px; }
+#avatar-meta { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+#settings-username { font-weight: 500; }
+#notify-perm { margin-left: 6px; font-size: 13px; color: var(--accent); text-decoration: none; }
+#notify-perm:hover { text-decoration: underline; }
+#notify-perm.muted { color: var(--dim); pointer-events: none; }
 @media (max-width: 560px) {
   #settings-body { flex-direction: column; }
   #settings-nav { width: auto; flex-direction: row; border-right: 0; border-bottom: 1px solid var(--border); padding: 0 0 8px; align-self: auto; }
@@ -601,7 +632,7 @@ a.chanlink:hover { text-decoration: underline; }
 .settings-panel label.row-check { flex-direction: row; align-items: center; gap: 8px; color: var(--text); cursor: pointer; }
 .settings-panel label.row-select { flex-direction: row; align-items: center; gap: 8px; color: var(--text); }
 .settings-panel select { background: var(--panel2); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px; font: inherit; font-size: 13px; }
-#settings-avatar { display: flex; justify-content: center; }
+#settings-avatar { display: flex; justify-content: flex-start; flex: none; }
 #ws-name:disabled { opacity: .7; }
 
 /* workspace mark: the uploaded logo, else initials on the workspace's colour
@@ -619,7 +650,7 @@ a.chanlink:hover { text-decoration: underline; }
 #enter-room-icon { display: inline-flex; vertical-align: middle; }
 #ws-menu .ws-item { display: flex; align-items: center; gap: 8px; }
 #ws-menu .ws-item .ws-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-#ws-avatar-row { display: flex; align-items: center; gap: 16px; margin-bottom: 14px; }
+#ws-avatar-row { display: flex; align-items: center; gap: 14px; }
 #ws-avatar-actions { display: flex; gap: 8px; }
 .upload-btn, #avatar-remove, #ws-avatar-remove { background: none; border: 1px solid var(--border); color: var(--dim); border-radius: 6px; font-size: 12px; padding: 5px 10px; cursor: pointer; }
 .upload-btn:hover, #avatar-remove:hover, #ws-avatar-remove:hover { color: var(--text); }
@@ -627,20 +658,20 @@ a.chanlink:hover { text-decoration: underline; }
 /* the workspace rail (Discord style): round marks, the current one squared
    off with a pill at the edge, a tooltip to the right (data-tip). No overflow
    clip: the tooltips hang outside the rail and the quota keeps the list short. */
-#ws-rail { width: 52px; flex: none; background: var(--bg); border-right: 1px solid var(--border); display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 8px 0; box-sizing: border-box; z-index: 20; }
+#ws-rail { width: 64px; flex: none; background: var(--bg); border-right: 1px solid var(--border); display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 10px 0; box-sizing: border-box; z-index: 20; }
 #rail-list { display: flex; flex-direction: column; align-items: center; gap: 6px; }
 .rail-sep { width: 24px; height: 2px; border-radius: 1px; background: var(--border); }
 .rail-item, #rail-add-wrap { position: relative; display: block; }
 /* quiet marks: a translucent tint of the hue, initials in the hue itself */
-.rail-item .ws-avatar { width: 32px; height: 32px; border-radius: 50%; font-size: 12px; font-weight: 600; background: hsl(var(--ws-h) 45% 50% / .22); color: hsl(var(--ws-h) 45% 38%); transition: border-radius .15s, background .15s; }
+.rail-item .ws-avatar { width: 44px; height: 44px; border-radius: 50%; font-size: 15px; font-weight: 600; background: hsl(var(--ws-h) 45% 50% / .22); color: hsl(var(--ws-h) 45% 38%); transition: border-radius .15s, background .15s; }
 html:not([data-theme="light"]) .rail-item .ws-avatar { color: hsl(var(--ws-h) 55% 72%); }
 .rail-item:hover .ws-avatar, .rail-item[aria-current] .ws-avatar { background: hsl(var(--ws-h) 45% 50% / .38); }
-.rail-item:hover .ws-avatar, .rail-item:focus-visible .ws-avatar, .rail-item[aria-current] .ws-avatar { border-radius: 10px; }
-.rail-item:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 10px; }
-.rail-item::before { content: ''; position: absolute; left: -10px; top: 50%; width: 3px; height: 0; border-radius: 0 4px 4px 0; background: var(--text); transform: translateY(-50%); transition: height .15s; }
-.rail-item:hover::before { height: 14px; }
-.rail-item[aria-current]::before { height: 24px; }
-#ws-members { margin-top: 12px; }
+.rail-item:hover .ws-avatar, .rail-item:focus-visible .ws-avatar, .rail-item[aria-current] .ws-avatar { border-radius: 14px; }
+.rail-item:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 14px; }
+.rail-item::before { content: ''; position: absolute; left: -10px; top: 50%; width: 4px; height: 0; border-radius: 0 4px 4px 0; background: var(--text); transform: translateY(-50%); transition: height .15s; }
+.rail-item:hover::before { height: 20px; }
+.rail-item[aria-current]::before { height: 36px; }
+#ws-members { margin-top: 0; }
 #ws-member-list { list-style: none; margin: 0; padding: 0; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
 #ws-member-list li { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-top: 1px solid var(--border); }
 #ws-member-list li:first-child { border-top: 0; }
@@ -649,16 +680,18 @@ html:not([data-theme="light"]) .rail-item .ws-avatar { color: hsl(var(--ws-h) 55
 #ws-member-list .member-sub { font-size: 12px; color: var(--muted); }
 #ws-member-list .member-role { font-size: 12px; color: var(--muted); }
 #ws-member-list .member-remove { padding: 4px 10px; font-size: 12px; }
-#ws-danger { margin-top: 28px; padding-top: 16px; border-top: 1px solid var(--border); }
+#ws-danger { margin-top: 10px; padding-top: 16px; border-top: 1px solid var(--border); }
 #ws-danger h2 { color: #e0736b; }
+#ws-danger label { flex-direction: column; }
 #ws-danger input { width: 100%; box-sizing: border-box; margin-top: 4px; }
+.settings-panel button.danger { width: auto; align-self: flex-start; padding: 7px 12px; font-size: 14px; }
 button.danger { background: var(--broadcast); color: #fff; border: 0; border-radius: 6px; padding: 10px 14px; font-weight: 600; margin-top: 10px; }
 button.danger:disabled { opacity: .45; cursor: not-allowed; }
 .rail-badge { position: absolute; right: -3px; bottom: -3px; min-width: 8px; height: 8px; border-radius: 8px; background: var(--text); border: 2px solid var(--bg); box-sizing: content-box; pointer-events: none; }
-.rail-badge.count { min-width: 10px; height: 16px; padding: 0 4px; line-height: 16px; font-size: 10px; font-weight: 700; text-align: center; background: var(--broadcast); color: #fff; }
+.rail-badge.count { min-width: 10px; height: 16px; padding: 0 4px; line-height: 16px; font-size: 10px; font-weight: 700; text-align: center; background: var(--badge); color: #fff; }
 [data-tip]:hover::after, [data-tip]:focus-visible::after { content: attr(data-tip); position: absolute; left: calc(100% + 14px); top: 50%; transform: translateY(-50%); background: var(--text); color: var(--bg); padding: 6px 10px; border-radius: 6px; font-size: 13px; font-weight: 600; white-space: nowrap; z-index: 40; pointer-events: none; }
-#rail-add { width: 32px; height: 32px; border-radius: 50%; border: 0; padding: 0; background: var(--panel2); color: var(--dim); font-size: 20px; line-height: 1; cursor: pointer; position: relative; transition: border-radius .15s, background .15s, color .15s; }
-#rail-add:hover, #rail-add:focus-visible, #rail-add[aria-expanded="true"] { border-radius: 10px; background: var(--online); color: #fff; }
+#rail-add { width: 44px; height: 44px; border-radius: 50%; border: 0; padding: 0; background: var(--panel2); color: var(--dim); font-size: 20px; line-height: 1; cursor: pointer; position: relative; transition: border-radius .15s, background .15s, color .15s; }
+#rail-add:hover, #rail-add:focus-visible, #rail-add[aria-expanded="true"] { border-radius: 14px; background: var(--online); color: #fff; }
 #rail-add[aria-expanded="true"]::after { content: none; }
 #rail-menu { position: absolute; left: calc(100% + 10px); top: 0; z-index: 40; min-width: 220px; padding: 6px; background: var(--panel2); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 6px 20px var(--shadow); display: flex; flex-direction: column; }
 .rail-menu-item { display: flex; align-items: center; gap: 10px; width: 100%; box-sizing: border-box; padding: 8px 10px; border: 0; border-radius: 6px; background: none; color: var(--text); font-size: 14px; text-align: left; text-decoration: none; white-space: nowrap; cursor: pointer; }

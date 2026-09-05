@@ -131,7 +131,7 @@ func gatedChannel(e models.Event) (string, bool) {
 	switch e.Type {
 	case "message.created", "message.edited", "message.reaction",
 		"channel.member_joined", "channel.member_left",
-		"channel.privacy_changed":
+		"channel.privacy_changed", "channel.renamed":
 		var pl struct {
 			ChannelID string `json:"channel_id"`
 		}

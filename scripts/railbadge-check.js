@@ -67,6 +67,9 @@ const waitBadge = (page, slug, want) => page.waitForFunction((s, w) => {
   assert((await badgeOf(page, home.room.slug)).hidden, 'home badged by away traffic');
   const label = await page.$eval('#rail-list .rail-item[href="/w/' + away.room.slug + '"]', (a) => a.getAttribute('aria-label'));
   assert(label === 'away team, 1 mentions', 'aria-label: ' + label);
+  // the count badge is the alert red with a white bold count (task 20, Maya msg 4561407a)
+  const paint = await page.$eval('#rail-list .rail-item[href="/w/' + away.room.slug + '"] .rail-badge', (b) => { const c = getComputedStyle(b); return { bg: c.backgroundColor, fg: c.color, weight: c.fontWeight }; });
+  assert(paint.bg === 'rgb(237, 66, 69)' && paint.fg === 'rgb(255, 255, 255)' && Number(paint.weight) >= 600, 'badge paint: ' + JSON.stringify(paint));
   await shot(page, 'mention.png');
 
   step = '4';

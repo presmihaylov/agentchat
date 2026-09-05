@@ -238,8 +238,9 @@ func (s *Server) handleCreateChannel(w http.ResponseWriter, r *http.Request, p m
 }
 
 type updateChannelReq struct {
-	Archived *bool `json:"archived"`
-	Private  *bool `json:"private"`
+	Archived *bool   `json:"archived"`
+	Private  *bool   `json:"private"`
+	Name     *string `json:"name"`
 }
 
 func (s *Server) handleUpdateChannel(w http.ResponseWriter, r *http.Request, p models.Participant) {
@@ -252,7 +253,7 @@ func (s *Server) handleUpdateChannel(w http.ResponseWriter, r *http.Request, p m
 	if !readJSON(w, r, &req) {
 		return
 	}
-	if req.Archived == nil && req.Private == nil {
+	if req.Archived == nil && req.Private == nil && req.Name == nil {
 		writeErr(w, http.StatusBadRequest, "nothing to update")
 		return
 	}
@@ -266,6 +267,26 @@ func (s *Server) handleUpdateChannel(w http.ResponseWriter, r *http.Request, p m
 	if !isAdmin(p) && !isCreator {
 		writeErr(w, http.StatusForbidden, "only admins or the channel creator can update it")
 		return
+	}
+	if req.Name != nil {
+		// a rename rewrites every "#name" reference people hold, so it is admin-only
+		if !isAdmin(p) {
+			writeErr(w, http.StatusForbidden, "only admins can rename a channel")
+			return
+		}
+		name := strings.ToLower(strings.TrimSpace(strings.TrimPrefix(*req.Name, "#")))
+		if !validName(name) {
+			writeErr(w, http.StatusBadRequest, "channel name must match ^[a-z0-9][a-z0-9_-]{1,31}$")
+			return
+		}
+		if _, err := s.store.RenameChannel(r.Context(), p.RoomID, ch.ID, name, p.ID, p.Name); err != nil {
+			if errors.Is(err, models.ErrNameTaken) {
+				writeErrCode(w, http.StatusConflict, "name_taken", err.Error())
+				return
+			}
+			writeStoreErr(w, err)
+			return
+		}
 	}
 	if req.Private != nil {
 		// one-way: making a private channel public would expose history that

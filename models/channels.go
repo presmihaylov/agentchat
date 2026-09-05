@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
@@ -145,24 +147,7 @@ func (s *Store) setMembership(ctx context.Context, roomID, channelID, participan
 			body = "was removed by " + actorName
 		}
 	}
-	var msgID string
-	if err := tx.QueryRow(ctx,
-		`INSERT INTO messages (room_id, channel_id, author_id, body, kind, embed_status)
-		 VALUES ($1, $2, $3, $4, 'system', 'skipped') RETURNING id`,
-		roomID, channelID, participantID, body).Scan(&msgID); err != nil {
-		return false, err
-	}
-	msg, err := scanMessage(tx.QueryRow(ctx, messageSelect+` WHERE m.id = $1`, msgID))
-	if err != nil {
-		return false, err
-	}
-	msgPayload, err := json.Marshal(msg)
-	if err != nil {
-		return false, err
-	}
-	// message.created reuses the UI's live feed path; membership-gated like
-	// every content event, so only the channel's members render it
-	if err := appendEventTx(ctx, tx, roomID, "message.created", msgPayload); err != nil {
+	if err := systemEntryTx(ctx, tx, roomID, channelID, participantID, body); err != nil {
 		return false, err
 	}
 	return true, tx.Commit(ctx)
@@ -423,4 +408,85 @@ func (s *Store) SetChannelPublicIfEmpty(ctx context.Context, roomID, id string) 
 		return err
 	}
 	return tx.Commit(ctx)
+}
+
+// systemEntryTx persists a Slack-style timeline line as a system message and
+// fans it out through message.created, so live feeds and history agree.
+// message.created is membership-gated, so only the channel's members render it.
+func systemEntryTx(ctx context.Context, tx pgx.Tx, roomID, channelID, authorID, body string) error {
+	var msgID string
+	if err := tx.QueryRow(ctx,
+		`INSERT INTO messages (room_id, channel_id, author_id, body, kind, embed_status)
+		 VALUES ($1, $2, $3, $4, 'system', 'skipped') RETURNING id`,
+		roomID, channelID, authorID, body).Scan(&msgID); err != nil {
+		return err
+	}
+	msg, err := scanMessage(tx.QueryRow(ctx, messageSelect+` WHERE m.id = $1`, msgID))
+	if err != nil {
+		return err
+	}
+	msgPayload, err := json.Marshal(msg)
+	if err != nil {
+		return err
+	}
+	return appendEventTx(ctx, tx, roomID, "message.created", msgPayload)
+}
+
+// generalEntryTx writes a workspace-level system line into #general.
+func generalEntryTx(ctx context.Context, tx pgx.Tx, roomID, authorID, body string) error {
+	var generalID string
+	err := tx.QueryRow(ctx,
+		`SELECT id FROM channels WHERE room_id = $1 AND name = 'general'`, roomID).Scan(&generalID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil // a room without #general (legacy fixtures) has nowhere to say it
+	}
+	if err != nil {
+		return err
+	}
+	return systemEntryTx(ctx, tx, roomID, generalID, authorID, body)
+}
+
+// ErrNameTaken: the rename target already exists in the room.
+var ErrNameTaken = fmt.Errorf("a channel with that name already exists: %w", ErrConflict)
+
+// RenameChannel changes a channel's name, announces it with channel.renamed
+// (old and new name) and a system line in the channel authored by the actor.
+func (s *Store) RenameChannel(ctx context.Context, roomID, id, name, actorID, actorName string) (Channel, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return Channel{}, err
+	}
+	defer tx.Rollback(ctx)
+
+	if err := lockRoomEvents(ctx, tx, roomID); err != nil {
+		return Channel{}, err
+	}
+	var old string
+	if err := tx.QueryRow(ctx,
+		`SELECT name FROM channels WHERE room_id = $1 AND id = $2 FOR UPDATE`, roomID, id).Scan(&old); err != nil {
+		return Channel{}, mapRowErr(err)
+	}
+	if old == name {
+		return s.ChannelByID(ctx, roomID, id)
+	}
+	if _, err := tx.Exec(ctx,
+		`UPDATE channels SET name = $3 WHERE room_id = $1 AND id = $2`, roomID, id, name); err != nil {
+		if isUniqueViolation(err) {
+			return Channel{}, ErrNameTaken
+		}
+		return Channel{}, err
+	}
+	payload, _ := json.Marshal(map[string]string{
+		"channel_id": id, "old_name": old, "name": name, "actor_id": actorID, "actor_name": actorName,
+	})
+	if err := appendEventTx(ctx, tx, roomID, "channel.renamed", payload); err != nil {
+		return Channel{}, err
+	}
+	if err := systemEntryTx(ctx, tx, roomID, id, actorID, "renamed the channel from #"+old+" to #"+name); err != nil {
+		return Channel{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return Channel{}, err
+	}
+	return s.ChannelByID(ctx, roomID, id)
 }

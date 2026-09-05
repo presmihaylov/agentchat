@@ -552,14 +552,21 @@ const personalWorkspaceBits = async (slug, roomName) => {
     $('notify-sound').checked = !!prefs.sound;
     $('notify-sound').disabled = !prefs.enabled;
     $('archive-after').value = String(prefs.archive_after_secs ?? 3600);
+    // an inline "Allow in browser" link while the prompt is still open; a
+    // blocked browser gets a muted note; nothing once granted
     const perm = $('notify-perm');
     const state = window.Notification ? Notification.permission : 'unsupported';
-    perm.classList.toggle('hidden', !prefs.enabled || state === 'granted');
-    perm.textContent = state === 'denied' ? 'System notifications are blocked in this browser; you still get the badge and sound.'
-      : state === 'unsupported' ? 'This browser has no system notifications; you still get the badge and sound.'
-      : 'System notifications are off until you allow them in the browser prompt.';
+    perm.classList.toggle('hidden', !prefs.enabled || state === 'granted' || state === 'unsupported');
+    perm.textContent = state === 'denied' ? 'Blocked in the browser' : 'Allow in browser';
+    perm.classList.toggle('muted', state === 'denied');
   };
   paintPrefs();
+  $('notify-perm').onclick = async (ev) => {
+    ev.preventDefault();
+    if (!window.Notification || Notification.permission !== 'default') return;
+    try { await Notification.requestPermission(); } catch (e) { /* treated as denied */ }
+    paintPrefs();
+  };
   const save = async (patch) => {
     try { prefs = await wsApi(slug, '/api/v1/me/notifications', { method: 'PATCH', body: patch }); } catch (e) { alert(e.message); }
     paintPrefs();

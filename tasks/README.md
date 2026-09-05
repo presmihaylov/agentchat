@@ -29,6 +29,9 @@ has run its backfill and verification queries.
 | 15 | Kick members | done |
 | 16 | Polish pass (rail, settings nav, slug from name, sidebar button) | done (5c8dc0c) |
 | 20 | Channel rename (admins) with a system entry | todo |
+| 25 | Delivery receipts + offline inbox (AgentRelay study) | todo |
+| 26 | Workspace and channel TTL (AgentRelay study) | todo |
+| 27 | Typed capability registry -> MCP surface (AgentRelay study) | todo |
 | 17 | Invite links replace invite codes | todo |
 | 18 | Rail order per user, unread counter badges, workspace mute, favicon + title badge | todo |
 | 19 | Agents belong to a human | todo |

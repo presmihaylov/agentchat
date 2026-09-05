@@ -8,7 +8,7 @@
 # thread, whether the id is the root or any reply inside it.
 set -euo pipefail
 
-VERSION="1.6.0"
+VERSION="1.7.0"
 DEFAULT_SERVER="{{SERVER}}"
 # Cloudflare Access service token, baked in by the server when the room sits
 # behind a Cloudflare tunnel. Empty otherwise. The env file can override both.
@@ -64,6 +64,9 @@ FLAGS
   --code[=lang]         send/reply/broadcast: wrap the whole body in a ```lang fence
   --force               send/reply/broadcast: post an unfenced diff anyway
   --attach <file>       send/reply/broadcast: attach a file (repeatable)
+  --body-file <path>    send/reply/broadcast: read the body from a file (- is stdin)
+                        instead of the argument; a long or quote-heavy body never
+                        passes through shell quoting. A body argument of - is stdin too.
   --force-mentions      send/reply/broadcast: post even if a handle is unknown
                         (for writing ABOUT a handle; `backticks` also exempt it)
   --new-topic           send: you mean a new root, skip the caution and the
@@ -92,6 +95,8 @@ A ROOT STARTS A TOPIC, EVERYTHING ELSE IS A REPLY
 EXAMPLES
   cli.sh reply 6f0c… 'got it, starting now'
   cli.sh reply 6f0c… 'done, PR is up' --attach ./diff.patch
+  cli.sh reply 6f0c… --body-file report.md      # quotes, backticks, $ stay intact
+  some-command | cli.sh send general --body-file -
   cli.sh reply --latest agentchat 'sweep: nothing pending'
   cli.sh send general 'new topic: migrating the room tonight, @Chief'
   cli.sh mentions --wait 60
@@ -452,15 +457,34 @@ for m in roots[:5]:
   return 0
 }
 
+# body_of [ARG] — the message body: --body-file wins (- reads stdin), a bare - reads
+# stdin, else ARG as given. Quotes, backticks and dollar signs in a file never meet
+# the shell, which is why a report goes through here and not through "$(cat ...)".
+body_of() {
+  local src=""
+  if [ -n "$BODY_FILE" ]; then src="$BODY_FILE"; elif [ "${1:-}" = "-" ]; then src="-"; fi
+  if [ -z "$src" ]; then printf '%s' "${1:-}"; return; fi
+  if [ "$src" = "-" ]; then cat; return; fi
+  [ -r "$src" ] || die "cannot read --body-file $src"
+  cat "$src"
+}
+
+# has_body N — N positional args carry a body, or --body-file stands in for it
+has_body() { [ $# -ge 2 ] && [ "$1" -ge "$2" ] || [ -n "$BODY_FILE" ]; }
+
 cmd_send() {
-  [ $# -ge 2 ] || die "usage: cli.sh send <channel> <body>"
-  [ "$NEW_TOPIC" = "1" ] || warn_top_level "$1" "$2"
-  post_message "$1" "$2" "" 0
+  has_body $# 2 && [ $# -ge 1 ] || die "usage: cli.sh send <channel> <body>   (or --body-file <path>)"
+  local body; body=$(body_of "${2:-}")
+  [ -n "$body" ] || die "empty body"
+  [ "$NEW_TOPIC" = "1" ] || warn_top_level "$1" "$body"
+  post_message "$1" "$body" "" 0
 }
 
 cmd_broadcast() {
-  [ $# -ge 2 ] || die "usage: cli.sh broadcast <channel> <body>"
-  post_message "$1" "$2" "" 1
+  has_body $# 2 && [ $# -ge 1 ] || die "usage: cli.sh broadcast <channel> <body>   (or --body-file <path>)"
+  local body; body=$(body_of "${2:-}")
+  [ -n "$body" ] || die "empty body"
+  post_message "$1" "$body" "" 1
 }
 
 # latest_thread_in CHANNEL — the newest thread you started, replied in, or were
@@ -474,18 +498,22 @@ latest_thread_in() {
 }
 
 cmd_reply() {
-  local root channel
+  local root channel body
   if [ -n "$LATEST" ]; then
-    [ $# -ge 1 ] || die "usage: cli.sh reply --latest <channel> <body>"
+    has_body $# 1 || die "usage: cli.sh reply --latest <channel> <body>   (or --body-file <path>)"
+    body=$(body_of "${1:-}")
+    [ -n "$body" ] || die "empty body"
     root=$(latest_thread_in "$LATEST")
     channel=$(channel_of "$root")
-    post_message "$channel" "$1" "$root" 0
+    post_message "$channel" "$body" "$root" 0
     return
   fi
-  [ $# -ge 2 ] || die "usage: cli.sh reply <message-id> <body>   (or reply --latest <channel> <body>)"
+  has_body $# 2 && [ $# -ge 1 ] || die "usage: cli.sh reply <message-id> <body>   (or reply --latest <channel> <body>, or --body-file <path>)"
+  body=$(body_of "${2:-}")
+  [ -n "$body" ] || die "empty body"
   root=$(thread_root_of "$1")
   channel=$(channel_of "$1")
-  post_message "$channel" "$2" "$root" 0
+  post_message "$channel" "$body" "$root" 0
 }
 
 cmd_read() {
@@ -639,7 +667,7 @@ cmd_join() {
 # ---------- flags ----------
 
 JSON=0; LIMIT=30; SINCE=""; WAIT=0; ORDER="oldest"; OUT="."; CHANNEL=""; FORCE_MENTIONS=0
-NEW_TOPIC=0; LATEST=""; WRAP_CODE=0; WRAP_LANG=""; FORCE=0
+NEW_TOPIC=0; LATEST=""; WRAP_CODE=0; WRAP_LANG=""; FORCE=0; BODY_FILE=""
 ENV_FILE=""; SERVER_FLAG=""; ATTACH=()
 ARGS=()
 
@@ -652,6 +680,7 @@ while [ $# -gt 0 ]; do
     --oldest) ORDER="oldest" ;;
     --newest) ORDER="newest" ;;
     --attach) ATTACH+=("${2:?--attach needs a file}"); shift ;;
+    --body-file) BODY_FILE="${2:?--body-file needs a path (- for stdin)}"; shift ;;
     --out) OUT="${2:?--out needs a directory}"; shift ;;
     --channel) CHANNEL="${2:?--channel needs a name or id}"; shift ;;
     --force-mentions) FORCE_MENTIONS=1 ;;
@@ -665,6 +694,7 @@ while [ $# -gt 0 ]; do
     --version) printf 'agentchat cli %s\n' "$VERSION"; exit 0 ;;
     -h|--help) usage; exit 0 ;;
     --) shift; while [ $# -gt 0 ]; do ARGS+=("$1"); shift; done ;;
+    -) ARGS+=("$1") ;;                # a bare - is a body read from stdin
     -*[[:space:]]*) ARGS+=("$1") ;;   # a body that starts with -, like a diff, is not a flag
     -*) die "unknown flag: $1 (a body that starts with - goes after --)" ;;
     *) ARGS+=("$1") ;;

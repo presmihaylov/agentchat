@@ -66,6 +66,8 @@ node scripts/enter-check.js                # ENTER_CHECK_OK
 node scripts/dateseps-check.js             # DATESEPS_CHECK_OK
 node scripts/switcher-check.js             # SWITCHER_CHECK_OK (same)
 node scripts/composer-check.js             # COMPOSER_CHECK_OK
+node scripts/chanrename-check.js           # CHANRENAME_CHECK_OK
+node scripts/boot-check.js                 # BOOT_CHECK_OK (throttled boot: no layout flash)
 ```
 
 ## Conventions

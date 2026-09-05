@@ -360,7 +360,9 @@ func (s *Store) SetRole(ctx context.Context, roomID, id, role string) error {
 }
 
 // Revoke removes a participant's access but keeps their messages and identity.
-func (s *Store) Revoke(ctx context.Context, roomID, id string) error {
+// #general gets a system line: "left the workspace" by the participant when
+// they go on their own, else "removed <Name> from the workspace" by the actor.
+func (s *Store) Revoke(ctx context.Context, roomID, id, actorID string) error {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return err
@@ -371,9 +373,10 @@ func (s *Store) Revoke(ctx context.Context, roomID, id string) error {
 		return err
 	}
 	var isAdmin bool
+	var targetName string
 	if err := tx.QueryRow(ctx,
-		`SELECT role = 'admin' FROM participants WHERE room_id = $1 AND id = $2 AND NOT revoked`,
-		roomID, id).Scan(&isAdmin); err != nil {
+		`SELECT role = 'admin', name FROM participants WHERE room_id = $1 AND id = $2 AND NOT revoked`,
+		roomID, id).Scan(&isAdmin, &targetName); err != nil {
 		return mapRowErr(err)
 	}
 	if isAdmin {
@@ -404,6 +407,13 @@ func (s *Store) Revoke(ctx context.Context, roomID, id string) error {
 
 	payload, _ := json.Marshal(map[string]string{"participant_id": id})
 	if err := appendEventTx(ctx, tx, roomID, "participant.revoked", payload); err != nil {
+		return err
+	}
+	author, body := id, "left the workspace"
+	if actorID != "" && actorID != id {
+		author, body = actorID, "removed "+targetName+" from the workspace"
+	}
+	if err := generalEntryTx(ctx, tx, roomID, author, body); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)

@@ -79,7 +79,7 @@ func TestBackfillUsers(t *testing.T) {
 		}
 	}
 	for _, r := range []Participant{eve, olgaC} {
-		if err := s.Revoke(ctx, r.RoomID, r.ID); err != nil {
+		if err := s.Revoke(ctx, r.RoomID, r.ID, ""); err != nil {
 			t.Fatal(err)
 		}
 	}

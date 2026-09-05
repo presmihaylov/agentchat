@@ -68,8 +68,14 @@ const iconFirst = (page, sel) => page.$$eval(sel, (els) => els.map((el) => {
     return { railLeft: rail.left, railRight: rail.right, sbLeft: sb.left, avatars };
   });
   assert(geo.railLeft === 0 && geo.railRight <= geo.sbLeft, 'rail is not left of the sidebar: ' + JSON.stringify(geo));
-  assert(geo.avatars.every((a) => a.w === 32 && a.h === 32), 'rail marks are not 32px: ' + JSON.stringify(geo.avatars));
-  assert(geo.avatars[0].radius === '50%' && geo.avatars[1].radius === '10px', 'round others, squared current: ' + JSON.stringify(geo.avatars));
+  assert(geo.avatars.every((a) => a.w === 44 && a.h === 44), 'rail marks are not 44px: ' + JSON.stringify(geo.avatars));
+  assert(geo.avatars[0].radius === '50%' && geo.avatars[1].radius === '14px', 'round others, squared current: ' + JSON.stringify(geo.avatars));
+  // one sidebar type scale (task 20, Maya msg 6726d1bf): 11px caps headings, 14px rows, 14px/500 profile name
+  const scale = await page.evaluate(() => {
+    const f = (sel) => { const c = getComputedStyle(document.querySelector(sel)); return c.fontSize + '/' + c.fontWeight; };
+    return { header: f('#ws-switcher'), h3: f('#sidebar h3'), row: f('#channel-list .chan-name'), me: f('.me-name') };
+  });
+  assert(scale.header === '15px/600' && scale.h3 === '11px/600' && scale.row === '14px/400' && scale.me === '14px/500', 'sidebar scale: ' + JSON.stringify(scale));
   // keyboard: the marks are links in order, then the "+"
   await page.focus('#rail-list .rail-item');
   await page.keyboard.press('Tab');

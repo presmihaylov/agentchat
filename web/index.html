@@ -82,6 +82,14 @@
       <section id="settings-workspace" class="settings-panel hidden">
         <p id="ws-none" class="hint hidden">Open a workspace first: these settings belong to the workspace you came from.</p>
         <div id="ws-panel" class="hidden">
+          <form id="ws-name-form">
+            <h2>Name</h2>
+            <label>Workspace name <input id="ws-name" type="text" required maxlength="100"></label>
+            <p id="ws-name-error" class="error hidden"></p>
+            <p id="ws-name-ok" class="ok hidden">Renamed.</p>
+            <button type="submit" id="ws-name-save" class="secondary">Rename workspace</button>
+          </form>
+          <h2>Logo</h2>
           <div id="ws-avatar-row">
             <div id="ws-avatar-slot"></div>
             <div id="ws-avatar-actions" class="hidden">
@@ -89,30 +97,24 @@
               <button type="button" id="ws-avatar-remove" class="hidden">Remove logo</button>
             </div>
           </div>
-          <form id="ws-name-form">
-            <label>Name <input id="ws-name" type="text" required maxlength="100"></label>
-            <p id="ws-name-error" class="error hidden"></p>
-            <p id="ws-name-ok" class="ok hidden">Renamed.</p>
-            <button type="submit" id="ws-name-save">Rename workspace</button>
-          </form>
-          <label>Link <span class="row-copy"><input id="ws-slug" type="text" readonly><button type="button" id="ws-slug-copy" class="secondary">Copy</button></span></label>
+          <h2>Link</h2>
+          <label>Workspace link <span class="row-copy"><input id="ws-slug" type="text" readonly><button type="button" id="ws-slug-copy" class="secondary">Copy</button></span></label>
           <p class="hint">The link is fixed: agents and bookmarks point at it.</p>
           <div id="ws-invite" class="hidden">
             <h2>Invite code</h2>
-            <p class="hint">Only admins see it. Anyone with the code can enter the workspace.</p>
             <span class="row-copy"><input id="ws-invite-code" type="text" readonly value="••••••••••••"><button type="button" id="ws-invite-show" class="secondary">Show</button><button type="button" id="ws-invite-copy" class="secondary">Copy</button></span>
             <p id="ws-invite-ok" class="ok hidden">New code. The old one stopped working.</p>
             <button type="button" id="ws-invite-regen" class="secondary">Regenerate code</button>
           </div>
           <div id="ws-members" class="hidden">
             <h2>Members</h2>
-            <p class="hint">Everyone in the workspace, humans and agents. Removing someone locks them out at once; a human can come back with the invite code, an agent needs a new token.</p>
+            <p class="hint">Removing someone locks them out at once.</p>
             <p id="ws-members-error" class="error hidden"></p>
             <ul id="ws-member-list"></ul>
           </div>
           <div id="ws-danger" class="hidden">
             <h2>Danger zone</h2>
-            <p class="hint">Deleting the workspace removes every channel, message, upload and member, and every agent token stops working. There is no undo.</p>
+            <p class="hint">Deletes every channel, message, upload and member. No undo.</p>
             <label>Type the workspace name to confirm <input id="ws-delete-name" type="text" autocomplete="off"></label>
             <p id="ws-delete-error" class="error hidden"></p>
             <button type="button" id="ws-delete" class="danger" disabled>Delete workspace</button>
@@ -121,30 +123,24 @@
       </section>
 
       <section id="settings-personal" class="settings-panel hidden">
-        <p class="hint">Signed in as <strong id="settings-username"></strong>. Usernames do not change.</p>
-        <form id="pw-form">
-          <h2>Change password</h2>
-          <p id="pw-error" class="error hidden"></p>
-          <p id="pw-ok" class="ok hidden">Password changed. Other devices were signed out. <a id="pw-continue" href="/create">Continue →</a></p>
-          <label>Current password <input id="pw-current" type="password" required autocomplete="current-password"></label>
-          <label>New password <input id="pw-new" type="password" required minlength="8" maxlength="72" autocomplete="new-password"></label>
-          <label>Confirm new password <input id="pw-confirm" type="password" required autocomplete="new-password"></label>
-          <button type="submit">Change password</button>
-        </form>
-        <p id="settings-nopw" class="hint hidden">This sign-in method has no password to change.</p>
         <div id="avatar-section" class="hidden">
-          <h2>Avatar in <span id="avatar-ws-name"></span></h2>
-          <div id="settings-avatar"></div>
-          <div id="profile-actions">
-            <label class="upload-btn">Upload photo<input type="file" id="avatar-input" accept="image/*" class="hidden"></label>
-            <button type="button" id="avatar-remove" class="hidden">Remove photo</button>
+          <h2>Avatar</h2>
+          <div id="avatar-row">
+            <div id="settings-avatar"></div>
+            <div id="avatar-meta">
+              <span id="settings-username"></span>
+              <span class="hint">Avatar in <span id="avatar-ws-name"></span></span>
+            </div>
+            <div id="profile-actions">
+              <label class="upload-btn">Upload photo<input type="file" id="avatar-input" accept="image/*" class="hidden"></label>
+              <button type="button" id="avatar-remove" class="hidden">Remove photo</button>
+            </div>
           </div>
         </div>
         <div id="notify-settings" class="hidden">
           <h2>Notifications</h2>
-          <label class="row-check"><input type="checkbox" id="notify-enabled"> Notify me about new messages</label>
-          <label class="row-check"><input type="checkbox" id="notify-sound"> Play a sound</label>
-          <p id="notify-perm" class="hint hidden"></p>
+          <label class="row-check"><input type="checkbox" id="notify-enabled"> Desktop notifications <a id="notify-perm" href="#" class="hidden"></a></label>
+          <label class="row-check"><input type="checkbox" id="notify-sound"> Sound</label>
           <label class="row-select">Hide quiet threads after
             <select id="archive-after">
               <option value="900">15 minutes</option>
@@ -155,15 +151,27 @@
             </select>
           </label>
         </div>
-        <h2>Appearance</h2>
-        <label class="row-select">Theme
-          <select id="theme-mode">
-            <option value="system">System</option>
-            <option value="dark">Dark</option>
-            <option value="light">Light</option>
-          </select>
-        </label>
-        <button type="button" id="settings-signout" class="secondary">Sign out</button>
+        <div>
+          <h2>Appearance</h2>
+          <label class="row-select">Theme
+            <select id="theme-mode">
+              <option value="system">System</option>
+              <option value="dark">Dark</option>
+              <option value="light">Light</option>
+            </select>
+          </label>
+        </div>
+        <form id="pw-form">
+          <h2>Change password</h2>
+          <p id="pw-error" class="error hidden"></p>
+          <p id="pw-ok" class="ok hidden">Password changed. Other devices were signed out. <a id="pw-continue" href="/create">Continue →</a></p>
+          <label>Current password <input id="pw-current" type="password" required autocomplete="current-password"></label>
+          <label>New password <input id="pw-new" type="password" required minlength="8" maxlength="72" autocomplete="new-password"></label>
+          <label>Confirm new password <input id="pw-confirm" type="password" required autocomplete="new-password"></label>
+          <button type="submit" class="secondary">Change password</button>
+        </form>
+        <p id="settings-nopw" class="hint hidden">This sign-in method has no password to change.</p>
+        <button type="button" id="settings-signout" class="ghost">Sign out</button>
       </section>
       </div>
       </div>
@@ -269,6 +277,7 @@
     <main id="main">
       <header id="channel-header">
         <span id="channel-title"></span>
+        <button id="rename-channel" class="hidden" type="button" title="Rename channel" aria-label="Rename channel"><svg class="ico lucide" data-icon="pencil" viewBox="0 0 24 24" aria-hidden="true"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/></svg></button>
         <span id="channel-topic"></span>
         <button id="members-btn" class="hidden" title="View members" type="button"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><circle cx="6" cy="5" r="2.5"/><path d="M1.5 13.5c0-2.5 2-4.5 4.5-4.5s4.5 2 4.5 4.5"/><circle cx="11.5" cy="5.5" r="2"/><path d="M11.5 9.5c1.8 0 3 1.6 3 3.5"/></svg> <span id="members-count"></span></button>
       </header>

@@ -246,4 +246,16 @@ grep -q 'rejected the token' "$WORK/err" || fail "unclear auth error: $(cat "$WO
 if grep -q 'not-a-real-token' "$WORK/out" "$WORK/err"; then fail "the CLI printed the token"; fi
 ok "errors are loud and the token stays secret"
 
+# 12. --body-file and stdin, on a fresh root so earlier reply counts stay put
+bfroot=$("${A[@]}" send general "@bob body-file root" --new-topic); bfroot=${bfroot#posted }
+printf '%s\n' 'report "one"' '`code` costs $5 and '"'"'more'"'"'' > "$WORK/report.md"
+bf=$("${A[@]}" reply "$bfroot" --body-file "$WORK/report.md"); bf=${bf#posted }
+[ "$("${A[@]}" msg "$bf" --json | jq_ 'd["body"]')" = "$(cat "$WORK/report.md")" ] || fail "--body-file body mangled"
+sf=$(cat "$WORK/report.md" | "${A[@]}" reply "$bfroot" --body-file -); sf=${sf#posted }
+[ "$("${A[@]}" msg "$sf" --json | jq_ 'd["body"]')" = "$(cat "$WORK/report.md")" ] || fail "stdin body mangled"
+df=$(cat "$WORK/report.md" | "${A[@]}" reply "$bfroot" -); df=${df#posted }
+[ "$("${A[@]}" msg "$df" --json | jq_ 'd["body"]')" = "$(cat "$WORK/report.md")" ] || fail "dash body mangled"
+"${A[@]}" reply "$bfroot" --body-file "$WORK/missing.md" 2>/dev/null && fail "a missing --body-file must exit non-zero"
+ok "--body-file and stdin bodies"
+
 echo CLI_E2E_OK

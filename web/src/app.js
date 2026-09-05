@@ -837,7 +837,20 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
   };
   const setChannelTitle = (ch) => {
     $('channel-title').replaceChildren(sigilEl(ch.private), ' ' + ch.name);
+    // the rename pencil: admins only, never on #general (server rule)
+    $('rename-channel').classList.toggle('hidden', !(me && me.role === 'admin' && ch.name !== 'general'));
   };
+
+  const renameChannel = async (ch) => {
+    const name = prompt('Rename #' + ch.name + ':', ch.name);
+    if (!name || !name.trim() || name.trim() === ch.name) return;
+    try {
+      await api('/api/v1/channels/' + ch.id, { method: 'PATCH', body: { name: name.trim() } });
+    } catch (e) {
+      alert(e.code === 'name_taken' ? 'A channel named #' + name.trim().replace(/^#/, '').toLowerCase() + ' already exists.' : e.message);
+    }
+  };
+  $('rename-channel').onclick = () => { if (current) renameChannel(current); };
 
   // One channel row (with its nested thread leaves appended right beneath it).
   const appendChannel = (ul, ch, groupID) => {
@@ -876,6 +889,7 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
       if (ch.private && (me.role === 'admin' || ch.created_by === me.id)) {
         items.push({ label: 'Make public', run: () => makePublic(ch) });
       }
+      if (me.role === 'admin' && ch.name !== 'general') items.push({ label: 'Rename channel', run: () => renameChannel(ch) });
       items.push({ label: ch.muted ? 'Unmute channel' : 'Mute channel', run: () => muteChannel(ch, !ch.muted) });
       items.push({ label: 'Move to section…', run: () => openMoveMenu(ev.clientX, ev.clientY, ch) });
       // #general is pinned: it can be organized into a section but never left.
@@ -1169,7 +1183,8 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
   };
 
   const setTitle = () => {
-    document.title = (unreadMentions > 0 ? `(${unreadMentions}) ` : '') + (room ? room.name : 'AgentChat');
+    // "(3) AgentChat | Acme Team"; plain "AgentChat" outside a workspace
+    document.title = (unreadMentions > 0 ? `(${unreadMentions}) ` : '') + 'AgentChat' + (room ? ' | ' + room.name : '');
   };
 
   // ---------- data flows ----------
@@ -1730,11 +1745,19 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
       await selectChannel(channels.find((c) => c.name === 'general') || channels[0]);
       return;
     }
-    if (t === 'channel.privacy_changed' && current && ev.payload.channel_id === current.id) {
+    if (t === 'room.renamed' && room && ev.payload.room_id === room.id) {
+      room.name = ev.payload.name;
+      $('room-name').textContent = room.name;
+      $('ws-current').textContent = room.name;
+      setTitle();
+      refreshRail();
+    }
+    if ((t === 'channel.privacy_changed' || t === 'channel.renamed') && current && ev.payload.channel_id === current.id) {
       const ch = channels.find((c) => c.id === current.id);
       if (ch) {
         current = ch;
         setChannelTitle(ch);
+        syncURL(false); // the path carries the channel name
       }
     }
     // profile changes (avatar, name) must also repaint already-rendered messages
@@ -1772,6 +1795,7 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
   // the workspace entry for a signed-in non-member: the account supplies the
   // name, only the invite code is asked for
   const showEnter = async () => {
+    document.title = 'AgentChat';
     $('chat-view').classList.add('hidden');
     $('enter-view').classList.remove('hidden');
     try {
@@ -1807,14 +1831,27 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
     }
   });
 
+  // the splash stays over the chat view until the session, the workspace list and
+  // the current room (channels, messages) are all in: the chat view has to be
+  // displayed for the message pane to measure and scroll, but nothing that is not
+  // the final layout may ever reach the screen (Maya, msg 62883447)
   const enterChat = async () => {
-    me = await api('/api/v1/me');
-    try { notifyPrefs = await api('/api/v1/me/notifications'); } catch { /* defaults stand */ }
+    document.body.classList.add('booting');
+    const [meOut, prefs, wsOut] = await Promise.all([
+      api('/api/v1/me'),
+      api('/api/v1/me/notifications').catch(() => null),
+      // a dead session or a lost membership fails /me too, and that one routes
+      fetchWorkspaces().catch((e) => { if (!e.status || e.status >= 500) console.error('switcher', e); return null; }),
+    ]);
+    me = meOut;
+    if (prefs) notifyPrefs = prefs;
     $('enter-view').classList.add('hidden');
     $('chat-view').classList.remove('hidden');
     await refreshRoom();
+    mountSwitcher(wsOut);
     await applyURL();
     syncURL(false); // normalize the address bar without a history entry
+    document.body.classList.remove('booting');
     eventLoop();
   };
 
@@ -1845,11 +1882,10 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
 
   // one GET /api/v1/user per boot fills the menu; a switch is a full load of
   // /w/<slug>, so the list never has to stay live
-  const mountSwitcher = async () => {
-    let out;
+  const mountSwitcher = (out) => {
     const here = location.pathname + location.search;
-    // the current room is known locally, so the rail still gets its mark and "+"
-    try { out = await fetchWorkspaces(); } catch (e) { console.error('switcher', e); mountRail([], here); return; }
+    // without the list (fetch failed) the rail still gets the current mark and "+"
+    if (!out) { mountRail([], here); return; }
     // the rail is the switcher; this menu holds only the workspace actions (Maya, msg c61adc39)
     const menu = $('ws-menu');
     menu.innerHTML = '';
@@ -2796,10 +2832,11 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
     localStorage.removeItem(storeKey);
     if (!sessionToken()) { location.replace(loginURL()); return; }
     for (;;) {
-      try { await enterChat(); mountSwitcher(); return; }
+      try { await enterChat(); return; }
       catch (e) {
-        if (routeAuthError(e)) return;
-        if (e.status === 404) { showEnter(); return; }
+        // the join page and the removed card show under the splash unless it lifts
+        if (routeAuthError(e)) { document.body.classList.remove('booting'); return; }
+        if (e.status === 404) { document.body.classList.remove('booting'); showEnter(); return; }
         console.error('boot', e);
         await new Promise((r) => setTimeout(r, 3000));
       }

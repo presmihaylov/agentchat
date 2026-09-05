@@ -36,7 +36,7 @@ func (s *Server) handleRenameRoom(w http.ResponseWriter, r *http.Request, p mode
 		writeErr(w, http.StatusBadRequest, "name must be 1-100 characters")
 		return
 	}
-	room, err := s.store.RenameRoom(r.Context(), p.RoomID, req.Name)
+	room, err := s.store.RenameRoom(r.Context(), p.RoomID, req.Name, p.ID)
 	if err != nil {
 		writeStoreErr(w, err)
 		return
@@ -174,7 +174,7 @@ func (s *Server) handleRevokeParticipant(w http.ResponseWriter, r *http.Request,
 		writeErrCode(w, http.StatusForbidden, "owner_protected", "the workspace owner cannot be removed")
 		return
 	}
-	if err := s.store.Revoke(r.Context(), p.RoomID, target.ID); err != nil {
+	if err := s.store.Revoke(r.Context(), p.RoomID, target.ID, p.ID); err != nil {
 		writeStoreErr(w, err)
 		return
 	}

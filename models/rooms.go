@@ -121,7 +121,9 @@ func (s *Store) RotateSecret(ctx context.Context, roomID, newSecret string) (Roo
 	return r, tx.Commit(ctx)
 }
 
-func (s *Store) RenameRoom(ctx context.Context, roomID, name string) (Room, error) {
+// RenameRoom renames the workspace and, when the name actually changed, writes
+// "renamed the workspace from X to Y" into #general as the actor.
+func (s *Store) RenameRoom(ctx context.Context, roomID, name, actorID string) (Room, error) {
 	var r Room
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -131,6 +133,10 @@ func (s *Store) RenameRoom(ctx context.Context, roomID, name string) (Room, erro
 
 	if err := lockRoomEvents(ctx, tx, roomID); err != nil {
 		return r, err
+	}
+	var old string
+	if err := tx.QueryRow(ctx, `SELECT name FROM rooms WHERE id = $1 FOR UPDATE`, roomID).Scan(&old); err != nil {
+		return r, mapRowErr(err)
 	}
 	err = scanRoom(tx.QueryRow(ctx,
 		`UPDATE rooms SET name = $2 WHERE id = $1
@@ -143,6 +149,11 @@ func (s *Store) RenameRoom(ctx context.Context, roomID, name string) (Room, erro
 	payload, _ := json.Marshal(map[string]string{"room_id": roomID, "name": name})
 	if err := appendEventTx(ctx, tx, roomID, "room.renamed", payload); err != nil {
 		return r, err
+	}
+	if old != name {
+		if err := generalEntryTx(ctx, tx, roomID, actorID, "renamed the workspace from "+old+" to "+name); err != nil {
+			return r, err
+		}
 	}
 	return r, tx.Commit(ctx)
 }
