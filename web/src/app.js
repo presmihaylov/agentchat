@@ -1863,10 +1863,38 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
       if (cur) a.setAttribute('aria-current', 'true');
       // the current room's record is fresher than the /user list (an avatar set this session)
       a.appendChild(wsAvatarEl(cur ? room : ws, 'ws-avatar-rail', wsHeaders(ws.slug)));
+      const badge = document.createElement('span');
+      badge.className = 'rail-badge hidden';
+      a.appendChild(badge);
       list.appendChild(a);
     }
     $('rail-create').href = '/create?next=' + encodeURIComponent(here);
     $('ws-rail').classList.remove('hidden');
+    paintRailBadges(workspaces);
+    if (!railTimer) railTimer = setInterval(refreshRail, 60000);
+  };
+
+  // a mention count pill, else an unread dot, on every mark but the current
+  // one: the open room's channel badges are the live truth for it
+  const paintRailBadges = (workspaces) => {
+    for (const ws of workspaces) {
+      const a = $('rail-list').querySelector('.rail-item[href="/w/' + encodeURIComponent(ws.slug) + '"]');
+      if (!a) continue;
+      const badge = a.querySelector('.rail-badge');
+      const mentions = ws.slug === room.slug ? 0 : (ws.mentions || 0);
+      const unread = ws.slug !== room.slug && !!ws.unread;
+      badge.classList.toggle('hidden', !unread && mentions === 0);
+      badge.classList.toggle('count', mentions > 0);
+      badge.textContent = mentions > 0 ? (mentions > 99 ? '99+' : String(mentions)) : '';
+      a.setAttribute('aria-label', ws.name + (mentions > 0 ? ', ' + mentions + ' mentions' : unread ? ', unread' : ''));
+    }
+  };
+  // the session has no token for the other rooms, so this poll is their stream:
+  // every 60 s, and at once when the tab comes back (see the focus handler)
+  let railTimer = null;
+  const refreshRail = async () => {
+    if ($('ws-rail').classList.contains('hidden') || document.hidden) return;
+    try { paintRailBadges((await fetchWorkspaces()).workspaces || []); } catch (e) { console.error('rail', e); }
   };
 
   const setRailMenuOpen = (open) => {
@@ -2669,6 +2697,7 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
     setTitle();
     // returning to the tab counts as reading what is on screen now
     if (me && current) markRead(current);
+    refreshRail();
   });
 
   // ---------- create workspace (onboarding at /create) ----------

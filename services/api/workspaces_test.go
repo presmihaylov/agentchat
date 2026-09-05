@@ -614,3 +614,58 @@ func TestRoomAvatar(t *testing.T) {
 		t.Fatalf("member /user after remove: %v", ws)
 	}
 }
+
+// The switcher list rolls up each workspace's channel badges for the caller:
+// a message from someone else in room B marks B unread for A, an @mention
+// counts, and marking the channel read clears both.
+func TestUserWorkspacesUnreadAndMentions(t *testing.T) {
+	srv, _ := newTestServer(t)
+	ann, _ := registerAs(t, srv.URL, "annie")
+	ann.must("POST", "/api/v1/rooms", map[string]any{"name": "room a"}, 201)
+	bob, _, roomB := sessionRoom(t, srv.URL, "room b")
+	annB := &testClient{t: t, base: srv.URL, token: ann.token, slug: roomB["slug"].(string)}
+	annB.must("POST", "/api/v1/workspaces/"+annB.slug+"/enter", map[string]any{"invite_code": roomB["invite_code"]}, 200)
+
+	state := func() (unread bool, mentions float64) {
+		t.Helper()
+		for _, w := range ann.must("GET", "/api/v1/user", nil, 200)["workspaces"].([]any) {
+			ws := w.(map[string]any)
+			if ws["slug"] == annB.slug {
+				return ws["unread"].(bool), ws["mentions"].(float64)
+			}
+		}
+		t.Fatalf("room b missing from /user")
+		return
+	}
+	if u, m := state(); u || m != 0 {
+		t.Fatalf("fresh member: unread=%v mentions=%v", u, m)
+	}
+	// ann's own post is not unread for her
+	annB.must("POST", "/api/v1/channels/general/messages", map[string]any{"body": "hello"}, 201)
+	if u, m := state(); u || m != 0 {
+		t.Fatalf("own post: unread=%v mentions=%v", u, m)
+	}
+	bob.must("POST", "/api/v1/channels/general/messages", map[string]any{"body": "plain news"}, 201)
+	if u, m := state(); !u || m != 0 {
+		t.Fatalf("after a plain post: unread=%v mentions=%v", u, m)
+	}
+	bob.must("POST", "/api/v1/channels/general/messages", map[string]any{"body": "hey @annie look"}, 201)
+	bob.must("POST", "/api/v1/channels/general/messages", map[string]any{"body": "@channel all hands"}, 201)
+	if u, m := state(); !u || m != 2 {
+		t.Fatalf("after a mention and a broadcast: unread=%v mentions=%v", u, m)
+	}
+	annB.must("POST", "/api/v1/channels/general/read", nil, 200)
+	if u, m := state(); u || m != 0 {
+		t.Fatalf("after read: unread=%v mentions=%v", u, m)
+	}
+	// a muted channel only counts through its mentions, like the sidebar
+	annB.must("POST", "/api/v1/channels/general/mute", map[string]any{"muted": true}, 200)
+	bob.must("POST", "/api/v1/channels/general/messages", map[string]any{"body": "muted chatter"}, 201)
+	if u, m := state(); u || m != 0 {
+		t.Fatalf("muted plain post: unread=%v mentions=%v", u, m)
+	}
+	bob.must("POST", "/api/v1/channels/general/messages", map[string]any{"body": "@annie even muted"}, 201)
+	if u, m := state(); !u || m != 1 {
+		t.Fatalf("muted mention: unread=%v mentions=%v", u, m)
+	}
+}

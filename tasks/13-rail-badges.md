@@ -1,6 +1,6 @@
 # 13 Per-workspace badges in the rail
 
-Status: todo
+Status: in-progress
 
 Maya via Chief, root dd69d0b2.
 

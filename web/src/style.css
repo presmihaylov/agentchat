@@ -572,6 +572,8 @@ a.chanlink:hover { text-decoration: underline; }
 .rail-item::before { content: ''; position: absolute; left: -10px; top: 50%; width: 4px; height: 0; border-radius: 0 4px 4px 0; background: var(--text); transform: translateY(-50%); transition: height .15s; }
 .rail-item:hover::before { height: 20px; }
 .rail-item[aria-current]::before { height: 36px; }
+.rail-badge { position: absolute; right: -2px; bottom: -2px; min-width: 10px; height: 10px; border-radius: 8px; background: var(--text); border: 3px solid var(--bg); box-sizing: content-box; pointer-events: none; }
+.rail-badge.count { min-width: 12px; height: 18px; padding: 0 5px; line-height: 18px; font-size: 11px; font-weight: 700; text-align: center; background: var(--broadcast); color: #fff; }
 [data-tip]:hover::after, [data-tip]:focus-visible::after { content: attr(data-tip); position: absolute; left: calc(100% + 14px); top: 50%; transform: translateY(-50%); background: var(--text); color: var(--bg); padding: 6px 10px; border-radius: 6px; font-size: 13px; font-weight: 600; white-space: nowrap; z-index: 40; pointer-events: none; }
 #rail-add { width: 44px; height: 44px; border-radius: 50%; border: 0; padding: 0; background: var(--panel2); color: var(--online); font-size: 26px; line-height: 1; cursor: pointer; position: relative; transition: border-radius .15s, background .15s, color .15s; }
 #rail-add:hover, #rail-add:focus-visible, #rail-add[aria-expanded="true"] { border-radius: 14px; background: var(--online); color: #fff; }

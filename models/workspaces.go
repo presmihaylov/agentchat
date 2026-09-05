@@ -246,13 +246,38 @@ type UserRoom struct {
 	AvatarAttachmentID *string   `json:"avatar_attachment_id,omitempty"`
 	AvatarURL          string    `json:"avatar_url,omitempty"`
 	Color              int16     `json:"color"`
+	// Unread and Mentions roll up the channel badges of this user's participant:
+	// a muted channel counts only through its mentions, like the sidebar
+	Unread   bool  `json:"unread"`
+	Mentions int64 `json:"mentions"`
 }
 
 // RoomsByUser lists the rooms the user still has a live row in, oldest
-// membership first. Revoked rows do not count.
+// membership first. Revoked rows do not count. The read state is the channel
+// badge rule from ListChannelsUnread over the participant's live channels;
+// unread is an EXISTS so a busy unread channel stops at its first row.
 func (s *Store) RoomsByUser(ctx context.Context, userID string) ([]UserRoom, error) {
 	rows, err := s.pool.Query(ctx,
-		`SELECT r.id, r.slug, r.name, p.role, p.created_at, r.avatar_attachment_id, r.color
+		`SELECT r.id, r.slug, r.name, p.role, p.created_at, r.avatar_attachment_id, r.color,
+		        EXISTS (
+		          SELECT 1 FROM channel_members cm
+		          JOIN channels c ON c.id = cm.channel_id AND NOT c.archived
+		          LEFT JOIN channel_reads rd ON rd.channel_id = c.id AND rd.participant_id = p.id
+		          JOIN messages m ON m.channel_id = c.id AND m.thread_root_id IS NULL
+		               AND m.author_id <> p.id AND m.kind <> 'system'
+		               AND m.created_at > COALESCE(rd.last_read_at, p.created_at)
+		          WHERE cm.participant_id = p.id
+		            AND (NOT cm.muted OR m.is_broadcast OR EXISTS (
+		                 SELECT 1 FROM mentions mn WHERE mn.message_id = m.id AND mn.participant_id = p.id))) AS unread,
+		        (SELECT count(*) FROM channel_members cm
+		          JOIN channels c ON c.id = cm.channel_id AND NOT c.archived
+		          LEFT JOIN channel_reads rd ON rd.channel_id = c.id AND rd.participant_id = p.id
+		          JOIN messages m ON m.channel_id = c.id AND m.thread_root_id IS NULL
+		               AND m.author_id <> p.id AND m.kind <> 'system'
+		               AND m.created_at > COALESCE(rd.last_read_at, p.created_at)
+		          WHERE cm.participant_id = p.id
+		            AND (m.is_broadcast OR EXISTS (
+		                 SELECT 1 FROM mentions mn WHERE mn.message_id = m.id AND mn.participant_id = p.id))) AS mentions
 		 FROM participants p JOIN rooms r ON r.id = p.room_id
 		 WHERE p.user_id = $1 AND NOT p.revoked
 		 ORDER BY p.created_at, r.id`, userID)
@@ -263,7 +288,7 @@ func (s *Store) RoomsByUser(ctx context.Context, userID string) ([]UserRoom, err
 	out := []UserRoom{}
 	for rows.Next() {
 		var ur UserRoom
-		if err := rows.Scan(&ur.ID, &ur.Slug, &ur.Name, &ur.Role, &ur.JoinedAt, &ur.AvatarAttachmentID, &ur.Color); err != nil {
+		if err := rows.Scan(&ur.ID, &ur.Slug, &ur.Name, &ur.Role, &ur.JoinedAt, &ur.AvatarAttachmentID, &ur.Color, &ur.Unread, &ur.Mentions); err != nil {
 			return nil, err
 		}
 		ur.AvatarURL = AvatarPath(ur.AvatarAttachmentID)
