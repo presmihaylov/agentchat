@@ -1,9 +1,15 @@
 #!/usr/bin/env bash
-# Deploy AgentChat to prod (Mac mini `prodhost`). See docs/PROD.md.
+# Deploy AgentChat to prod. See docs/PROD.md.
 # Usage: scripts/deploy-prod.sh [commit]   (defaults to HEAD)
+# The ssh host and the health URL come from scripts/deploy-prod.env (gitignored):
+#   AGENTCHAT_PROD_HOST=<ssh host>
+#   AGENTCHAT_PROD_HEALTH_URL=http://<prod host>:<port>/healthz
 set -euo pipefail
 
-HOST=prodhost
+ENV_FILE="$(dirname "$0")/deploy-prod.env"
+[ -f "$ENV_FILE" ] && source "$ENV_FILE"
+HOST="${AGENTCHAT_PROD_HOST:?set AGENTCHAT_PROD_HOST in scripts/deploy-prod.env}"
+HEALTH_URL="${AGENTCHAT_PROD_HEALTH_URL:?set AGENTCHAT_PROD_HEALTH_URL in scripts/deploy-prod.env}"
 COMMIT=$(git rev-parse --short "${1:-HEAD}")
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
@@ -33,7 +39,7 @@ ssh "$HOST" "ln -sf agentchatd-$COMMIT ~/agentchat-prod/bin/agentchatd \
   && launchctl kickstart -k gui/\$(id -u)/com.agentchat.prod"
 
 sleep 3
-curl -sf --max-time 5 http://agentchat.local:8100/healthz
+curl -sf --max-time 5 "$HEALTH_URL"
 echo " deployed $COMMIT"
 
 # post-migrate verification (000026 user backfill, docs/PROD.md): the four

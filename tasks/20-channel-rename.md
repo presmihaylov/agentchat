@@ -1,6 +1,6 @@
 # 20 Channel rename (admins), with a system entry
 
-Status: done (63705a7, prod 2026-09-05 ~17:30Z, verified as omar on prod)
+Status: done (63705a7, prod 2026-09-05 ~17:30Z, verified as a member on prod)
 
 Maya via Chief, root 8ae92fc5 in #agentchat (2026-09-05 14:20Z) and the addendum 5676be6e. Own deploy,
 right after the polish pass (16), before 17.
@@ -56,7 +56,7 @@ the key (unique per room).
     button and the current pill scale with it; the muted styling, spacing and badges from the polish stay.
 - Same system entry for the other admin actions where a channel context exists: member removed from a
   channel already posts "was removed by Y" (models/channels.go); a workspace kick (task 15) and a
-  workspace rename get one in #general: "<Name> removed Omar from the workspace", "<Name> renamed the
+  workspace rename get one in #general: "<Name> removed Hana from the workspace", "<Name> renamed the
   workspace from X to Y".
 
 ## Acceptance

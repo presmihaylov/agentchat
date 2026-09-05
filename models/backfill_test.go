@@ -63,10 +63,10 @@ func TestBackfillUsers(t *testing.T) {
 	eve := human(roomA.ID, "Eve", nil)
 	samRow := human(roomA.ID, "Sam", nil)
 	mayaUpper := human(roomA.ID, "PRES", nil) // same-room clash with the pre-linked maya
-	omarA := human(roomA.ID, "Omar", nil)
+	hanaA := human(roomA.ID, "Hana", nil)
 	bot, _ := mkParticipant(t, s, roomA.ID, "bot")
 	mayaB := human(roomB.ID, "Maya", nil) // first joiner: admin, unlinked
-	omarB := human(roomB.ID, "omar", nil)
+	hanaB := human(roomB.ID, "hana", nil)
 	olgaB := human(roomB.ID, "Olga", nil)
 	// room C creator rule: revoked admin first, member second, two live admins
 	olgaC := human(roomC.ID, "Olga", nil) // first joiner: admin, revoked below
@@ -169,12 +169,12 @@ func TestBackfillUsers(t *testing.T) {
 	linkedTo(maria2.ID, maria3ID)
 
 	// cross-room merge of two unlinked rows: one user, both rows
-	omarID, _, _, links, _ := userOf("omar")
+	hanaID, _, _, links, _ := userOf("hana")
 	if links != 2 {
-		t.Fatalf("omar links = %d, want 2", links)
+		t.Fatalf("hana links = %d, want 2", links)
 	}
-	linkedTo(omarA.ID, omarID)
-	linkedTo(omarB.ID, omarID)
+	linkedTo(hanaA.ID, hanaID)
+	linkedTo(hanaB.ID, hanaID)
 
 	// same-room clash with the pre-linked maya: a fresh maya-2, not a merge
 	maya2ID, _, _, links, _ := userOf("maya-2")
@@ -261,7 +261,7 @@ func TestBackfillUsers(t *testing.T) {
 		t.Fatal(err)
 	}
 	if backfilled != 10 {
-		t.Fatalf("backfill table holds %d users, want maria-chen, maria-chen-2, maria-chen-3, sam-2, omar, maya-2, olga, mo, ann, ben", backfilled)
+		t.Fatalf("backfill table holds %d users, want maria-chen, maria-chen-2, maria-chen-3, sam-2, hana, maya-2, olga, mo, ann, ben", backfilled)
 	}
 
 	// down: exactly the backfilled users go; maya and sam stay
@@ -292,7 +292,7 @@ func TestBackfillUsers(t *testing.T) {
 		t.Fatal("down touched the registered user's hash")
 	}
 	linkedTo(mayaA.ID, maya.ID)
-	for _, pid := range []string{maria.ID, maria2.ID, mariaLit.ID, samRow.ID, eve.ID, mayaUpper.ID, omarA.ID, omarB.ID, olgaB.ID, olgaC.ID, mo.ID, ann.ID, ben.ID} {
+	for _, pid := range []string{maria.ID, maria2.ID, mariaLit.ID, samRow.ID, eve.ID, mayaUpper.ID, hanaA.ID, hanaB.ID, olgaB.ID, olgaC.ID, mo.ID, ann.ID, ben.ID} {
 		if uid := linkOf(pid); uid != nil {
 			t.Fatalf("participant %s still linked to %s after down", pid, *uid)
 		}

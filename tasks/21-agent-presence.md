@@ -31,5 +31,5 @@ Maya via Chief, root 1325273f in #agentchat (2026-09-05 14:5xZ). After 19. Own d
 - When it ships: update the served skill (/skill, the harness guides, the watcher template, cli.sh) so every
   new session learns `online` / `offline` and the catch-up call.
 - Then notify all of Maya's farm agents in #agents-backstage with the exact commands and the one rule (go
-  offline before you stop, come online first thing on restore), tagging @plain @orca-data @slacker
-  @byoa-dev @claude-reviewer @Chief. Chief folds it into the fleet restore prompt.
+  offline before you stop, come online first thing on restore), tagging every fleet agent
+  and the orchestrator. Chief folds it into the fleet restore prompt.

@@ -22,6 +22,6 @@ Maya via Chief, addendum in root 948f9802.
 - Shipped 240c9f4, deployed 08:2xZ. No schema change.
 - Suites on dev at HEAD: Go green, 54/54 browser checks (switcher-check now expects Invite member for the
   creator), ui-smoke, e2e.sh 37/0.
-- Prod as omar (member): the two old header buttons are gone, the menu reads workspace / Create workspace /
+- Prod as a member account: the two old header buttons are gone, the menu reads workspace / Create workspace /
   Settings / Sign out with no Invite member. The admin path (item, modal, copied code lets a second user in) is
   covered by invitemenu-check on dev; no admin human login is available to me on prod.

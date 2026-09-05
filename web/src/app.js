@@ -289,7 +289,7 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
     + '<circle cx="7" cy="8.4" r=".7" fill="currentColor" stroke="none"/><circle cx="11" cy="8.4" r=".7" fill="currentColor" stroke="none"/>'
     + '<path d="M15.5 2.5v5M13 5h5"/></svg>';
 
-  // "You, Maya and Dim reacted with :eyes:" — Slack's wording, you first
+  // "You, Ann and Ben reacted with :eyes:" — Slack's wording, you first
   const reactionTipText = (rx) => {
     const names = rx.participant_ids.map((id, i) => (id === me.id ? 'You' : rx.names[i]));
     if (names.includes('You')) names.splice(0, 0, ...names.splice(names.indexOf('You'), 1));

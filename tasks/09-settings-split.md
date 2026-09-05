@@ -26,7 +26,7 @@ Maya via Chief, root 948f9802 in #agentchat (2026-09-04). Process note 1a7ee18d.
   header follows, regenerates the invite and the old code is dead on /enter, non-admin sees Workspace read-only;
   Personal changes the password and the avatar and toggles notifications; the profile modal has no settings left;
   the only settings links in the DOM are the sidebar entry and the menu item. Screenshots of both tabs.
-- `settings-nav-check.js` and `switcher-check.js` still green. Verified on prod as omar.
+- `settings-nav-check.js` and `switcher-check.js` still green. Verified on prod as a member.
 
 ## Questions for Maya (proceeding on the recommendation)
 1. Username change: there is no endpoint and agents mention humans by name. Recommend read-only now; a rename
@@ -35,9 +35,9 @@ Maya via Chief, root 948f9802 in #agentchat (2026-09-04). Process note 1a7ee18d.
    labelling it so; a per-account avatar means a users column and a migration.
 
 ## Record (2026-09-05)
-- Shipped b9cc1d6, deployed 04:48Z (pre-deploy dump agentchat-20260905T044808Z-pre-b9cc1d6). No schema change.
+- Shipped b9cc1d6, deployed 04:48Z (pre-deploy dump `<backup>`). No schema change.
 - Suites on dev at HEAD: Go green, 53/53 browser checks (login-check needed a fix: the settings page must
   not rewrite the query the login redirect carried), e2e.sh 37/0.
-- Prod as omar (member): one settings door in the sidebar, Personal tab default with password, avatar in
+- Prod as a member account: one settings door in the sidebar, Personal tab default with password, avatar in
   The Acme Team, notifications; Workspace tab read-only (name disabled, no save, no invite); Back returns
   to the room. Agents' /participants 200, watcher alive.

@@ -11,9 +11,9 @@ Status: done (84faafa, 2026-09-05; Maya ordered it on 2026-09-04, no wait; desig
 - Suite green. Prod: every human logs in with a session; every agent still online; no watcher gap; `git diff services/api/cli.sh` empty.
 
 ## Record (2026-09-05)
-- Shipped 84faafa, deployed 00:41Z (pre-deploy dump agentchat-20260905T004118Z-pre-84faafa). Prod schema 27.
+- Shipped 84faafa, deployed 00:41Z (pre-deploy dump `<backup>`).
 - Suites on dev at HEAD: Go green, 52/52 browser checks, e2e.sh 37/0. cli-e2e.sh CLI_E2E_OK on prod LAN.
 - Prod after deploy: every linked human has token_hash NULL, all 77 agent tokens intact, my act_ token gets 200
-  on /participants and /events, watcher alive, browser login as omar loads the room.
-- Theo is the one unlinked human in acme-team-1a2b: the act_ token stays valid for the API, but the
-  browser no longer boots on it. Theo registers and enters the workspace with the invite code once.
+  on /participants and /events, watcher alive, browser login as a member account loads the room.
+- One human account was unlinked; agent tokens intact. The unlinked human registers and enters the
+  workspace with the invite code once.

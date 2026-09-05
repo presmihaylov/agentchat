@@ -1,12 +1,12 @@
-# Prod deployment (Mac mini `prodhost`)
+# Prod deployment (the prod host)
 
 Prod is a native launchd deployment on the Mac mini, fully separate from the
 dev docker-compose instance. Deploys are deliberate: prod runs a pinned binary
 and only moves when you run the deploy script.
 
-| | dev (this machine) | prod (`prodhost`) |
+| | dev (this machine) | prod (the prod host) |
 |---|---|---|
-| URL | http://localhost:8090 | https://chat.example.com (Cloudflare Tunnel + Access, `docs/CLOUDFLARE.md`); http://agentchat.local:8100 on the LAN |
+| URL | http://localhost:8090 | https://chat.example.com (Cloudflare Tunnel + Access, `docs/CLOUDFLARE.md`) |
 | App | docker compose, every commit | pinned binary, manual deploys |
 | Postgres | container, port 5477 | brew `postgresql@17` + pgvector, port 5432 (localhost only) |
 | Data | docker volume | `/opt/homebrew/var/postgresql@17` |
@@ -32,8 +32,8 @@ and only moves when you run the deploy script.
   `pg_dump -Fc` the deploy script takes before every binary swap. The newest
   10 are kept. Restore with `pg_restore --clean --if-exists -d <db url> <file>`.
 - `~/Library/LaunchAgents/com.agentchat.prod.plist` — `RunAtLoad` +
-  `KeepAlive`: starts at login and restarts on crash. The mini auto-logs-in
-  as `prodhost`, which is what makes this survive reboots; if auto-login is
+  `KeepAlive`: starts at login and restarts on crash. The prod host auto-logs-in
+  as the service user, which is what makes this survive reboots; if auto-login is
   ever turned off, convert to a LaunchDaemon.
 
 Postgres runs via `brew services start postgresql@17` (also a login item).
@@ -45,6 +45,9 @@ a binary swap.
 From this repo, on the dev machine:
 
 ```sh
+scripts/deploy-prod.sh reads the ssh host and the health URL from
+`scripts/deploy-prod.env` (gitignored, see the script header).
+
 scripts/deploy-prod.sh            # deploys HEAD
 scripts/deploy-prod.sh <commit>   # deploys a specific commit
 ```
@@ -126,7 +129,7 @@ untouched.
    set -a && source ~/agentchat-prod/env && set +a
    /opt/homebrew/opt/postgresql@17/bin/psql "$AGENTCHAT_DB_URL" -f users-migration-preview.sql
    ```
-   (`scp scripts/users-migration-preview.sql prodhost:` first.) Review the
+   (`scp scripts/users-migration-preview.sql <prod host>:` first.) Review the
    merge report (one username, several rows), the collision report (a derived
    username that a registered account with zero links already holds: the
    legacy row gets `-2` and a fresh account) and the pre-linked report (users
@@ -157,16 +160,3 @@ launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.agentchat.prod.plist
 /opt/homebrew/opt/postgresql@17/bin/psql -h localhost agentchat  # db shell
 ```
 
-The macOS application firewall is disabled on the mini, so no allow rule is
-needed for LAN access.
-
-The canonical URL is `http://agentchat.local:8100`. It resolves via mDNS
-(Bonjour) with zero config from any Apple device and most others on the WiFi.
-The name comes from `scutil --set LocalHostName agentchat` on the mini, so it
-follows the box across DHCP lease changes. `AGENTCHAT_PUBLIC_URL` in
-`~/agentchat-prod/env` is set to this name, so room links embed it.
-
-The raw LAN IP `http://192.168.1.33:8100` is a fallback for clients without
-mDNS (some Android/Windows). That IP comes from the router's DHCP and can
-change; the `.local` name does not, which is why it is canonical. If you ever
-must pin to an IP instead, update `AGENTCHAT_PUBLIC_URL` and restart.
