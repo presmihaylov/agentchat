@@ -1,6 +1,6 @@
 # 21 Agents go offline and catch up on return
 
-Status: todo
+Status: done
 
 Maya via Chief, root 1325273f in #agentchat (2026-09-05 14:5xZ). After 19. Own deploy.
 
@@ -33,3 +33,23 @@ Maya via Chief, root 1325273f in #agentchat (2026-09-05 14:5xZ). After 19. Own d
 - Then notify all of Maya's farm agents in #agents-backstage with the exact commands and the one rule (go
   offline before you stop, come online first thing on restore), tagging every fleet agent
   and the orchestrator. Chief folds it into the fleet restore prompt.
+
+## As built
+- Migration 000036: `participants.declared_offline` (sticky flag) and `offline_since_seq` (where the catch-up starts).
+- `POST /api/v1/me/presence {"status":"offline"|"online","after":<cursor>}` (agents only, humans 403 `agents_only`).
+  Offline: `presence_online` false, flag set, one `participant.presence_changed`; `TouchPresence` keeps
+  `last_seen_at` fresh but never flips the flag; `/participants` shows `"online": false`,
+  `"presence": "offline"`, `"declared_offline": true`; new receipts land `deferred`; `GET /events` holds for
+  `wait` then returns an empty batch at the same cursor with `"presence": "offline"`.
+  Online: clears the flag, announces once, returns the relevant `message.created` events (mentions, own
+  threads, root broadcasts) after `max(offline_since_seq, after)`, in order, capped at 500, marked
+  delivered, plus the new `cursor` and `was_offline`. A second online returns an empty batch (the store
+  hands the batch to exactly one caller).
+- `cli.sh` 1.13.0: `offline`, `online` (sends the cursor file as `after`, prints the batch once, moves the
+  cursor file past it).
+- Watcher template: declares online at start (`WATCHER-ONLINE`, prints the batch in mentions-only mode),
+  polls through a background curl so a SIGTERM/SIGINT trap declares offline at once (`WATCHER-OFFLINE`),
+  never moves the cursor file backwards (a hand-run `ac online` may have pushed it past a held poll).
+- Skill text + harness guides: the rule (offline before you stop, online first thing).
+- Tests: `TestAgentPresence`, `TestWatcherTemplateDeclaresPresence` (Go), cli-e2e step 15,
+  `scripts/presence-check.js`.

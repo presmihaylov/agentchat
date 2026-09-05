@@ -20,6 +20,17 @@ var ErrIdentityOnline = errors.New("that identity is currently online")
 // tokenHash is nil for a human who enters through a login session (userID set).
 // inviteID, when set, spends one use of that link in the same transaction.
 func (s *Store) CreateParticipant(ctx context.Context, roomID, name, avatar, description string, isHuman bool, tokenHash []byte, ownerID *string, userID *string, inviteID string) (Participant, error) {
+	p, err := s.insertParticipant(ctx, roomID, name, avatar, description, isHuman, tokenHash, ownerID, userID, inviteID)
+	if err != nil {
+		return p, err
+	}
+	// the joined row with its owner and account names resolved
+	return s.ParticipantByID(ctx, roomID, p.ID)
+}
+
+// insertParticipant is CreateParticipant without the read-back: the bare row
+// the insert returned. Migration tests seed through it at older schemas.
+func (s *Store) insertParticipant(ctx context.Context, roomID, name, avatar, description string, isHuman bool, tokenHash []byte, ownerID *string, userID *string, inviteID string) (Participant, error) {
 	var p Participant
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -40,11 +51,7 @@ func (s *Store) CreateParticipant(ctx context.Context, roomID, name, avatar, des
 	if err != nil {
 		return p, err
 	}
-	if err := tx.Commit(ctx); err != nil {
-		return p, err
-	}
-	// the joined row with its owner and account names resolved
-	return s.ParticipantByID(ctx, roomID, p.ID)
+	return p, tx.Commit(ctx)
 }
 
 // createParticipantTx is the one insert path for joins, /enter and CreateRoomAs.
@@ -115,7 +122,7 @@ func (s *Store) ReclaimParticipant(ctx context.Context, roomID, name string, tok
 	var id string
 	var revoked, online, linked bool
 	err = tx.QueryRow(ctx,
-		`SELECT id, revoked, last_seen_at > now() - $3::interval, user_id IS NOT NULL
+		`SELECT id, revoked, last_seen_at > now() - $3::interval AND NOT declared_offline, user_id IS NOT NULL
 		 FROM participants WHERE room_id = $1 AND name = $2`,
 		roomID, name, OnlineWindow.String(),
 	).Scan(&id, &revoked, &online, &linked)
@@ -137,7 +144,8 @@ func (s *Store) ReclaimParticipant(ctx context.Context, roomID, name string, tok
 	// room code) drops to member, so an offline admin can't be impersonated into
 	// admin. An existing admin must re-grant the role explicitly.
 	if _, err := tx.Exec(ctx,
-		`UPDATE participants SET token_hash = $2, last_seen_at = now(), presence_online = TRUE, owner_id = COALESCE($3, owner_id), role = 'member' WHERE id = $1`,
+		`UPDATE participants SET token_hash = $2, last_seen_at = now(), presence_online = TRUE, declared_offline = FALSE, offline_since_seq = NULL,
+		        owner_id = COALESCE($3, owner_id), role = 'member' WHERE id = $1`,
 		id, tokenHash, ownerID); err != nil {
 		return p, err
 	}
@@ -160,14 +168,15 @@ func (s *Store) ParticipantByTokenHash(ctx context.Context, hash []byte) (Partic
 	err := s.pool.QueryRow(ctx,
 		`SELECT p.id, p.room_id, p.name, p.avatar, p.avatar_attachment_id, p.description, p.is_human, p.role,
 		        p.owner_id, o.name, o.user_id, ou.username, p.user_id, u.username, p.last_seen_at, p.created_at,
-		        p.last_seen_at > now() - $2::interval AS online
+		        p.last_seen_at > now() - $2::interval AND NOT p.declared_offline AS online, p.declared_offline
 		 FROM participants p LEFT JOIN participants o ON o.id = p.owner_id
 		 LEFT JOIN users ou ON ou.id = o.user_id
 		 LEFT JOIN users u ON u.id = p.user_id
 		 WHERE p.token_hash = $1 AND NOT p.revoked
 		   AND (p.owner_id IS NULL OR NOT o.revoked)`,
 		hash, OnlineWindow.String(),
-	).Scan(&p.ID, &p.RoomID, &p.Name, &p.Avatar, &p.AvatarAttachmentID, &p.Description, &p.IsHuman, &p.Role, &p.OwnerID, &p.OwnerName, &p.OwnerUserID, &p.OwnerUsername, &p.UserID, &p.Username, &p.LastSeenAt, &p.CreatedAt, &p.Online)
+	).Scan(&p.ID, &p.RoomID, &p.Name, &p.Avatar, &p.AvatarAttachmentID, &p.Description, &p.IsHuman, &p.Role, &p.OwnerID, &p.OwnerName, &p.OwnerUserID, &p.OwnerUsername, &p.UserID, &p.Username, &p.LastSeenAt, &p.CreatedAt, &p.Online, &p.DeclaredOffline)
+	p.Presence = presenceOf(p.Online)
 	return p, mapRowErr(err)
 }
 
@@ -211,7 +220,7 @@ func (s *Store) listParticipants(ctx context.Context, roomID string, id, name, c
 		`SELECT p.id, p.room_id, p.name, p.avatar, p.avatar_attachment_id, p.description, p.is_human, p.role,
 		        p.owner_id, o.name AS owner_name, o.user_id, ou.username, p.user_id, u.username,
 		        p.last_seen_at, p.created_at,
-		        p.last_seen_at > now() - $2::interval AS online,
+		        p.last_seen_at > now() - $2::interval AND NOT p.declared_offline AS online, p.declared_offline,
 		        COALESCE(
 		            (SELECT json_agg(json_build_object('tag', t.tag, 'tagged_by', tb.name) ORDER BY t.created_at)
 		             FROM participant_tags t
@@ -241,12 +250,13 @@ func (s *Store) listParticipants(ctx context.Context, roomID string, id, name, c
 		var tagsJSON []byte
 		if err := rows.Scan(&p.ID, &p.RoomID, &p.Name, &p.Avatar, &p.AvatarAttachmentID, &p.Description, &p.IsHuman, &p.Role,
 			&p.OwnerID, &p.OwnerName, &p.OwnerUserID, &p.OwnerUsername, &p.UserID, &p.Username,
-			&p.LastSeenAt, &p.CreatedAt, &p.Online, &tagsJSON); err != nil {
+			&p.LastSeenAt, &p.CreatedAt, &p.Online, &p.DeclaredOffline, &tagsJSON); err != nil {
 			return nil, err
 		}
 		if err := json.Unmarshal(tagsJSON, &p.Tags); err != nil {
 			return nil, err
 		}
+		p.Presence = presenceOf(p.Online)
 		out = append(out, p)
 	}
 	return out, rows.Err()
@@ -551,11 +561,13 @@ func (s *Store) CreatorRow(ctx context.Context, roomID string) (*string, error) 
 }
 
 // TouchPresence marks the participant as recently seen. Crossing from an
-// announced-offline state emits participant.presence_changed exactly once.
+// announced-offline state emits participant.presence_changed exactly once. A
+// participant that declared itself offline (task 21) stays offline: only an
+// explicit SetPresence(online) brings it back.
 func (s *Store) TouchPresence(ctx context.Context, roomID, id string) error {
 	// fast path: already announced online, no event to write
 	tag, err := s.pool.Exec(ctx,
-		`UPDATE participants SET last_seen_at = now() WHERE id = $1 AND presence_online`, id)
+		`UPDATE participants SET last_seen_at = now() WHERE id = $1 AND (presence_online OR declared_offline)`, id)
 	if err != nil || tag.RowsAffected() == 1 {
 		return err
 	}
@@ -610,6 +622,89 @@ func (s *Store) GoOffline(ctx context.Context, roomID, id string) error {
 		return err
 	}
 	return tx.Commit(ctx)
+}
+
+func presenceOf(online bool) string {
+	if online {
+		return "online"
+	}
+	return "offline"
+}
+
+// DeclareOffline (task 21) parks the participant: it counts as offline until
+// DeclareOnline, whatever it requests meanwhile, and remembers the event seq
+// it left at so the catch-up batch starts there. Idempotent; announces the
+// transition once.
+func (s *Store) DeclareOffline(ctx context.Context, roomID, id string) error {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	if err := lockRoomEvents(ctx, tx, roomID); err != nil {
+		return err
+	}
+	var name string
+	var wasOnline bool
+	err = tx.QueryRow(ctx,
+		`UPDATE participants p SET presence_online = FALSE, declared_offline = TRUE,
+		        offline_since_seq = COALESCE(p.offline_since_seq, (SELECT COALESCE(MAX(seq), 0) FROM events WHERE room_id = $2))
+		 FROM (SELECT id, last_seen_at > now() - $3::interval AND NOT declared_offline AS online FROM participants WHERE id = $1 FOR UPDATE) old
+		 WHERE p.id = old.id RETURNING p.name, old.online`,
+		id, roomID, OnlineWindow.String(),
+	).Scan(&name, &wasOnline)
+	if err != nil {
+		return mapRowErr(err)
+	}
+	if !wasOnline {
+		return tx.Commit(ctx)
+	}
+	payload, _ := json.Marshal(map[string]any{"participant_id": id, "name": name, "online": false})
+	if err := appendEventTx(ctx, tx, roomID, "participant.presence_changed", payload); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+// DeclareOnline clears a declared-offline state. It returns the seq the
+// participant went offline at and whether it was declared offline at all: two
+// concurrent onlines hand the catch-up to exactly one caller. Announces the
+// transition once.
+func (s *Store) DeclareOnline(ctx context.Context, roomID, id string) (int64, bool, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return 0, false, err
+	}
+	defer tx.Rollback(ctx)
+	if err := lockRoomEvents(ctx, tx, roomID); err != nil {
+		return 0, false, err
+	}
+	var name string
+	var since *int64
+	var wasOnline bool
+	err = tx.QueryRow(ctx,
+		`UPDATE participants p SET last_seen_at = now(), presence_online = TRUE, declared_offline = FALSE, offline_since_seq = NULL
+		 FROM (SELECT id, declared_offline, offline_since_seq, presence_online FROM participants WHERE id = $1 FOR UPDATE) old
+		 WHERE p.id = old.id
+		 RETURNING p.name, CASE WHEN old.declared_offline THEN old.offline_since_seq ELSE NULL END, old.presence_online`,
+		id,
+	).Scan(&name, &since, &wasOnline)
+	if err != nil {
+		return 0, false, mapRowErr(err)
+	}
+	if !wasOnline {
+		payload, _ := json.Marshal(map[string]any{"participant_id": id, "name": name, "online": true})
+		if err := appendEventTx(ctx, tx, roomID, "participant.presence_changed", payload); err != nil {
+			return 0, false, err
+		}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return 0, false, err
+	}
+	if since == nil {
+		return 0, false, nil
+	}
+	return *since, true, nil
 }
 
 // BackdateSeen is a test hook: ages last_seen_at past the online window without

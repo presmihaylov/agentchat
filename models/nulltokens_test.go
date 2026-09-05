@@ -35,10 +35,7 @@ func TestNullHumanTokens(t *testing.T) {
 	hashes := map[string][]byte{}
 	mk := func(name string, human bool, userID *string) Participant {
 		_, hash := secrets.NewToken()
-		p, err := s.CreateParticipant(ctx, room.ID, name, "🧑", "", human, hash, nil, userID, "")
-		if err != nil {
-			t.Fatal(err)
-		}
+		p := legacyParticipant(t, s, room.ID, name, "🧑", human, hash, nil, userID)
 		hashes[p.ID] = hash
 		return p
 	}
@@ -63,8 +60,10 @@ func TestNullHumanTokens(t *testing.T) {
 	if hashOf(agent.ID) == nil {
 		t.Fatal("agent lost its token hash")
 	}
-	if _, err := s.ParticipantByTokenHash(ctx, hashes[agent.ID]); err != nil {
-		t.Fatalf("agent token after 000027: %v", err)
+	// the store's lookup wants later columns; ask the row directly at this version
+	var byHash string
+	if err := pool.QueryRow(ctx, `SELECT id FROM participants WHERE token_hash = $1 AND NOT revoked`, hashes[agent.ID]).Scan(&byHash); err != nil || byHash != agent.ID {
+		t.Fatalf("agent token after 000027: %q %v", byHash, err)
 	}
 	if got, err := MigrateTo(ctx, dbURL, nullTokensVersion-1); err != nil || got != nullTokensVersion-1 {
 		t.Fatalf("down to %d: got %d %v", nullTokensVersion-1, got, err)

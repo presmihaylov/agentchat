@@ -33,24 +33,14 @@ func TestAgentOwnersMigration(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, omarHash := secrets.NewToken()
-	omarRow, err := s.CreateParticipant(ctx, room.ID, "omar", "🧑", "", true, omarHash, nil, &omar.ID, "")
-	if err != nil {
-		t.Fatal(err)
-	}
+	omarRow := legacyParticipant(t, s, room.ID, "omar", "🧑", true, omarHash, nil, &omar.ID)
 	mk := func(roomID, name string, owner *string) Participant {
 		_, hash := secrets.NewToken()
-		p, err := s.CreateParticipant(ctx, roomID, name, "🤖", "", false, hash, owner, nil, "")
-		if err != nil {
-			t.Fatal(err)
-		}
-		return p
+		return legacyParticipant(t, s, roomID, name, "🤖", false, hash, owner, nil)
 	}
 	// a cli human: is_human, no account
 	_, theoHash := secrets.NewToken()
-	theo, err := s.CreateParticipant(ctx, room.ID, "theo", "🧑", "", true, theoHash, nil, nil, "")
-	if err != nil {
-		t.Fatal(err)
-	}
+	theo := legacyParticipant(t, s, room.ID, "theo", "🧑", true, theoHash, nil, nil)
 	orphan := mk(room.ID, "orphan", nil)
 	ofTheo := mk(room.ID, "strix", &theo.ID)
 	ofOmar := mk(room.ID, "reviewer", &omarRow.ID)
@@ -64,10 +54,7 @@ func TestAgentOwnersMigration(t *testing.T) {
 	// token must keep working, so it moves to the creator too
 	gone := mkPasswordUser(t, s)
 	_, goneHash := secrets.NewToken()
-	goneRow, err := s.CreateParticipant(ctx, room.ID, "Gone", "🧑", "", true, goneHash, nil, &gone.ID, "")
-	if err != nil {
-		t.Fatal(err)
-	}
+	goneRow := legacyParticipant(t, s, room.ID, "Gone", "🧑", true, goneHash, nil, &gone.ID)
 	ofGone := mk(room.ID, "leftover", &goneRow.ID)
 	if _, err := pool.Exec(ctx, `UPDATE participants SET revoked = true WHERE id = $1`, goneRow.ID); err != nil {
 		t.Fatal(err)

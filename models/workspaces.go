@@ -156,6 +156,7 @@ func (s *Store) ParticipantForUser(ctx context.Context, roomID, userID string) (
 		 WHERE p.room_id = $1 AND p.user_id = $2`,
 		roomID, userID, OnlineWindow.String(),
 	).Scan(scopeParticipantDest(&p)...)
+	p.Presence = presenceOf(p.Online)
 	return p, mapRowErr(err)
 }
 

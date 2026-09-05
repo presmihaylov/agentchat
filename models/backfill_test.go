@@ -50,11 +50,7 @@ func TestBackfillUsers(t *testing.T) {
 	roomA, roomB, roomC := mkRoomSlug("alpha", "alpha-slug"), mkRoomSlug("beta", "beta-slug"), mkRoomSlug("gamma", "gamma-slug")
 	human := func(roomID, name string, userID *string) Participant {
 		_, hash := secrets.NewToken()
-		p, err := s.CreateParticipant(ctx, roomID, name, "🧑", "", true, hash, nil, userID, "")
-		if err != nil {
-			t.Fatal(err)
-		}
-		return p
+		return legacyParticipant(t, s, roomID, name, "🧑", true, hash, nil, userID)
 	}
 	mayaA := human(roomA.ID, "Maya", &maya.ID) // first joiner: admin, pre-linked
 	maria := human(roomA.ID, "Maria Chen", nil)
@@ -64,7 +60,8 @@ func TestBackfillUsers(t *testing.T) {
 	samRow := human(roomA.ID, "Sam", nil)
 	mayaUpper := human(roomA.ID, "PRES", nil) // same-room clash with the pre-linked maya
 	hanaA := human(roomA.ID, "Hana", nil)
-	bot, _ := mkParticipant(t, s, roomA.ID, "bot")
+	_, botHash := secrets.NewToken()
+	bot := legacyParticipant(t, s, roomA.ID, "bot", "🤖", false, botHash, nil, nil)
 	mayaB := human(roomB.ID, "Maya", nil) // first joiner: admin, unlinked
 	hanaB := human(roomB.ID, "hana", nil)
 	olgaB := human(roomB.ID, "Olga", nil)

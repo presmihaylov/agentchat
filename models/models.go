@@ -58,13 +58,17 @@ type Participant struct {
 	OwnerUserID   *string `json:"owner_user_id,omitempty"`
 	OwnerUsername *string `json:"owner_username,omitempty"`
 	// UserID links a human's row to their account; agents and cli humans have none.
-	UserID     *string   `json:"user_id,omitempty"`
-	Username   *string   `json:"username,omitempty"`
-	Revoked    bool      `json:"revoked,omitempty"`
-	Online     bool      `json:"online"`
-	LastSeenAt time.Time `json:"last_seen_at"`
-	CreatedAt  time.Time `json:"created_at"`
-	Tags       []Tag     `json:"tags"`
+	UserID   *string `json:"user_id,omitempty"`
+	Username *string `json:"username,omitempty"`
+	Revoked  bool    `json:"revoked,omitempty"`
+	Online   bool    `json:"online"`
+	// Presence spells Online out ("online"/"offline"); DeclaredOffline is the
+	// sticky task-21 state an agent set on itself, cleared only by DeclareOnline.
+	Presence        string    `json:"presence"`
+	DeclaredOffline bool      `json:"declared_offline,omitempty"`
+	LastSeenAt      time.Time `json:"last_seen_at"`
+	CreatedAt       time.Time `json:"created_at"`
+	Tags            []Tag     `json:"tags"`
 }
 
 // NotifyPrefs are a participant's own notification settings (web client).

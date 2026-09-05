@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -130,8 +131,130 @@ func (s *Server) handleGoOffline(w http.ResponseWriter, r *http.Request, p model
 }
 
 func (s *Server) handleHeartbeat(w http.ResponseWriter, r *http.Request, p models.Participant) {
-	// authed() already touched presence
-	writeJSON(w, http.StatusOK, map[string]string{"status": "online"})
+	// authed() already touched presence; a declared-offline agent stays offline
+	writeJSON(w, http.StatusOK, map[string]string{"status": presenceAfterTouch(p)})
+}
+
+func presenceAfterTouch(p models.Participant) string {
+	if p.DeclaredOffline {
+		return "offline"
+	}
+	return "online"
+}
+
+// presenceCatchupCap bounds one online batch; the rest stays behind the
+// cursor and the next poll or inbox drain picks it up.
+const presenceCatchupCap = 500
+
+// handlePresence (task 21): an agent declares itself offline or online.
+// Offline is sticky: polls hold and hand out nothing, mentions queue as
+// deferred receipts, the roster shows a grey dot. Online returns the relevant
+// message events (mentions, its threads, root broadcasts) since it went
+// offline, past the caller's own cursor when it sends one, so a watcher
+// never hears an event twice. A second online returns an empty batch.
+func (s *Server) handlePresence(w http.ResponseWriter, r *http.Request, p models.Participant) {
+	if p.IsHuman {
+		writeErrCode(w, http.StatusForbidden, "agents_only", "presence is declared by agents; a human is online while the app is open")
+		return
+	}
+	var req struct {
+		Status string `json:"status"`
+		After  *int64 `json:"after"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeErr(w, http.StatusBadRequest, "bad json")
+		return
+	}
+	switch req.Status {
+	case "offline":
+		if err := s.store.DeclareOffline(r.Context(), p.RoomID, p.ID); err != nil {
+			writeStoreErr(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"status": "offline"})
+	case "online":
+		since, wasOffline, err := s.store.DeclareOnline(r.Context(), p.RoomID, p.ID)
+		if err != nil {
+			writeStoreErr(w, err)
+			return
+		}
+		latest, err := s.store.LatestSeq(r.Context(), p.RoomID)
+		if err != nil {
+			writeStoreErr(w, err)
+			return
+		}
+		if !wasOffline {
+			// Nothing to hand out: it never left, or another online call already took
+			// the batch. Echo the caller's cursor so a stale cursor file is never
+			// pushed past events the poll still has to replay.
+			cursor := latest
+			if req.After != nil {
+				cursor = *req.After
+			}
+			writeJSON(w, http.StatusOK, map[string]any{"status": "online", "events": []models.Event{}, "cursor": cursor, "was_offline": false})
+			return
+		}
+		// The caller's cursor is the truth about what it has heard; the offline
+		// mark only stands in when no cursor is sent.
+		from := since
+		if req.After != nil {
+			from = *req.After
+		}
+		events, cursor, err := s.catchup(r, p, from)
+		if err != nil {
+			writeStoreErr(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"status": "online", "events": events, "cursor": cursor, "was_offline": true})
+	default:
+		writeErr(w, http.StatusBadRequest, `status must be "online" or "offline"`)
+	}
+}
+
+// catchup lists the relevant message events after from, the same set a
+// relevant=true poll would have handed out, and marks them delivered.
+func (s *Server) catchup(r *http.Request, p models.Participant, from int64) ([]models.Event, int64, error) {
+	memberIDs, err := s.store.ParticipantChannelIDs(r.Context(), p.ID)
+	if err != nil {
+		return nil, 0, err
+	}
+	members := map[string]bool{}
+	for _, id := range memberIDs {
+		members[id] = true
+	}
+	types := map[string]bool{"message.created": true}
+	kept := []models.Event{}
+	cursor := from
+	for len(kept) < presenceCatchupCap {
+		page, err := s.store.ListEvents(r.Context(), p.RoomID, cursor, 500)
+		if err != nil {
+			return nil, 0, err
+		}
+		if len(page) == 0 {
+			break
+		}
+		got, err := s.filterEvents(r.Context(), page, p, members, types, nil, true)
+		if err != nil {
+			return nil, 0, err
+		}
+		kept = append(kept, got...)
+		cursor = page[len(page)-1].Seq
+		if len(page) < 500 {
+			break
+		}
+	}
+	if len(kept) > presenceCatchupCap {
+		kept = kept[:presenceCatchupCap]
+		cursor = kept[len(kept)-1].Seq
+	}
+	seqs := []int64{}
+	for _, e := range kept {
+		seqs = append(seqs, e.Seq)
+	}
+	if err := s.store.MarkDelivered(r.Context(), p.RoomID, p.ID, seqs); err != nil {
+		return nil, 0, err
+	}
+	return kept, cursor, nil
 }
 
 func (s *Server) handleListParticipants(w http.ResponseWriter, r *http.Request, p models.Participant) {

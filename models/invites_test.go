@@ -15,7 +15,8 @@ import (
 func joinWith(t *testing.T, s *Store, roomID, name string, inv Invite) (Participant, error) {
 	t.Helper()
 	_, hash := secrets.NewToken()
-	return s.CreateParticipant(context.Background(), roomID, name, "🤖", "", false, hash, inv.OwnerID, nil, inv.ID)
+	// the bare insert: the 000033 test joins at a schema older than the read-back
+	return s.insertParticipant(context.Background(), roomID, name, "🤖", "", false, hash, inv.OwnerID, nil, inv.ID)
 }
 
 func TestInviteLinks(t *testing.T) {
@@ -225,12 +226,10 @@ func TestInviteLinksMigration(t *testing.T) {
 	if err := pool.QueryRow(ctx, `SELECT secret FROM rooms WHERE id = $1`, room.ID).Scan(&roomSecret); err != nil {
 		t.Fatal(err)
 	}
-	maya, _ := mkParticipant(t, s, room.ID, "maya") // first joiner: admin
+	_, mayaHash := secrets.NewToken()
+	maya := legacyParticipant(t, s, room.ID, "maya", "🤖", false, mayaHash, nil, nil) // first joiner: admin
 	_, hash := secrets.NewToken()
-	chief, err := s.CreateParticipant(ctx, room.ID, "chief", "🤖", "", false, hash, &maya.ID, nil, "")
-	if err != nil {
-		t.Fatal(err)
-	}
+	chief := legacyParticipant(t, s, room.ID, "chief", "🤖", false, hash, &maya.ID, nil)
 	// owner-scoped invites of the old shape: one by the human, one by the agent
 	byPres, byChief := secrets.InviteCode(), secrets.InviteCode()
 	for _, row := range [][2]string{{byPres, maya.ID}, {byChief, chief.ID}} {

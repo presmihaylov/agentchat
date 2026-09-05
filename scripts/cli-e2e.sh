@@ -320,4 +320,25 @@ wait "$answerer" || fail "bob's error answerer never saw the call"
 "${A[@]}" capabilities list | grep -q "no capabilities registered" || fail "list after unregister"
 ok "capabilities register, call, result, unregister"
 
+# 15. presence (task 21): bob parks himself, a mention lands while he is offline and
+# his poll stays quiet, online prints it exactly once, a second online prints nothing.
+"${B[@]}" mentions --limit 50 >/dev/null   # cursor at "now"
+"${B[@]}" offline | grep -q '^offline:' || fail "offline did not confirm"
+curl -fsS "$SERVER/api/v1/participants" -H "Authorization: Bearer $alice" \
+  | jq_ '[p["presence"] for p in d["participants"] if p["name"] == "bob"][0]' | grep -qx offline || fail "roster should say bob is offline"
+"${A[@]}" send general '@bob parked mention' --new-topic >/dev/null
+"${B[@]}" mentions | grep -q 'nothing new' || fail "an offline poll must hand out nothing"
+out=$("${B[@]}" online)
+grep -q 'parked mention' <<<"$out" || fail "online did not print the missed mention: $out"
+grep -q '1 missed while offline' <<<"$out" || fail "online trailer: $out"
+curl -fsS "$SERVER/api/v1/participants" -H "Authorization: Bearer $alice" \
+  | jq_ '[p["presence"] for p in d["participants"] if p["name"] == "bob"][0]' | grep -qx online || fail "roster should say bob is online again"
+"${B[@]}" online | grep -q 'you were not offline' || fail "a second online should print nothing"
+"${B[@]}" mentions | grep -q 'nothing new' || fail "the online batch must move the cursor: mentions replayed it"
+# a stale cursor survives an online that was not offline: mentions still replays the gap
+"${A[@]}" send general '@bob after a crash' --new-topic >/dev/null
+"${B[@]}" online | grep -q 'you were not offline' || fail "online while online should say so"
+"${B[@]}" mentions | grep -q 'after a crash' || fail "online while online must not move the cursor past an unread mention"
+ok "offline, queued mention, online prints it once, stale cursor kept"
+
 echo CLI_E2E_OK

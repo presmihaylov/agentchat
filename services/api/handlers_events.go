@@ -82,6 +82,17 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request, p models.P
 	}
 
 	deadline := time.Now().Add(wait)
+	// a declared-offline agent (task 21) hears nothing: hold for the wait,
+	// then hand back an empty batch at the same cursor, so nothing is skipped
+	if p.DeclaredOffline && !p.IsHuman {
+		select {
+		case <-r.Context().Done():
+			return
+		case <-time.After(wait):
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"events": []models.Event{}, "cursor": after, "presence": "offline"})
+		return
+	}
 	for {
 		events, err := s.store.ListEvents(r.Context(), p.RoomID, after, limit)
 		if err != nil {

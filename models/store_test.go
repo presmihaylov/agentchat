@@ -425,7 +425,7 @@ func scratchDB(t *testing.T) string {
 func TestMigrateTo(t *testing.T) {
 	ctx := context.Background()
 	dbURL := scratchDB(t)
-	const latest = 35
+	const latest = 36
 	// 000024 created users; rolling to the version before it drops the table
 	const beforeUsers = 23
 
@@ -479,6 +479,17 @@ func TestMigrateTo(t *testing.T) {
 
 // legacyRoom inserts a room on a schema older than 000028 (no colour column),
 // for the tests that drive a single migration over an old fixture.
+// legacyParticipant seeds a member through the real insert path but skips the
+// read-back, which selects columns a not-yet-migrated schema lacks.
+func legacyParticipant(t *testing.T, s *Store, roomID, name, avatar string, human bool, hash []byte, ownerID, userID *string) Participant {
+	t.Helper()
+	p, err := s.insertParticipant(context.Background(), roomID, name, avatar, "", human, hash, ownerID, userID, "")
+	if err != nil {
+		t.Fatalf("legacy participant %s: %v", name, err)
+	}
+	return p
+}
+
 func legacyRoom(t *testing.T, s *Store, name, slug string) Room {
 	t.Helper()
 	var r Room

@@ -8,7 +8,7 @@
 # thread, whether the id is the root or any reply inside it.
 set -euo pipefail
 
-VERSION="1.12.0"
+VERSION="1.13.0"
 DEFAULT_SERVER="{{SERVER}}"
 # Cloudflare Access service token, baked in by the server when the room sits
 # behind a Cloudflare tunnel. Empty otherwise. The env file can override both.
@@ -46,6 +46,11 @@ READ
   channels                       channels you are in, with ids
   members                        the handle roster (--channel X adds in_channel)
   whoami                         your identity in this room
+  offline                        park yourself: grey dot, no live events, no mention
+                                 pings, mentions to you queue; run it before you stop
+  online                         come back and print everything you missed, once
+                                 (mentions, replies in your threads, root broadcasts);
+                                 run it first thing when you restore
 
 DO
   react <message-id> <emoji>     add an emoji reaction (👀 or :eyes:); repeat is a no-op
@@ -625,6 +630,34 @@ cmd_inbox() {
   print_events "$events" "$(json_str "$RESP" 'd["name"]')" "$trailer"
 }
 
+cmd_offline() {
+  api POST /api/v1/me/presence '{"status":"offline"}'
+  if [ "$JSON" = "1" ]; then json_pretty "$RESP"; return; fi
+  printf 'offline: no live events or mention pings until cli.sh online; mentions to you queue meanwhile\n'
+}
+
+# online prints the missed batch past the cursor file, then moves the cursor
+# past it, so a watcher that starts afterwards never hears the same event twice.
+cmd_online() {
+  local after=""
+  [ -f "$(cursor_file)" ] && after=$(cat "$(cursor_file)")
+  local body='{"status":"online"}'
+  case "$after" in ''|*[!0-9]*) ;; *) body="{\"status\":\"online\",\"after\":$after}" ;; esac
+  api POST /api/v1/me/presence "$body"
+  # only a real catch-up may move the cursor; "not offline" must never skip what the poll still owes
+  if [ "$(json_str "$RESP" 'd.get("was_offline")')" = "True" ]; then
+    local cursor; cursor=$(json_str "$RESP" 'd["cursor"]')
+    [ -n "$cursor" ] && printf '%s' "$cursor" > "$(cursor_file)"
+  fi
+  if [ "$JSON" = "1" ]; then json_pretty "$RESP"; return; fi
+  local events="$RESP"
+  local n; n=$(json_str "$events" 'len(d.get("events", []))')
+  local trailer="online again; $n missed while offline, printed once: ack each with cli.sh ack <seq> once you acted on it"
+  [ "$(json_str "$events" 'd.get("was_offline")')" = "True" ] || trailer="online (you were not offline); nothing to catch up"
+  api GET /api/v1/me
+  print_events "$events" "$(json_str "$RESP" 'd["name"]')" "$trailer"
+}
+
 cmd_ack() {
   [ $# -ge 1 ] || die "usage: cli.sh ack <seq>"
   api POST "/api/v1/events/$1/ack"
@@ -852,6 +885,8 @@ case "$cmd" in
   channels) cmd_channels "$@" ;;
   members) cmd_members "$@" ;;
   whoami) cmd_whoami "$@" ;;
+  offline) cmd_offline "$@" ;;
+  online) cmd_online "$@" ;;
   react) cmd_react "$@" ;;
   unreact) cmd_unreact "$@" ;;
   reactions) cmd_reactions "$@" ;;

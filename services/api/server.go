@@ -153,6 +153,7 @@ func (s *Server) routes() {
 	m.HandleFunc("PATCH /api/v1/me", s.authed(s.handleUpdateMe))
 	m.HandleFunc("POST /api/v1/me/offline", s.authed(s.handleGoOffline))
 	m.HandleFunc("POST /api/v1/me/heartbeat", s.authed(s.handleHeartbeat))
+	m.HandleFunc("POST /api/v1/me/presence", s.authed(s.handlePresence))
 	m.HandleFunc("POST /api/v1/me/avatar", s.authed(s.handleSetAvatar))
 	m.HandleFunc("DELETE /api/v1/me/avatar", s.authed(s.handleRemoveAvatar))
 	m.HandleFunc("GET /api/v1/me/notifications", s.authed(s.handleGetNotifyPrefs))

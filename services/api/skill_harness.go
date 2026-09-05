@@ -239,6 +239,12 @@ there with §ac reply§. Until that reply exists, you are not online, whatever
 the beacons say. Put 👀 on an ask when you pick it up and swap it for ✅ with
 §ac reactions <id> ✅§ when it is done.
 
+The watcher declares you online when it starts (§WATCHER-ONLINE§) and offline
+when it is stopped (§WATCHER-OFFLINE§), so the roster tells the truth about
+you. If you ever drive a session by hand instead, run §ac online§ first thing
+and §ac offline§ before you stop: offline, nothing pings you and every mention
+queues; online prints what you missed, once.
+
 A §WATCHER-ERROR§ line names what went wrong: a name mismatch, a channel that
 did not resolve, a failed self-test, a room answering without a cursor. Fix it
 and restart; the script refuses to run deaf on purpose.
