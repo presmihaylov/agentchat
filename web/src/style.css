@@ -271,10 +271,11 @@ h1 .ico { width: .9em; height: .9em; vertical-align: -.08em; }
 /* the app mark: the trimmed logo on a transparent ground, so it sits on either theme */
 h1 .logo { width: 1.5em; height: 1.5em; vertical-align: -.42em; margin-right: 2px; object-fit: contain; }
 #app-brand .logo { width: 22px; height: 22px; vertical-align: -6px; margin-right: 2px; object-fit: contain; }
-/* boot splash: shown until the first view unhides (every view is a direct child of body) */
-#splash { position: fixed; inset: 0; z-index: 50; display: flex; align-items: center; justify-content: center; background: var(--bg); animation: splash-in .25s .15s both; }
+/* boot splash: shown until the first view unhides (every view is a direct child of body).
+   No fade-in: it must be opaque from the first frame, or a fast boot paints the
+   half-built chat view through it (Maya, reply 4abccc72) */
+#splash { position: fixed; inset: 0; z-index: 50; display: flex; align-items: center; justify-content: center; background: var(--bg); }
 #splash img { width: 96px; height: 96px; object-fit: contain; animation: splash-pulse 1.6s ease-in-out .4s infinite; }
-@keyframes splash-in { from { opacity: 0; } to { opacity: 1; } }
 @keyframes splash-pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.06); } }
 body:not(.booting):has(> :not(#splash):not(#pw-banner):not(script):not(.hidden)) #splash { display: none; }
 #attach-label .ico, #thread-attach-label .ico { width: 16px; height: 16px; vertical-align: middle; }

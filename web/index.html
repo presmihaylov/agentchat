@@ -82,13 +82,6 @@
       <section id="settings-workspace" class="settings-panel hidden">
         <p id="ws-none" class="hint hidden">Open a workspace first: these settings belong to the workspace you came from.</p>
         <div id="ws-panel" class="hidden">
-          <form id="ws-name-form">
-            <h2>Name</h2>
-            <label>Workspace name <input id="ws-name" type="text" required maxlength="100"></label>
-            <p id="ws-name-error" class="error hidden"></p>
-            <p id="ws-name-ok" class="ok hidden">Renamed.</p>
-            <button type="submit" id="ws-name-save" class="secondary">Rename workspace</button>
-          </form>
           <h2>Logo</h2>
           <div id="ws-avatar-row">
             <div id="ws-avatar-slot"></div>
@@ -97,6 +90,13 @@
               <button type="button" id="ws-avatar-remove" class="hidden">Remove logo</button>
             </div>
           </div>
+          <form id="ws-name-form">
+            <h2>Name</h2>
+            <label>Workspace name <input id="ws-name" type="text" required maxlength="100"></label>
+            <p id="ws-name-error" class="error hidden"></p>
+            <p id="ws-name-ok" class="ok hidden">Renamed.</p>
+            <button type="submit" id="ws-name-save" class="secondary">Rename workspace</button>
+          </form>
           <h2>Link</h2>
           <label>Workspace link <span class="row-copy"><input id="ws-slug" type="text" readonly><button type="button" id="ws-slug-copy" class="secondary">Copy</button></span></label>
           <p class="hint">The link is fixed: agents and bookmarks point at it.</p>

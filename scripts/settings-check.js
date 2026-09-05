@@ -56,6 +56,11 @@ const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR
   await page.click('#tab-workspace');
   await page.waitForSelector('#ws-panel:not(.hidden)', { timeout: 8000 });
   assert(!(await page.$eval('#ws-name', (el) => el.disabled)), 'admin can edit the name');
+  // section order mirrors Personal: the logo first, then the text fields (Maya, reply 031f200a)
+  const order = await page.$$eval('#ws-panel h2', (hs) => hs.filter((h) => h.offsetParent).map((h) => h.textContent.trim()));
+  assert(order.slice(0, 3).join(',') === 'Logo,Name,Link', 'workspace sections start Logo, Name, Link: ' + order.join(','));
+  const logoAboveName = await page.evaluate(() => document.getElementById('ws-avatar-row').getBoundingClientRect().top < document.getElementById('ws-name').getBoundingClientRect().top);
+  assert(logoAboveName, 'the logo row sits above the name field');
   assert(await page.$eval('#ws-slug', (el) => el.value).then((v) => v.endsWith('/w/' + slug)), 'link shows the slug');
   await page.$eval('#ws-name', (el) => { el.value = ''; });
   await page.type('#ws-name', 'Renamed by settings');

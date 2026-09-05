@@ -2,7 +2,10 @@
 // chat view without the rail (or with the pre-workspaces header) while the splash is not
 // covering it. A rAF probe installed before any script runs records every layout change
 // through a hard reload, a /c/<name> deep link and a signed-out /login redirect; a join
-// page (not a member) must appear with the splash lifted.
+// page (not a member) must appear with the splash lifted. The splash must also be the
+// FIRST paint and fully opaque whenever the chat view is displayed under it: a fade-in
+// let a fast boot show half-rendered content through it (Maya, reply 4abccc72), so the
+// same runs repeat with no added latency.
 // Run: NODE_PATH=<puppeteer dir> SERVER=http://localhost:8095 OUT=<dir> node scripts/boot-check.js
 const puppeteer = require('puppeteer-core');
 const { newRoom, openAsHuman, loginPage, uniqUser } = require('./lib/login.js');
@@ -22,9 +25,10 @@ const PROBE = () => {
   const tick = () => {
     const chat = document.getElementById('chat-view'), splash = document.getElementById('splash');
     const rail = document.getElementById('ws-rail'), head = document.getElementById('room-head');
-    const f = { t: Math.round(performance.now()), chat: vis(chat), splash: vis(splash), rail: vis(rail), oldHead: vis(head) };
+    const op = splash ? Number(getComputedStyle(splash).opacity) : 0;
+    const f = { t: Math.round(performance.now()), chat: vis(chat), splash: vis(splash), opaque: vis(splash) && op >= 1, rail: vis(rail), oldHead: vis(head) };
     const last = window.__frames[window.__frames.length - 1];
-    if (!last || ['chat', 'splash', 'rail', 'oldHead'].some((k) => last[k] !== f[k])) window.__frames.push(f);
+    if (!last || ['chat', 'splash', 'opaque', 'rail', 'oldHead'].some((k) => last[k] !== f[k])) window.__frames.push(f);
     requestAnimationFrame(tick);
   };
   requestAnimationFrame(tick);
@@ -45,20 +49,32 @@ const PROBE = () => {
   await cdp.send('Network.emulateNetworkConditions', { offline: false, latency: LATENCY, downloadThroughput: 200 * 1024, uploadThroughput: 200 * 1024 });
   const runs = [['reload', () => page.reload({ waitUntil: 'domcontentloaded' })], ['deeplink', () => page.goto(SERVER + '/r/' + slug + '/c/general', { waitUntil: 'domcontentloaded' })]];
   let bad = 0;
-  for (const [name, go] of runs) {
-    const shots = [];
-    const nav = go();
-    for (let i = 0; i < 14; i++) {
-      await new Promise((r) => setTimeout(r, 250));
-      try { await page.screenshot({ path: `${OUT}/boot-${name}-${String(i).padStart(2, '0')}.png` }); shots.push(i); } catch { /* mid-navigation */ }
+  // the slow pass catches a layout that settles in steps; the fast pass (no latency,
+  // a local server) catches content painted before the splash is fully opaque
+  for (const [pass, latency] of [['slow', LATENCY], ['fast', 0]]) {
+    await cdp.send('Network.emulateNetworkConditions', { offline: false, latency, downloadThroughput: latency ? 200 * 1024 : -1, uploadThroughput: latency ? 200 * 1024 : -1 });
+    for (const [run, go] of runs) {
+      const name = pass + '-' + run;
+      const nav = go();
+      const shotEvery = latency ? 250 : 40, shots = latency ? 14 : 12;
+      for (let i = 0; i < shots; i++) {
+        await new Promise((r) => setTimeout(r, shotEvery));
+        try { await page.screenshot({ path: `${OUT}/boot-${name}-${String(i).padStart(2, '0')}.png` }); } catch { /* mid-navigation */ }
+      }
+      await nav;
+      await page.waitForSelector('#ws-rail:not(.hidden)', { timeout: 15000 });
+      await page.waitForFunction(() => getComputedStyle(document.getElementById('splash')).display === 'none', { timeout: 15000 });
+      const frames = await page.evaluate(() => window.__frames);
+      console.log(name, JSON.stringify(frames));
+      const stale = frames.filter((f) => f.chat && !f.splash && (!f.rail || f.oldHead));
+      if (stale.length) { bad++; console.error(name + ': STALE LAYOUT FRAMES ' + JSON.stringify(stale)); }
+      // no pre-skeleton content: the first frame is the opaque splash alone, and every
+      // frame that displays the chat view under the splash keeps the splash opaque
+      const first = frames[0];
+      if (!first || !first.opaque || first.chat) { bad++; console.error(name + ': FIRST FRAME IS NOT THE SPLASH ' + JSON.stringify(first)); }
+      const seeThrough = frames.filter((f) => f.chat && f.splash && !f.opaque);
+      if (seeThrough.length) { bad++; console.error(name + ': CONTENT UNDER A TRANSLUCENT SPLASH ' + JSON.stringify(seeThrough)); }
     }
-    await nav;
-    await page.waitForSelector('#ws-rail:not(.hidden)', { timeout: 15000 });
-    await page.waitForFunction(() => getComputedStyle(document.getElementById('splash')).display === 'none', { timeout: 15000 });
-    const frames = await page.evaluate(() => window.__frames);
-    const stale = frames.filter((f) => f.chat && !f.splash && (!f.rail || f.oldHead));
-    console.log(name, JSON.stringify(frames));
-    if (stale.length) { bad++; console.error(name + ': STALE LAYOUT FRAMES ' + JSON.stringify(stale)); }
   }
   // /login redirect: a signed-out load must show only the splash until the login page paints
   await page.evaluate(() => localStorage.removeItem('agentchat:session'));
