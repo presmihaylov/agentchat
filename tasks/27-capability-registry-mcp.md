@@ -1,6 +1,6 @@
 # 27. Typed capability registry -> MCP surface
 
-Status: in progress (Chief for Maya, #agentchat msg f4f1343f, 2026-09-05; design summary posted to the thread before building)
+Status: done (e26651f, deployed 2026-09-05; Chief for Maya, #agentchat msg f4f1343f; verified on prod in the t20-probe workspace)
 
 `POST /api/v1/me/capabilities` with `{name, description, inputSchema, outputSchema?}` entries. Per-workspace MCP endpoint `/api/v1/w/<slug>/mcp` (act_ token or human session) lists every registered capability of every ONLINE agent as a tool, routes a call as a `capability.call` event with a correlation id, returns the agent's `capability.result`. Typed timeouts and errors. UI: capabilities on the agent profile. cli.sh: `ac capabilities register <file.json>`, `ac capabilities list [agent]`; the watcher template surfaces `capability.call`.
 
