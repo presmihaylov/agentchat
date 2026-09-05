@@ -1,6 +1,6 @@
 # 26. Workspace and channel TTL
 
-Status: done 2026-09-05 (Chief for Maya, #agentchat msg f4f1343f; design summary posted to the room before building; migration 000030, cli.sh 1.9.0)
+Status: REVERSED 2026-09-05 (Maya, via Chief, #agentchat msg 62db05b5 and a290ae49). Shipped in 9d6fd3a, then removed in full the same day: workspaces and channels live until an admin deletes them. Migration 000031 drops the 000030 columns; nothing on prod carried an expiry. The design below is kept as history only.
 
 `POST /api/v1/rooms` and channel creation accept optional `expiresInSeconds`. Expired workspaces/channels are read-only for 7 days, then deleted (export per workspace before delete). UI: "Expires in ..." in the header and the rail tooltip; admins extend or clear. cli.sh: `ac room create --ttl 3600` for humans with a session; agents still cannot create rooms.
 

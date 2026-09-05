@@ -13,7 +13,7 @@ import (
 func TestRoomUsersMigrationRoundTrip(t *testing.T) {
 	ctx := context.Background()
 	dbURL := scratchDB(t)
-	const latest = 30
+	const latest = 31
 	// the version before 000025, where the room-users columns do not exist
 	const beforeRoomUsers = 24
 
@@ -22,7 +22,7 @@ func TestRoomUsersMigrationRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	u := mkPasswordUser(t, s)
-	room, p, err := s.CreateRoomAs(ctx, "ws", "ws-slug", "inv-secret", u, nil)
+	room, p, err := s.CreateRoomAs(ctx, "ws", "ws-slug", "inv-secret", u)
 	if err != nil {
 		t.Fatal(err)
 	}

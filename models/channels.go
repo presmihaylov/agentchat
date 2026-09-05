@@ -11,8 +11,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
-// expiresAt (nil = never) is when the channel turns read-only; see SetChannelExpiry.
-func (s *Store) CreateChannel(ctx context.Context, roomID, name, topic, createdBy string, private bool, expiresAt *time.Time) (Channel, error) {
+func (s *Store) CreateChannel(ctx context.Context, roomID, name, topic, createdBy string, private bool) (Channel, error) {
 	var c Channel
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -26,11 +25,10 @@ func (s *Store) CreateChannel(ctx context.Context, roomID, name, topic, createdB
 	}
 
 	err = tx.QueryRow(ctx,
-		`INSERT INTO channels (room_id, name, topic, created_by, private, expires_at) VALUES ($1, $2, $3, $4, $5, $6)
-		 RETURNING id, room_id, name, topic, created_by, archived, private, created_at, expires_at`,
-		roomID, name, topic, createdBy, private, expiresAt,
-	).Scan(&c.ID, &c.RoomID, &c.Name, &c.Topic, &c.CreatedBy, &c.Archived, &c.Private, &c.CreatedAt, &c.ExpiresAt)
-	c.deriveExpiry()
+		`INSERT INTO channels (room_id, name, topic, created_by, private) VALUES ($1, $2, $3, $4, $5)
+		 RETURNING id, room_id, name, topic, created_by, archived, private, created_at`,
+		roomID, name, topic, createdBy, private,
+	).Scan(&c.ID, &c.RoomID, &c.Name, &c.Topic, &c.CreatedBy, &c.Archived, &c.Private, &c.CreatedAt)
 	if err != nil {
 		if isUniqueViolation(err) {
 			return c, ErrConflict
@@ -157,7 +155,7 @@ func (s *Store) setMembership(ctx context.Context, roomID, channelID, participan
 
 func (s *Store) ListChannels(ctx context.Context, roomID string) ([]Channel, error) {
 	rows, err := s.pool.Query(ctx,
-		`SELECT id, room_id, name, topic, created_by, archived, private, created_at, expires_at
+		`SELECT id, room_id, name, topic, created_by, archived, private, created_at
 		 FROM channels WHERE room_id = $1 ORDER BY created_at ASC`, roomID)
 	if err != nil {
 		return nil, err
@@ -167,10 +165,9 @@ func (s *Store) ListChannels(ctx context.Context, roomID string) ([]Channel, err
 	out := []Channel{}
 	for rows.Next() {
 		var c Channel
-		if err := rows.Scan(&c.ID, &c.RoomID, &c.Name, &c.Topic, &c.CreatedBy, &c.Archived, &c.Private, &c.CreatedAt, &c.ExpiresAt); err != nil {
+		if err := rows.Scan(&c.ID, &c.RoomID, &c.Name, &c.Topic, &c.CreatedBy, &c.Archived, &c.Private, &c.CreatedAt); err != nil {
 			return nil, err
 		}
-		c.deriveExpiry()
 		out = append(out, c)
 	}
 	return out, rows.Err()
@@ -181,7 +178,7 @@ func (s *Store) ListChannels(ctx context.Context, roomID string) ([]Channel, err
 // never marked a channel read is their own join time, not the room's birth.
 func (s *Store) ListChannelsUnread(ctx context.Context, roomID, participantID string) ([]Channel, error) {
 	rows, err := s.pool.Query(ctx,
-		`SELECT c.id, c.room_id, c.name, c.topic, c.created_by, c.archived, c.private, c.created_at, c.expires_at,
+		`SELECT c.id, c.room_id, c.name, c.topic, c.created_by, c.archived, c.private, c.created_at,
 		        r.last_read_at, cm.muted,
 		        (SELECT count(*) FROM messages m
 		         WHERE m.channel_id = c.id AND m.thread_root_id IS NULL
@@ -208,10 +205,9 @@ func (s *Store) ListChannelsUnread(ctx context.Context, roomID, participantID st
 	for rows.Next() {
 		var c Channel
 		if err := rows.Scan(&c.ID, &c.RoomID, &c.Name, &c.Topic, &c.CreatedBy, &c.Archived, &c.Private,
-			&c.CreatedAt, &c.ExpiresAt, &c.LastReadAt, &c.Muted, &c.UnreadCount, &c.UnreadMentions); err != nil {
+			&c.CreatedAt, &c.LastReadAt, &c.Muted, &c.UnreadCount, &c.UnreadMentions); err != nil {
 			return nil, err
 		}
-		c.deriveExpiry()
 		out = append(out, c)
 	}
 	return out, rows.Err()
@@ -223,7 +219,7 @@ func (s *Store) ListChannelsUnread(ctx context.Context, roomID, participantID st
 // never appear here. Sorted by name so the browse list reads alphabetically.
 func (s *Store) BrowsableChannels(ctx context.Context, roomID, participantID string) ([]Channel, error) {
 	rows, err := s.pool.Query(ctx,
-		`SELECT c.id, c.room_id, c.name, c.topic, c.created_by, c.archived, c.private, c.created_at, c.expires_at,
+		`SELECT c.id, c.room_id, c.name, c.topic, c.created_by, c.archived, c.private, c.created_at,
 		        (SELECT count(*) FROM channel_members m WHERE m.channel_id = c.id) AS member_count,
 		        EXISTS (SELECT 1 FROM channel_members cm
 		                WHERE cm.channel_id = c.id AND cm.participant_id = $2) AS member
@@ -241,13 +237,11 @@ func (s *Store) BrowsableChannels(ctx context.Context, roomID, participantID str
 		var count int64
 		var member bool
 		if err := rows.Scan(&c.ID, &c.RoomID, &c.Name, &c.Topic, &c.CreatedBy,
-			&c.Archived, &c.Private, &c.CreatedAt, &c.ExpiresAt, &count, &member); err != nil {
+			&c.Archived, &c.Private, &c.CreatedAt, &count, &member); err != nil {
 			return nil, err
 		}
-		c.deriveExpiry()
 		c.MemberCount = &count
 		c.Member = &member
-		c.deriveExpiry()
 		out = append(out, c)
 	}
 	return out, rows.Err()
@@ -282,20 +276,18 @@ func (s *Store) SetChannelMuted(ctx context.Context, participantID, channelID st
 func (s *Store) ChannelByID(ctx context.Context, roomID, id string) (Channel, error) {
 	var c Channel
 	err := s.pool.QueryRow(ctx,
-		`SELECT id, room_id, name, topic, created_by, archived, private, created_at, expires_at
+		`SELECT id, room_id, name, topic, created_by, archived, private, created_at
 		 FROM channels WHERE room_id = $1 AND id = $2`, roomID, id,
-	).Scan(&c.ID, &c.RoomID, &c.Name, &c.Topic, &c.CreatedBy, &c.Archived, &c.Private, &c.CreatedAt, &c.ExpiresAt)
-	c.deriveExpiry()
+	).Scan(&c.ID, &c.RoomID, &c.Name, &c.Topic, &c.CreatedBy, &c.Archived, &c.Private, &c.CreatedAt)
 	return c, mapRowErr(err)
 }
 
 func (s *Store) ChannelByName(ctx context.Context, roomID, name string) (Channel, error) {
 	var c Channel
 	err := s.pool.QueryRow(ctx,
-		`SELECT id, room_id, name, topic, created_by, archived, private, created_at, expires_at
+		`SELECT id, room_id, name, topic, created_by, archived, private, created_at
 		 FROM channels WHERE room_id = $1 AND name = $2`, roomID, name,
-	).Scan(&c.ID, &c.RoomID, &c.Name, &c.Topic, &c.CreatedBy, &c.Archived, &c.Private, &c.CreatedAt, &c.ExpiresAt)
-	c.deriveExpiry()
+	).Scan(&c.ID, &c.RoomID, &c.Name, &c.Topic, &c.CreatedBy, &c.Archived, &c.Private, &c.CreatedAt)
 	return c, mapRowErr(err)
 }
 
@@ -306,9 +298,6 @@ func (s *Store) DeleteChannel(ctx context.Context, roomID, id string) error {
 		return err
 	}
 	defer tx.Rollback(ctx)
-	if err := lockRoomEvents(ctx, tx, roomID); err != nil {
-		return err
-	}
 
 	res, err := tx.Exec(ctx,
 		`DELETE FROM channels WHERE room_id = $1 AND id = $2`, roomID, id)

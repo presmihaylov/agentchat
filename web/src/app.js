@@ -835,61 +835,12 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
     if (!priv) el.textContent = '#';
     return el;
   };
-  // ---------- expiry (task 26) ----------
-  // derived on the client too, so the pill and the lock flip on the minute
-  // even before the server's room.expired event lands
-  const isExpired = (x) => !!(x && x.expires_at) && new Date(x.expires_at).getTime() <= Date.now();
-  const EXPIRY_GRACE_MS = 7 * 24 * 3600 * 1000;
-  const fmtSpan = (ms) => {
-    const m = Math.max(1, Math.round(ms / 60000));
-    if (m < 60) return m + 'm';
-    const h = Math.round(m / 60);
-    if (h < 48) return h + 'h';
-    const d = Math.round(h / 24);
-    return d + (d === 1 ? ' day' : ' days');
-  };
-  const expiryText = (x) => {
-    if (!x || !x.expires_at) return '';
-    const at = new Date(x.expires_at).getTime();
-    if (at > Date.now()) return 'Expires in ' + fmtSpan(at - Date.now());
-    const left = at + EXPIRY_GRACE_MS - Date.now();
-    return 'Expired · read-only · ' + (left > 0 ? 'deleted in ' + fmtSpan(left) : 'deletion pending');
-  };
-  const expiryPill = (x, id) => {
-    const el = document.createElement('span');
-    el.className = 'expiry-pill' + (isExpired(x) ? ' expired' : '');
-    if (id) el.id = id;
-    el.textContent = expiryText(x);
-    el.title = x && x.expires_at ? 'Expires ' + new Date(x.expires_at).toLocaleString() : '';
-    return el;
-  };
-  const paintRoomExpiry = () => {
-    const el = $('room-expiry');
-    el.textContent = expiryText(room);
-    el.title = room && room.expires_at ? 'Expires ' + new Date(room.expires_at).toLocaleString() : '';
-    el.classList.toggle('expired', isExpired(room));
-    el.classList.toggle('hidden', !(room && room.expires_at));
-  };
-  // why the composer is locked, or '' when it is not
-  const lockReason = (ch) => {
-    if (isExpired(room)) return 'This workspace expired and is read-only. An admin can extend it under Settings → Workspace.';
-    if (isExpired(ch)) return 'This channel expired and is read-only. An admin or its creator can extend it from the channel menu.';
-    return '';
-  };
   const setChannelTitle = (ch) => {
     $('channel-title').replaceChildren(sigilEl(ch.private), ' ' + ch.name);
-    if (ch.expires_at) $('channel-title').appendChild(expiryPill(ch, 'channel-expiry'));
     // the rename pencil: admins only, never on #general (server rule)
     $('rename-channel').classList.toggle('hidden', !(me && me.role === 'admin' && ch.name !== 'general'));
   };
 
-  const setChannelExpiry = async (ch, secs) => {
-    try {
-      await api('/api/v1/channels/' + ch.id, { method: 'PATCH', body: { expiresInSeconds: secs } });
-      await refreshRoom();
-      if (current && current.id === ch.id) await selectChannel(channels.find((c) => c.id === ch.id) || current);
-    } catch (e) { alert(e.message); }
-  };
   const renameChannel = async (ch) => {
     const name = prompt('Rename #' + ch.name + ':', ch.name);
     if (!name || !name.trim() || name.trim() === ch.name) return;
@@ -939,11 +890,6 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
         items.push({ label: 'Make public', run: () => makePublic(ch) });
       }
       if (me.role === 'admin' && ch.name !== 'general') items.push({ label: 'Rename channel', run: () => renameChannel(ch) });
-      // expiry: admins or the creator, never #general (server rule)
-      if (ch.name !== 'general' && (me.role === 'admin' || ch.created_by === me.id)) {
-        items.push({ label: ch.expires_at ? 'Extend expiry by 24h' : 'Expire in 24h', run: () => setChannelExpiry(ch, 86400) });
-        if (ch.expires_at) items.push({ label: 'Remove expiry', run: () => setChannelExpiry(ch, 0) });
-      }
       items.push({ label: ch.muted ? 'Unmute channel' : 'Mute channel', run: () => muteChannel(ch, !ch.muted) });
       items.push({ label: 'Move to section…', run: () => openMoveMenu(ev.clientX, ev.clientY, ch) });
       // #general is pinned: it can be organized into a section but never left.
@@ -1286,8 +1232,6 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
     await fetchPublicChannels();
     $('room-name').textContent = room.name;
     $('ws-current').textContent = room.name;
-    paintRoomExpiry();
-    syncComposerLock();
     paintRoomMark();
     renderMeFooter();
     renderChannels();
@@ -1375,7 +1319,6 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
     current = ch;
     syncURL(changed && !fromURL); // refreshes replace, real navigation pushes
     setChannelTitle(ch);
-    syncComposerLock();
     $('channel-topic').innerHTML = ch.topic ? linkify(ch.topic) : '';
     refreshHeaderMembers(ch); // header member count, not worth blocking the feed on
     renderChannels();
@@ -1823,22 +1766,6 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
       await selectChannel(channels.find((c) => c.name === 'general') || channels[0]);
       return;
     }
-    if ((t === 'room.expired' || t === 'room.expiry_changed') && room && ev.payload.room_id === room.id) {
-      room.expires_at = ev.payload.expires_at || null;
-      room.expired = isExpired(room);
-      paintRoomExpiry();
-      syncComposerLock();
-      refreshRail();
-    }
-    if (t === 'channel.expired' || t === 'channel.expiry_changed') {
-      const ch = channels.find((c) => c.id === ev.payload.channel_id);
-      if (ch) {
-        ch.expires_at = ev.payload.expires_at || null;
-        ch.expired = isExpired(ch);
-        if (current && current.id === ch.id) { current = ch; setChannelTitle(ch); syncComposerLock(); }
-        renderChannels();
-      }
-    }
     if (t === 'room.renamed' && room && ev.payload.room_id === room.id) {
       room.name = ev.payload.name;
       $('room-name').textContent = room.name;
@@ -2036,8 +1963,7 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
       const a = document.createElement('a');
       a.className = 'rail-item';
       a.href = '/w/' + encodeURIComponent(ws.slug);
-      const wsRec = cur ? room : ws;
-      a.dataset.tip = ws.name + (wsRec.expires_at ? ' · ' + expiryText(wsRec) : '');
+      a.dataset.tip = ws.name;
       a.setAttribute('aria-label', ws.name);
       if (cur) a.setAttribute('aria-current', 'true');
       // the current room's record is fresher than the /user list (an avatar set this session)
@@ -2156,7 +2082,6 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
 
   $('composer').addEventListener('submit', async (ev) => {
     ev.preventDefault();
-    if (lockReason(current)) return;
     const text = composerBox.getMarkdown().trim();
     if ((!text && !pendingAtt.main) || !current) return;
     composerBox.clear(); // clear instantly; post shows the placeholder
@@ -2165,7 +2090,6 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
 
   $('thread-composer').addEventListener('submit', async (ev) => {
     ev.preventDefault();
-    if (lockReason(current)) return;
     const text = threadBox.getMarkdown().trim();
     if ((!text && !pendingAtt.thread) || !openThreadRoot) return;
     const root = openThreadRoot;
@@ -2247,23 +2171,6 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
     onImageFile: (f) => uploadPending('thread', new File([f], f.name || 'pasted-image.png', { type: f.type })),
   });
   syncEmpty($('composer'), composerBox)(); syncEmpty($('thread-composer'), threadBox)();
-  // an expired workspace or channel swaps both editors for one line saying why
-  const syncComposerLock = () => {
-    const why = lockReason(current);
-    for (const [form, box, lockID] of [['composer', composerBox, 'composer-lock'], ['thread-composer', threadBox, 'thread-composer-lock']]) {
-      $(form).classList.toggle('locked', !!why);
-      $(lockID).textContent = why;
-      $(lockID).classList.toggle('hidden', !why);
-      box.editor.setEditable(!why);
-    }
-  };
-  syncComposerLock();
-  setInterval(() => {
-    if (!room) return;
-    paintRoomExpiry();
-    if (current && current.expires_at) setChannelTitle(current);
-    syncComposerLock();
-  }, 60000);
 
   // inline confirmation / error in the composer area, auto-fades
   const slashStatus = (form, text, isErr) => {

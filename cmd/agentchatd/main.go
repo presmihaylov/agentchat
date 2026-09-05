@@ -187,33 +187,6 @@ func run() error {
 		}
 	}()
 
-	// expiry (task 26): flip expired workspaces and channels to read-only,
-	// and export then purge the ones past the grace period
-	exportDir := os.Getenv("AGENTCHAT_EXPORT_DIR")
-	if exportDir == "" {
-		exportDir = "exports"
-	}
-	slog.Info("expiry exports", "dir", exportDir, "grace", models.ExpiryGrace)
-	go func() {
-		hooks := expiryHooks(exportDir, dbURL)
-		ticker := time.NewTicker(time.Minute)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				flipped, purged, err := store.SweepExpiry(ctx, hooks)
-				if err != nil {
-					slog.Error("expiry sweep failed", "err", err)
-				}
-				if flipped > 0 || purged > 0 {
-					slog.Info("expiry sweep", "flipped", flipped, "purged", purged)
-				}
-			}
-		}
-	}()
-
 	// passive presence: a participant whose heartbeat stopped goes offline
 	// without any request, so a sweeper announces that transition as an event
 	go func() {

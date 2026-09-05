@@ -398,29 +398,6 @@ const workspaceTab = async (slug) => {
     } catch (e) { showErr('ws-name-error', e.message); }
     $('ws-name-save').disabled = false;
   });
-  const paintExpiry = () => {
-    const at = room.expires_at ? new Date(room.expires_at) : null;
-    const expired = at && at.getTime() <= Date.now();
-    let text = 'No expiry: the workspace lives until an admin deletes it.';
-    if (at && !expired) text = 'Expires ' + at.toLocaleString() + ' (' + timeUntil(at) + ').';
-    if (expired) text = 'Expired ' + at.toLocaleString() + '. Read-only until an admin extends it; deleted ' + new Date(at.getTime() + 7 * 24 * 3600 * 1000).toLocaleString() + '.';
-    $('ws-expiry-state').textContent = text;
-    $('ws-expiry-clear').classList.toggle('hidden', !at);
-    $('ws-expiry-apply').textContent = at ? 'Extend' : 'Apply';
-  };
-  paintExpiry();
-  $('ws-expiry-actions').classList.toggle('hidden', !admin);
-  const setExpiry = async (secs) => {
-    hideErr('ws-expiry-error');
-    $('ws-expiry-apply').disabled = true;
-    try {
-      room = await wsApi(slug, '/api/v1/room', { method: 'PATCH', body: { expiresInSeconds: secs } });
-      paintExpiry();
-    } catch (e) { showErr('ws-expiry-error', e.message); }
-    $('ws-expiry-apply').disabled = false;
-  };
-  $('ws-expiry-apply').onclick = () => setExpiry(Number($('ws-expiry-by').value));
-  $('ws-expiry-clear').onclick = () => setExpiry(0);
   if (!admin) return out;
   membersSection(slug, () => room);
   dangerZone(slug, () => room);
@@ -441,14 +418,6 @@ const workspaceTab = async (slug) => {
     $('ws-invite-regen').disabled = false;
   };
   return out;
-};
-
-const timeUntil = (d) => {
-  const m = Math.max(1, Math.round((d.getTime() - Date.now()) / 60000));
-  if (m < 60) return 'in ' + m + ' min';
-  const h = Math.round(m / 60);
-  if (h < 48) return 'in ' + h + ' h';
-  return 'in ' + Math.round(h / 24) + ' days';
 };
 
 const timeAgo = (iso) => {

@@ -14,8 +14,6 @@ type createRoomReq struct {
 	Name string `json:"name"`
 	// optional: the URL segment; derived from the name when empty
 	Slug string `json:"slug"`
-	// optional: seconds until the workspace turns read-only (60..31536000); 0 = never
-	ExpiresInSeconds *int `json:"expiresInSeconds"`
 }
 
 // handleCreateRoom: only a logged-in human creates a workspace; the creator
@@ -39,11 +37,7 @@ func (s *Server) handleCreateRoom(w http.ResponseWriter, r *http.Request, u mode
 		writeErrCode(w, http.StatusBadRequest, "slug_invalid", "the workspace URL needs lowercase letters, digits and hyphens, 1-60 characters")
 		return
 	}
-	expiresAt, ok := expiryFromReq(w, req.ExpiresInSeconds)
-	if !ok {
-		return
-	}
-	room, _, err := s.store.CreateRoomAs(r.Context(), req.Name, req.Slug, secrets.InviteCode(), u, expiresAt)
+	room, _, err := s.store.CreateRoomAs(r.Context(), req.Name, req.Slug, secrets.InviteCode(), u)
 	if errors.Is(err, models.ErrConflict) {
 		writeErrCode(w, http.StatusConflict, "slug_taken", "that workspace URL is taken, pick another name or edit the slug")
 		return
@@ -99,10 +93,6 @@ func (s *Server) handleEnterWorkspace(w http.ResponseWriter, r *http.Request, u 
 	}
 	if err != nil {
 		writeStoreErr(w, err)
-		return
-	}
-	if room.Expired {
-		writeStoreErr(w, models.ErrRoomExpired)
 		return
 	}
 	p, err = s.store.EnterRoom(r.Context(), room.ID, u)
@@ -168,10 +158,6 @@ func (s *Server) handleJoinRoom(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	room.Secret = ""
-	if room.Expired {
-		writeStoreErr(w, models.ErrRoomExpired)
-		return
-	}
 	if req.IsHuman {
 		// humans are their own principal; only agents get bound to an owner
 		ownerID = nil

@@ -45,10 +45,6 @@ func (s *Server) handlePostMessage(w http.ResponseWriter, r *http.Request, p mod
 	if !s.requireChannelMember(w, r, p, ch.ID) {
 		return
 	}
-	if ch.Expired {
-		writeStoreErr(w, models.ErrChannelExpired)
-		return
-	}
 	if ch.Archived {
 		writeErr(w, http.StatusConflict, "channel is archived")
 		return

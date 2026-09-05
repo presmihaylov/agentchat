@@ -36,10 +36,6 @@ func (s *Server) handleJoinChannel(w http.ResponseWriter, r *http.Request, p mod
 		writeStoreErr(w, err)
 		return
 	}
-	if ch.Expired {
-		writeStoreErr(w, models.ErrChannelExpired)
-		return
-	}
 	if ch.Archived {
 		writeErr(w, http.StatusConflict, "channel is archived")
 		return
@@ -87,10 +83,6 @@ func (s *Server) handleAddChannelMember(w http.ResponseWriter, r *http.Request, 
 		writeStoreErr(w, err)
 		return
 	}
-	if ch.Expired {
-		writeStoreErr(w, models.ErrChannelExpired)
-		return
-	}
 	if ch.Archived {
 		writeErr(w, http.StatusConflict, "channel is archived")
 		return
@@ -127,10 +119,6 @@ func (s *Server) handleRemoveChannelMember(w http.ResponseWriter, r *http.Reques
 	}
 	if ch.Name == "general" {
 		writeErr(w, http.StatusConflict, "the general channel cannot be left")
-		return
-	}
-	if ch.Expired {
-		writeStoreErr(w, models.ErrChannelExpired)
 		return
 	}
 	target, err := s.resolveParticipant(r, p, r.PathValue("pid"))
@@ -225,8 +213,6 @@ type createChannelReq struct {
 	Name    string `json:"name"`
 	Topic   string `json:"topic"`
 	Private bool   `json:"private"`
-	// optional: seconds until the channel turns read-only (60..31536000); 0 = never
-	ExpiresInSeconds *int `json:"expiresInSeconds"`
 }
 
 func (s *Server) handleCreateChannel(w http.ResponseWriter, r *http.Request, p models.Participant) {
@@ -243,11 +229,7 @@ func (s *Server) handleCreateChannel(w http.ResponseWriter, r *http.Request, p m
 		writeErr(w, http.StatusBadRequest, "topic too long")
 		return
 	}
-	expiresAt, ok := expiryFromReq(w, req.ExpiresInSeconds)
-	if !ok {
-		return
-	}
-	ch, err := s.store.CreateChannel(r.Context(), p.RoomID, req.Name, req.Topic, p.ID, req.Private, expiresAt)
+	ch, err := s.store.CreateChannel(r.Context(), p.RoomID, req.Name, req.Topic, p.ID, req.Private)
 	if err != nil {
 		writeStoreErr(w, err)
 		return
@@ -259,8 +241,6 @@ type updateChannelReq struct {
 	Archived *bool   `json:"archived"`
 	Private  *bool   `json:"private"`
 	Name     *string `json:"name"`
-	// N sets the expiry to now+N seconds (also revives an expired channel); 0 clears it
-	ExpiresInSeconds *int `json:"expiresInSeconds"`
 }
 
 func (s *Server) handleUpdateChannel(w http.ResponseWriter, r *http.Request, p models.Participant) {
@@ -273,7 +253,7 @@ func (s *Server) handleUpdateChannel(w http.ResponseWriter, r *http.Request, p m
 	if !readJSON(w, r, &req) {
 		return
 	}
-	if req.Archived == nil && req.Private == nil && req.Name == nil && req.ExpiresInSeconds == nil {
+	if req.Archived == nil && req.Private == nil && req.Name == nil {
 		writeErr(w, http.StatusBadRequest, "nothing to update")
 		return
 	}
@@ -287,34 +267,6 @@ func (s *Server) handleUpdateChannel(w http.ResponseWriter, r *http.Request, p m
 	if !isAdmin(p) && !isCreator {
 		writeErr(w, http.StatusForbidden, "only admins or the channel creator can update it")
 		return
-	}
-	// the expiry is the one thing that can change on an expired workspace or
-	// channel (it is how they get revived); everything else is a write
-	otherChange := req.Archived != nil || req.Private != nil || req.Name != nil
-	if otherChange {
-		expired, err := s.store.RoomExpired(r.Context(), p.RoomID)
-		if err != nil {
-			writeStoreErr(w, err)
-			return
-		}
-		if expired {
-			writeStoreErr(w, models.ErrRoomExpired)
-			return
-		}
-		if ch.Expired {
-			writeStoreErr(w, models.ErrChannelExpired)
-			return
-		}
-	}
-	if req.ExpiresInSeconds != nil {
-		at, ok := expiryFromReq(w, req.ExpiresInSeconds)
-		if !ok {
-			return
-		}
-		if _, err := s.store.SetChannelExpiry(r.Context(), p.RoomID, ch.ID, at, p.ID); err != nil {
-			writeStoreErr(w, err)
-			return
-		}
 	}
 	if req.Name != nil {
 		// a rename rewrites every "#name" reference people hold, so it is admin-only

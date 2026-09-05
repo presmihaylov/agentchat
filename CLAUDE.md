@@ -69,7 +69,6 @@ node scripts/composer-check.js             # COMPOSER_CHECK_OK
 node scripts/chanrename-check.js           # CHANRENAME_CHECK_OK
 node scripts/boot-check.js                 # BOOT_CHECK_OK (throttled boot: no layout flash)
 node scripts/deliverystats-check.js        # DELIVERYSTATS_CHECK_OK (profile delivery row, task 25)
-node scripts/ttl-check.js                  # TTL_CHECK_OK (workspace/channel expiry, task 26)
 ```
 
 ## Conventions

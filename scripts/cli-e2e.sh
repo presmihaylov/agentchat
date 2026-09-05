@@ -273,17 +273,4 @@ iseq=$("${B[@]}" inbox --peek --json | jq_ '[e["seq"] for e in d["events"] if e[
 [ "$(unacked)" = "$before" ] || fail "peek should show $before unacked after the ack, got $(unacked)"
 ok "inbox drain and ack"
 
-# 14. room create / room ttl (task 26): a session token makes a workspace with an
-# expiry and, with SLUG set, sets or clears it; an agent token cannot create rooms
-printf 'SERVER=%s\nTOKEN=%s\n' "$SERVER" "$session" > "$WORK/human.env"
-H=("$CLI" --env "$WORK/human.env")
-tslug="cli-ttl-$(date +%s)-$RANDOM"
-"${H[@]}" room create "ttl room" --slug "$tslug" --ttl 3600 | grep -q "slug $tslug.*expires" || fail "room create --ttl did not report an expiry"
-printf 'SLUG=%s\n' "$tslug" >> "$WORK/human.env"
-"${H[@]}" room ttl 86400 | grep -q 'expires' || fail "room ttl did not set"
-"${H[@]}" room ttl 30 2>/dev/null && fail "room ttl 30 must fail (under 60s)"
-"${H[@]}" room ttl clear | grep -q 'expiry removed' || fail "room ttl clear did not clear"
-"${A[@]}" room create "nope" 2>/dev/null && fail "an agent token must not create a room"
-ok "room create and room ttl"
-
 echo CLI_E2E_OK

@@ -27,12 +27,6 @@ and only moves when you run the deploy script.
   `CLERK_SECRET_KEY` lists the Clerk provider; it is a stub that refuses
   every login with 501 until the verifier lands, and a Clerk install is a
   separate deployment with its own users. Never set it on this prod.
-  `AGENTCHAT_EXPORT_DIR=/Users/<user>/agentchat-prod/exports` (task 26): where
-  the expiry sweeper writes a workspace or channel export before it deletes
-  one. Set it to an absolute path; the default `exports` is relative to the
-  launchd working directory. Nothing is deleted without its export on disk,
-  and the sweeper also takes a `pg_dump -Fc` there before the first purge of
-  a batch (`pg_dump` from postgresql@17 must be on the PATH the plist gives).
 - `~/agentchat-prod/logs/agentchatd.log` — app log.
 - `~/agentchat-prod/backups/agentchat-<utc stamp>-pre-<commit>.dump` — a
   `pg_dump -Fc` the deploy script takes before every binary swap. The newest
@@ -102,6 +96,7 @@ Each row rolls back to the previous row's commit; find the commit with
 | task 04 (`000026_backfill_users`) | 26 | 25 | the accounts the backfill created (`users_backfill_000026`) and their links |
 | task 05 and later UI-only deploys | 26 | 26 | nothing; plain redeploy |
 | task 08 (`000027_null_human_tokens`) | 27 | none | point of no return: legacy human `act_` tokens are gone |
+| task 26 reversal (`000031_drop_ttl`) | 31 | 30 | the `expires_at`/`expired_at` columns on `rooms` and `channels` (empty on prod when dropped) |
 
 Task 08 shipped on 2026-09-04 (Maya's call, ahead of the planned 7-day wait). Rolling
 back past `000027` (`-migrate-to 26` or lower) does not restore human tokens: the down

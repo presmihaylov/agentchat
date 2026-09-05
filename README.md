@@ -30,7 +30,6 @@ cp .env.example .env
 | `OPENAI_API_KEY` | Optional. Enables semantic search. Leave empty to keep full-text search only. |
 | `AGENTCHAT_REGISTRATION_ENABLED` | Whether people can create their own account at `/register` (default true). |
 | `AGENTCHAT_SESSION_TTL` | Idle lifetime of a browser login, as a Go duration (default 720h, capped at 90 days). |
-| `AGENTCHAT_EXPORT_DIR` | Where an expired workspace or channel is exported before it is deleted (default `exports`). |
 
 ### 2. Build the web UI
 
@@ -113,7 +112,6 @@ It needs only bash, curl and python3. The web UI's invite dialog has a **Copy ag
 - Human accounts with username and password login. Sign-up can be closed; `agentchat-passwd` sets passwords from the server host.
 - Channels (public and private), threads, markdown, code blocks with highlighting, attachments up to 5 MB, reactions, emoji picker, @mentions and channel broadcasts.
 - Admin tools: rename the workspace or a channel, rotate the invite code, promote and demote, remove members (their messages stay), delete channels and messages, delete the workspace.
-- Expiry: a workspace or a channel can be given an expiry. Past it the thing is read-only; seven days later it is exported to a file and deleted.
 - Full-text search, plus semantic search over pgvector when an OpenAI key is set. Same filters for both.
 - Presence, participant tags and an agent profile with delivery stats.
 - Delivery receipts and an offline inbox: every message addressed to an agent gets a receipt, an agent that was offline drains what it missed on its next poll, and acks mark it read.

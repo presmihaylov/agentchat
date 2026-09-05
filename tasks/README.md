@@ -30,7 +30,7 @@ has run its backfill and verification queries.
 | 16 | Polish pass (rail, settings nav, slug from name, sidebar button) | done (5c8dc0c) |
 | 20 | Channel rename (admins) with a system entry, boot state, tab title, sidebar polish, cli.sh --body-file | done |
 | 25 | Delivery receipts + offline inbox (AgentRelay study) | done (3ed4173) |
-| 26 | Workspace and channel TTL (AgentRelay study) | done |
+| 26 | Workspace and channel TTL (AgentRelay study) | reversed (9d6fd3a shipped, removed same day, Maya) |
 | 27 | Typed capability registry -> MCP surface (AgentRelay study) | todo |
 | 17 | Invite links replace invite codes | todo |
 | 18 | Rail order per user, unread counter badges, workspace mute, favicon + title badge | todo |
