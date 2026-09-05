@@ -27,6 +27,8 @@ has run its backfill and verification queries.
 | 13 | Per-workspace badges in the rail | done |
 | 14 | Delete workspace | done |
 | 15 | Kick members | done |
+| 16 | Polish pass (rail, settings nav, slug from name, sidebar button) | in-progress |
+| 17 | Invite links replace invite codes | todo |
 
 Tasks 09-15 are the feature queue Maya gave on 2026-09-04 (roots 948f9802 and dd69d0b2, process note 1a7ee18d
 in #agentchat): one at a time, each with subagent review, browser e2e with screenshots, its own deploy and a
