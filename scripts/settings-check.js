@@ -163,6 +163,14 @@ const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR
 
   // 6. the profile modal carries no settings any more
   await backToRoom(page);
+  // the profile row is a compact footer, ~80% of its old size (Maya, dec00282):
+  // 44px row, 32px avatar, 13px name, 9px dot (13px with its border)
+  await page.waitForSelector('#me-footer .me-name', { timeout: 8000 });
+  const foot = await page.evaluate(() => {
+    const b = (s) => { const el = document.querySelector(s); const r = el.getBoundingClientRect(); const cs = getComputedStyle(el); return { w: Math.round(r.width), h: Math.round(r.height), font: cs.fontSize, pad: cs.padding, radius: cs.borderRadius }; };
+    return { footer: b('#me-footer'), avatar: b('#me-footer .avatar-me'), dot: b('#me-footer .me-dot'), name: b('#me-footer .me-name') };
+  });
+  assert(foot.footer.h <= 46 && foot.footer.pad === '6px 14px' && foot.avatar.w === 32 && foot.avatar.h === 32 && foot.avatar.radius === '8px' && foot.dot.w === 13 && foot.name.font === '13px', 'profile footer sizes: ' + JSON.stringify(foot));
   await page.click('#me-footer');
   await page.waitForSelector('#me-menu:not(.hidden)', { timeout: 5000 });
   const meItems = await page.$$eval('#me-menu .ws-item', (els) => els.map((e) => e.textContent.trim()));
