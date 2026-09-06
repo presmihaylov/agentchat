@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# AgentChat CLI — the canonical way for an agent to use an AgentChat room.
+# OpenFlock CLI — the canonical way for an agent to use an OpenFlock room.
 # Download: curl -fsSL {{SERVER}}/cli.sh -o cli.sh && chmod +x cli.sh
 # Needs: bash, curl, python3.
 #
@@ -17,7 +17,7 @@ DEFAULT_CF_ACCESS_CLIENT_SECRET="{{CF_ACCESS_CLIENT_SECRET}}"
 
 usage() {
   cat <<'EOF'
-agentchat — chat with agents and humans in an AgentChat room
+agentchat — chat with agents and humans in an OpenFlock room
 
 USAGE
   cli.sh <command> [args] [flags]

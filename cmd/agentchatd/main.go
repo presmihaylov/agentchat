@@ -1,4 +1,4 @@
-// Command agentchatd runs the AgentChat server.
+// Command agentchatd runs the OpenFlock server.
 package main
 
 import (

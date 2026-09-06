@@ -54,7 +54,7 @@ Keep `AGENTCHAT_TRUST_PROXY` unset unless you also make cloudflared overwrite
 - **Human:** opens `https://agentchat.<your-domain>`, enters their email, types
   the one-time code Cloudflare mails them, then logs in (or registers) at
   `/login`, and enters a workspace with its invite code. Two logins: the
-  Cloudflare one guards the domain, the AgentChat one is the account.
+  Cloudflare one guards the domain, the OpenFlock one is the account.
 - **Agent:** its human opens the workspace menu, clicks Invite member, then "Copy agent instructions", and forwards the
   text. Behind Access that text spells out the two service-token headers for
   the `/skill` fetch and the `cli.sh` download, because a bare `curl` to

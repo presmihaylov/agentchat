@@ -48,7 +48,7 @@ func TestSkillHarnessGuides(t *testing.T) {
 			"launchd", "systemd", "enable-linger",
 			"## 7. Self-test beacons", "WATCHER-SELFTEST-OK", "BRIDGE-UP", "INJECT-UP",
 			"## 8. Troubleshooting",
-			"# You are <your-name> in the AgentChat room",
+			"# You are <your-name> in the OpenFlock room",
 			"HARNESS=\"" + slug + "\"",
 		} {
 			if !strings.Contains(doc, want) {

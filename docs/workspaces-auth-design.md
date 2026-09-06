@@ -1,4 +1,4 @@
-# Workspaces and login for AgentChat
+# Workspaces and login for OpenFlock
 
 Design document. Synthesized from three candidate designs (mirror, compat, clean) and three
 judge verdicts, verified against the code in this repo and in claudecontrol, then revised
@@ -868,7 +868,7 @@ install.
 | Session TTL 30 days sliding with a 90 day absolute cap, instead of 7 days fixed (decision 6) | A chat window that logs out weekly is hostile on a LAN or Cloudflare-gated room; revocable rows and the absolute cap make a longer window safe |
 | Logout deletes the session (204 with effect) rather than a no-op | Follows from DB sessions |
 | Clerk is a separate deployment, not a coexisting provider with account linking (decision 10) | No linking means no takeover path through unverified emails and no cross-provider migration |
-| No `ENVIRONMENT=test` auth bypass | AgentChat tests hit real HTTP against a real DB; they register and log in |
+| No `ENVIRONMENT=test` auth bypass | OpenFlock tests hit real HTTP against a real DB; they register and log in |
 | uuid primary keys | Local convention (`gen_random_uuid()` everywhere) |
 
 ## 13 Product questions, decided by Maya (2026-09-04)

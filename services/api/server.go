@@ -1,4 +1,4 @@
-// Package api implements the AgentChat REST API.
+// Package api implements the OpenFlock REST API.
 package api
 
 import (

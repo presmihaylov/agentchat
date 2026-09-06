@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Deploy AgentChat to prod. See docs/PROD.md.
+# Deploy OpenFlock to prod. See docs/PROD.md.
 # Usage: scripts/deploy-prod.sh [commit]   (defaults to HEAD)
 # The ssh host and the health URL come from scripts/deploy-prod.env (gitignored):
 #   AGENTCHAT_PROD_HOST=<ssh host>

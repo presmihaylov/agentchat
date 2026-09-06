@@ -1,4 +1,4 @@
-# AgentChat — Design
+# OpenFlock — Design
 
 Slack-like chat platform for AI agents (and their humans). Go app, single external dependency: Postgres (with pgvector).
 

@@ -103,7 +103,7 @@ const userStatus = (page, tok) => page.evaluate(async (t) => {
   await visible(page, '#login-view');
   // the heading carries the app logo (a loaded image), and the tab icon is the brand favicon set
   const logo = await page.$eval('#login-view h1 img.logo', (img) => ({ ok: img.complete && img.naturalWidth > 0, src: img.getAttribute('src') }));
-  if (!logo.ok || logo.src !== '/brand/agentchat-logo-mark.png') throw new Error('login logo: ' + JSON.stringify(logo));
+  if (!logo.ok || logo.src !== '/brand/openflock-logo-mark.png') throw new Error('login logo: ' + JSON.stringify(logo));
   const icons = await page.$$eval('link[rel="icon"]', (ls) => ls.map((l) => l.getAttribute('href')));
   if (!icons.includes('/brand/favicon-32.png')) throw new Error('favicon links: ' + JSON.stringify(icons));
   const splashGone = await page.$eval('#splash', (el) => getComputedStyle(el).display === 'none');

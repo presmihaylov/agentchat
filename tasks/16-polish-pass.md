@@ -37,9 +37,10 @@ Maya via Chief, thread 1fecc8e4 in #agentchat (2026-09-05 13:45-13:47Z). One dep
   members button, the attach clips, the message actions (reply, edit, delete), the attachment chip, the
   broadcast marker, the "Copy agent instructions" button and the app brand / page headings become
   monochrome inline SVGs in currentColor. Avatars, reactions and message content keep their emoji.
-- App logo (Maya, msg ac5c8834): `web/public/brand/agentchat-logo.png` is the canonical asset (two smiling
-  speech bubbles on cream, 1254px). Generated from it: `agentchat-logo-mark.png` (cream trimmed to
-  transparent, 512px, for every inline mark and dark surfaces), `favicon-16/32/64.png` (transparent; 64 is
+- App logo (Maya, msg ac5c8834): `web/public/brand/openflock-logo.png` is the canonical asset (two birds,
+  yellow and blue, on cream, 1254px; renamed from the agentchat mark in the OpenFlock
+  rename). Generated from it: `openflock-logo-mark.png` (cream trimmed to transparent,
+  512px, for every inline mark and dark surfaces), `favicon-16/32/64.png` (transparent; 64 is
   the base the task-18 favicon badge draws over), `favicon.ico`, `apple-touch-icon.png` (180px, kept on
   cream: iOS flattens alpha). Used at: the browser tab icon, the boot splash (a new full-screen logo shown
   until the first view unhides), the app header brand, the login / register / registration-closed /
