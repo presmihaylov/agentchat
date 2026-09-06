@@ -9,6 +9,8 @@
   --accent-soft: rgba(74, 158, 218, .45);
   /* --hot is the "lit up" text (unread, active); --on-accent sits on accent fills */
   --hot: #fff; --on-accent: #fff; --glow: var(--glow);
+  /* sidebar selection: a neutral lift over the panel, hover one step subtler */
+  --sel: rgba(255, 255, 255, .08); --sel-hover: rgba(255, 255, 255, .045);
   --code-bg: #111; --overlay: rgba(0, 0, 0, .55); --shadow: rgba(0, 0, 0, .45);
 }
 /* the light palette; the effective theme is stamped on <html> by the head script */
@@ -19,6 +21,7 @@ html[data-theme="light"] {
   --broadcast: #fbe0e0; --danger: #e5534b; --online: #1a9e63; --badge: #d83b3e;
   --accent-soft: rgba(31, 111, 178, .22);
   --hot: #0d1117; --glow: rgba(31, 111, 178, .3);
+  --sel: rgba(0, 0, 0, .08); --sel-hover: rgba(0, 0, 0, .045);
   --code-bg: #eef0f3; --overlay: var(--shadow); --shadow: rgba(0, 0, 0, .18);
 }
 * { box-sizing: border-box; }
@@ -118,10 +121,10 @@ body.has-banner.has-header .auth-view, body.has-banner.has-header #create-view, 
 #new-channel:hover, #browse-channels:hover { color: var(--text); background: var(--panel2); }
 #sidebar ul { list-style: none; margin: 0; padding: 0; }
 #sidebar li { padding: 4px 10px; border-radius: 6px; cursor: pointer; display: flex; align-items: center; gap: 6px; font-size: 14px; overflow: hidden; white-space: nowrap; }
-#sidebar li:hover { background: var(--panel2); }
-/* translucent, so the selection reads as a highlight over the panel rather than
-   a solid slab; white text still clears AA against the blended colour */
-#sidebar li.active { background: var(--accent-soft); color: var(--hot); }
+#sidebar li:hover { background: var(--sel-hover); }
+/* neutral and translucent, so the selection reads as a lift over the panel
+   rather than a coloured slab; the text goes hot so the row still leads */
+#sidebar li.active { background: var(--sel); color: var(--hot); }
 #sidebar li .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--dim); flex: none; opacity: .4; }
 #sidebar li .dot.online { background: var(--online); opacity: 1; }
 #sidebar li .tags { color: var(--dim); font-size: 12px; overflow: hidden; text-overflow: ellipsis; }
@@ -135,19 +138,42 @@ body.has-banner.has-header .auth-view, body.has-banner.has-header #create-view, 
 /* participant profile popup */
 #invite-modal, .modal { position: fixed; inset: 0; background: var(--overlay); display: flex; align-items: center; justify-content: center; z-index: 30; }
 #invite-card, .modal-card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 24px 28px; width: 440px; max-width: calc(100vw - 32px); box-sizing: border-box; position: relative; }
-#invite-card h3, .modal-card h3 { margin: 0 0 6px; font-size: 18px; }
-#invite-card h4 { margin: 18px 0 4px; font-size: 14px; }
-#invite-card .hint, .modal-card .hint { margin: 0 0 12px; color: var(--dim); font-size: 12px; }
+#invite-card h3, .modal-card h3 { margin: 0 0 4px; font-size: 18px; font-weight: 600; letter-spacing: -.01em; }
+#invite-card .hint, .modal-card .hint { margin: 0 0 16px; color: var(--dim); font-size: 13px; line-height: 1.45; }
+.modal-foot { display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin-top: 16px; }
+/* the two button sizes shared by modals and settings: a filled primary and a
+   quiet outline, same height, so rows never jog between states */
+.btn-primary { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 6px 14px; border-radius: 6px; border: 1px solid transparent; background: var(--accent); color: var(--on-accent); font: inherit; font-size: 13px; font-weight: 500; line-height: 20px; white-space: nowrap; cursor: pointer; }
+.btn-primary:hover { filter: brightness(1.08); }
+.btn-primary:disabled { opacity: .55; cursor: default; filter: none; }
+/* a ring only for keyboard focus: programmatic focus on open stays quiet */
+.btn-primary:focus:not(:focus-visible), .remove-btn:focus:not(:focus-visible), .btn-sm:focus:not(:focus-visible), #members-invite:focus:not(:focus-visible), .icon-btn:focus:not(:focus-visible) { outline: none; }
+.btn-primary:focus-visible, .remove-btn:focus-visible, .btn-sm:focus-visible, #members-invite:focus-visible, .icon-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 #invite-card label, .modal-card label { display: block; margin: 10px 0; color: var(--dim); font-size: 12px; }
-#invite-card .invite-row { display: flex; gap: 8px; margin-top: 4px; }
-#invite-card .invite-row input { flex: 1; min-width: 0; font-size: 14px; color: var(--text); }
-#invite-list { list-style: none; margin: 0 0 12px; padding: 0; max-height: 40vh; overflow-y: auto; }
-#invite-list li { margin: 0 0 10px; }
-#invite-list .invite-meta { display: block; margin-top: 3px; color: var(--dim); font-size: 11px; }
-#invite-list .invite-revoke { color: var(--danger, #d33); }
-#invite-new { display: flex; gap: 10px; align-items: flex-end; margin: 0 0 6px; }
-#invite-new label { flex: 1; margin: 0; }
-#invite-new select { width: 100%; margin-top: 4px; background: var(--panel2); border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; color: var(--text); font-size: 13px; }
+#invite-card { width: 640px; }
+/* create first: a compact toolbar row, then the links as a table, newest first */
+#invite-new { display: flex; gap: 10px; align-items: flex-end; margin: 0 0 16px; padding: 12px 14px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; }
+#invite-new label { flex: 1; margin: 0; font-size: 12px; color: var(--dim); }
+#invite-new select { display: block; width: 100%; margin-top: 4px; background: var(--panel2); border: 1px solid var(--border); border-radius: 6px; padding: 5px 8px; color: var(--text); font: inherit; font-size: 13px; line-height: 20px; }
+#invite-new .btn-primary { flex: none; }
+#invite-list { list-style: none; margin: 0; padding: 0; max-height: 44vh; overflow-y: auto; border: 1px solid var(--border); border-radius: 8px; }
+#invite-list:empty { display: none; }
+#invite-list li { display: grid; grid-template-columns: 112px minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 9px 12px; border-top: 1px solid var(--border); }
+#invite-list li:first-child { border-top: 0; }
+#invite-list li:hover, #invite-list li:focus-within { background: var(--sel-hover); }
+#invite-list .invite-token { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; color: var(--text); white-space: nowrap; }
+#invite-list .invite-info { display: flex; align-items: center; gap: 8px; min-width: 0; }
+#invite-list .invite-meta { color: var(--dim); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#invite-list .invite-badge { flex: none; font-size: 11px; font-weight: 500; line-height: 16px; padding: 0 7px; border: 1px solid var(--border); border-radius: 999px; color: var(--dim); white-space: nowrap; }
+#invite-list .invite-actions { display: flex; gap: 2px; opacity: 0; transition: opacity .12s; }
+#invite-list li:hover .invite-actions, #invite-list li:focus-within .invite-actions { opacity: 1; }
+.icon-btn { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 6px; background: none; color: var(--dim); cursor: pointer; }
+.icon-btn:hover { background: var(--panel2); color: var(--text); }
+.icon-btn .lucide { display: block; }
+.invite-empty { margin: 0; padding: 22px 12px; border: 1px dashed var(--border); border-radius: 8px; color: var(--dim); font-size: 13px; text-align: center; }
+.modal-footnote { margin: 16px 0 0; padding-top: 14px; border-top: 1px solid var(--border); color: var(--dim); font-size: 13px; }
+.linkish { background: none; border: 0; padding: 0; font: inherit; color: var(--accent); cursor: pointer; }
+.linkish:hover { text-decoration: underline; }
 #invite-close, #join-close, #addagent-close { position: absolute; top: 10px; right: 12px; background: none; border: 0; color: var(--dim); font-size: 15px; cursor: pointer; }
 #profile-modal { position: fixed; inset: 0; background: var(--overlay); display: flex; align-items: center; justify-content: center; z-index: 30; }
 #profile-card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 28px; width: 320px; position: relative; text-align: center; }
@@ -179,7 +205,12 @@ body.has-banner.has-header .auth-view, body.has-banner.has-header #create-view, 
 #channel-list li .mute-mark { display: inline-flex; margin-left: auto; color: var(--dim); }
 #channel-list li .mute-mark + .unread-badge { margin-left: 4px; }
 #channel-list li .sigil, #channel-title .sigil, #members-title .sigil, .chan-ac .sigil, .browse-name { display: inline-flex; align-items: center; gap: 4px; flex: none; color: inherit; }
-#channel-list li .sigil svg, #channel-title .sigil svg, .chan-ac .sigil svg { opacity: .8; }
+/* the sigil is typography, not an icon: it sizes with its name and its stroke
+   follows the weight, so # and name read as one word */
+.sigil svg, .browse-name svg { width: 1em; height: 1em; }
+#channel-title .sigil svg, #members-title .sigil svg { stroke-width: 2.75; }
+.browse-name svg { stroke-width: 2.5; }
+#channel-title, #members-title { display: inline-flex; align-items: center; gap: 3px; }
 #channel-list li .chan-name { overflow: hidden; text-overflow: ellipsis; }
 #sidebar li.archived { color: var(--dim); font-style: italic; }
 /* Unread with no @mention: bold + a soft accent glow on the name, no number. */
@@ -257,10 +288,12 @@ body.has-banner.has-header .auth-view, body.has-banner.has-header #create-view, 
 #participant-list li.addagent-row { color: var(--dim); font-size: 12px; }
 #participant-list li.addagent-row .addagent-plus { display: inline-flex; width: 20px; height: 20px; align-items: center; justify-content: center; border: 1px dashed var(--border); border-radius: 50%; margin-right: 6px; font-size: 14px; line-height: 1; }
 #participant-list li.addagent-row:hover { color: var(--text); }
-#addagent-card .invite-row { display: flex; gap: 8px; margin-top: 4px; }
-#addagent-card .invite-row input { flex: 1; min-width: 0; font-size: 13px; color: var(--text); }
-#addagent-card textarea { display: block; width: 100%; box-sizing: border-box; margin-top: 4px; font-size: 12px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 8px; resize: vertical; }
-#participant-list li.participant-leaf { margin-left: 15px; padding-left: 8px; border-left: 1px solid var(--border); border-radius: 0 6px 6px 0; }
+#addagent-card { width: 680px; padding: 24px 28px 22px; }
+#addagent-card textarea { display: block; width: 100%; box-sizing: border-box; margin: 0; min-height: 200px; max-height: min(560px, 70vh); font-size: 13px; line-height: 1.6; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; resize: none; }
+#addagent-card textarea:focus { outline: none; border-color: var(--accent); }
+/* the guide line hangs from the owner's dot (10px pad + 16px chevron + 6px gap
+   puts that dot at x=32); the agent block starts one indent step right of it */
+#participant-list li.participant-leaf { margin-left: 35px; padding-left: 14px; border-left: 1px solid var(--border); border-radius: 0 6px 6px 0; }
 /* collapsible agent list: a chevron column reserved on every parent row so
    avatars stay aligned whether or not a human has nested agents */
 #participant-list li .p-toggle { width: 16px; flex: none; display: inline-flex; justify-content: center; color: var(--dim); cursor: pointer; }
@@ -504,9 +537,8 @@ a.chanlink:hover { text-decoration: underline; }
 /* deeper than --accent so white label clears WCAG AA (4.5:1) */
 .browse-row.member .browse-name, .browse-row.member .browse-topic { color: var(--dim); }
 .browse-member-note { color: var(--dim); font-size: 12px; font-style: italic; white-space: nowrap; }
-.browse-join { background: #15568a; color: var(--on-accent); border: 0; border-radius: 8px; padding: 7px 16px; font: inherit; font-weight: 600; cursor: pointer; }
-.browse-join:hover { filter: brightness(1.08); }
-.browse-join:active { transform: scale(.97); }
+/* note and Join share one right-aligned column so rows never jog */
+.browse-action { flex: none; width: 132px; display: flex; justify-content: flex-end; align-items: center; }
 .browse-join:disabled { opacity: .5; cursor: default; }
 
 /* Channel members modal: header 👥 count opens the roster */
@@ -530,9 +562,9 @@ a.chanlink:hover { text-decoration: underline; }
 .mm-add { border-radius: 6px; padding: 4px 12px; font: inherit; font-size: 13px; font-weight: 500; line-height: 20px; border: 1px solid transparent; cursor: pointer; }
 /* one Remove everywhere (Maya, 06e9f192): outline, muted, the settings button font,
    a fixed width so it sits at one x down every list; .remove-gap keeps the slot */
-.remove-btn, .remove-gap { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 84px; box-sizing: border-box; padding: 4px 12px; border-radius: 6px; font: inherit; font-size: 13px; font-weight: 500; line-height: 20px; white-space: nowrap; }
-.remove-btn { background: none; border: 1px solid var(--border); color: var(--dim); cursor: pointer; }
-.remove-btn:hover, .remove-btn:focus-visible { background: var(--panel2); color: var(--text); outline: none; }
+.remove-btn, .remove-gap, .btn-sm { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 84px; box-sizing: border-box; padding: 4px 12px; border-radius: 6px; font: inherit; font-size: 13px; font-weight: 500; line-height: 20px; white-space: nowrap; }
+.remove-btn, .btn-sm { background: none; border: 1px solid var(--border); color: var(--dim); cursor: pointer; }
+.remove-btn:hover, .btn-sm:hover { background: var(--panel2); color: var(--text); }
 .remove-btn:disabled { opacity: .5; cursor: not-allowed; }
 .remove-gap { visibility: hidden; }
 /* deeper than --accent so the white label clears WCAG AA */
@@ -540,7 +572,7 @@ a.chanlink:hover { text-decoration: underline; }
 .mm-add:hover { filter: brightness(1.08); }
 #members-foot { border-top: 1px solid var(--border); padding: 10px 16px; }
 #members-invite { background: none; border: 1px solid var(--border); color: var(--dim); border-radius: 6px; font-size: 12px; padding: 5px 12px; cursor: pointer; }
-#members-invite:hover { border-color: var(--accent); color: var(--text); }
+#members-invite:hover { background: var(--panel2); color: var(--text); }
 
 /* composers */
 #composer, #thread-composer { display: flex; flex-direction: column; gap: 6px; padding: 10px 20px 12px; border-top: 1px solid var(--border); }

@@ -63,6 +63,20 @@ const waitSidebar = (page, pred, what) => page.waitForFunction((src) => {
   await page.waitForFunction(() => [...document.querySelectorAll('.browse-row .browse-name')]
     .some((n) => n.textContent === 'plaza'), { timeout: 5000 })
     .catch(() => { throw new Error('open Browse never listed #plaza'); });
+  // Join is the standard small outline button, right-aligned in the same column as "already a member"
+  const join = await page.evaluate(() => {
+    const btn = document.querySelector('.browse-row .browse-join');
+    const note = document.querySelector('.browse-row .browse-member-note');
+    const cs = getComputedStyle(btn);
+    const col = (el) => el.closest('.browse-action').getBoundingClientRect();
+    return { cls: btn.className, fs: cs.fontSize, fw: cs.fontWeight, h: btn.getBoundingClientRect().height,
+      btnRight: btn.getBoundingClientRect().right, noteRight: note ? note.getBoundingClientRect().right : null, colW: [col(btn).width, note ? col(note).width : null] };
+  });
+  if (!/\bbtn-sm\b/.test(join.cls)) throw new Error('Join is not a .btn-sm: ' + join.cls);
+  if (join.fs !== '13px' || join.fw !== '500') throw new Error('Join font: ' + join.fs + '/' + join.fw);
+  if (join.h > 30) throw new Error('Join is oversized: ' + join.h + 'px');
+  if (join.noteRight !== null && Math.abs(join.btnRight - join.noteRight) > 1) throw new Error('Join and the note do not share a right edge: ' + JSON.stringify(join));
+  if (join.colW[1] !== null && join.colW[0] !== join.colW[1]) throw new Error('action column width jogs: ' + JSON.stringify(join.colW));
   await page.click('#browse-close');
 
   // 3. removed from the private channel by someone else: disappears

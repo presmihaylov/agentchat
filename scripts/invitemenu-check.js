@@ -16,10 +16,10 @@ const stubClipboard = (page) => page.evaluate(() => {
   Object.defineProperty(navigator, 'clipboard', { value: { writeText: async (t) => { window.__copied = t; } }, configurable: true });
 });
 const noOldButtons = async (page) => {
-  const old = await page.evaluate(() => ['copy-link', 'invite-agent', 'invite-code', 'invite-code-copy'].filter((id) => document.getElementById(id)));
+  const old = await page.evaluate(() => ['copy-link', 'invite-agent', 'invite-code', 'invite-code-copy', 'invite-agent-copy'].filter((id) => document.getElementById(id)));
   assert(old.length === 0, 'old invite buttons still exist: ' + JSON.stringify(old));
 };
-const links = (page) => page.$$eval('#invite-list .invite-item input', (els) => els.map((e) => e.value));
+const links = (page) => page.$$eval('#invite-list .invite-item', (els) => els.map((e) => e.dataset.url));
 const rows = (page) => page.$$eval('#invite-list .invite-item', (els) => els.map((e) => e.querySelector('.invite-meta').textContent));
 
 (async () => {
@@ -41,6 +41,32 @@ const rows = (page) => page.$$eval('#invite-list .invite-item', (els) => els.map
   await page.waitForSelector('#invite-list .invite-item', { timeout: 8000 });
   assert((await links(page)).join() === room.invite, 'modal links: ' + (await links(page)).join());
   assert(/workspace link/.test((await rows(page))[0]), 'meta: ' + (await rows(page))[0]);
+  // shape: create row first, then the list; short token, icon actions revealed on hover, no raw inputs
+  const shape = await page.evaluate(() => {
+    const form = document.getElementById('invite-new'), list = document.getElementById('invite-list');
+    const li = list.querySelector('.invite-item');
+    const actions = li.querySelector('.invite-actions');
+    return {
+      formFirst: !!(form.compareDocumentPosition(list) & Node.DOCUMENT_POSITION_FOLLOWING),
+      token: li.querySelector('.invite-token').textContent,
+      copyIcon: !!li.querySelector('.invite-copy svg[data-icon="copy"]'),
+      revokeIcon: !!li.querySelector('.invite-revoke svg[data-icon="trash-2"]'),
+      inputs: list.querySelectorAll('input').length,
+      restOpacity: getComputedStyle(actions).opacity,
+      emptyHidden: document.getElementById('invite-empty').classList.contains('hidden'),
+      width: document.getElementById('invite-card').getBoundingClientRect().width,
+      submitFocused: document.activeElement === document.getElementById('invite-new-submit'),
+    };
+  });
+  assert(shape.formFirst, 'create row is not above the list');
+  assert(/^inv-\w{4}…$/.test(shape.token), 'short token: ' + shape.token);
+  assert(shape.copyIcon && shape.revokeIcon && shape.inputs === 0, 'row actions: ' + JSON.stringify(shape));
+  assert(shape.restOpacity === '0', 'actions visible at rest: ' + shape.restOpacity);
+  assert(shape.emptyHidden, 'empty state shows with rows present');
+  assert(shape.width >= 600 && shape.width <= 720, 'modal width: ' + shape.width);
+  assert(shape.submitFocused, 'Create link is not focused on open');
+  await page.hover('#invite-list .invite-item');
+  await page.waitForFunction(() => getComputedStyle(document.querySelector('#invite-list .invite-actions')).opacity === '1', { timeout: 3000 });
   await page.screenshot({ path: OUT + '/invite-modal.png' });
   await stubClipboard(page);
   await page.click('#invite-list .invite-copy');
@@ -52,15 +78,20 @@ const rows = (page) => page.$$eval('#invite-list .invite-item', (els) => els.map
   await page.select('#invite-max', '1');
   await page.click('#invite-new-submit');
   await page.waitForFunction(() => document.querySelectorAll('#invite-list .invite-item').length === 2, { timeout: 8000 });
-  const [, minted] = await links(page);
+  // newest first
+  const [minted] = await links(page);
   assert(/\/join\/inv-/.test(minted) && minted !== room.invite, 'minted link: ' + minted);
-  assert(/by Alice/.test((await rows(page))[1]) && /0\/1 uses/.test((await rows(page))[1]), 'minted meta: ' + (await rows(page))[1]);
+  assert(/by Alice/.test((await rows(page))[0]) && /0\/1 uses/.test((await rows(page))[0]), 'minted meta: ' + (await rows(page))[0]);
   await page.screenshot({ path: OUT + '/invite-modal-two.png' });
-  await page.$$eval('#invite-list .invite-revoke', (els) => els[1].click());
+  await page.$$eval('#invite-list .invite-revoke', (els) => els[0].click());
   await page.waitForFunction(() => document.querySelectorAll('#invite-list .invite-item').length === 1, { timeout: 8000 });
   assert((await links(page)).join() === room.invite, 'revoke removed the wrong row');
+  // the footer link hands over to Add an agent instead of duplicating it
+  await page.click('#invite-open-addagent');
+  await page.waitForSelector('#addagent-modal:not(.hidden)', { timeout: 5000 });
+  assert(await page.$('#invite-modal.hidden'), 'invite modal stayed open behind Add an agent');
   await page.keyboard.press('Escape');
-  await page.waitForSelector('#invite-modal.hidden', { timeout: 5000 });
+  await page.waitForSelector('#addagent-modal.hidden', { timeout: 5000 });
 
   // 3. a second user enters with the copied link, and sees no Invite member item
   const ctx = await browser.createBrowserContext();
@@ -80,7 +111,8 @@ const rows = (page) => page.$$eval('#invite-list .invite-item', (els) => els.map
   await page.waitForSelector('#chat-view:not(.hidden)', { timeout: 8000 });
   await openInviteModal(page);
   await page.waitForSelector('#invite-list .invite-item', { timeout: 8000 });
-  assert(/2 uses/.test((await rows(page))[0]), 'uses did not count: ' + (await rows(page))[0]);
+  const wsRow = await page.$$eval('#invite-list .invite-item', (els, u) => (els.find((e) => e.dataset.url === u) || {}).textContent, room.invite);
+  assert(/2 uses/.test(wsRow), 'uses did not count: ' + wsRow);
 
   await browser.close();
   console.log('INVITEMENU_CHECK_OK');

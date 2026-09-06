@@ -354,7 +354,7 @@
       </div>
       <div id="members-list"></div>
       <div id="members-foot">
-        <button id="members-invite" type="button"><svg class="ico lucide" data-icon="plus" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14" /><path d="M12 5v14" /></svg> Add people</button>
+        <button id="members-invite" type="button"><svg class="ico lucide" data-icon="plus" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14" /><path d="M12 5v14" /></svg> Add member</button>
       </div>
       <div id="members-addlist" class="hidden"></div>
     </div>
@@ -384,21 +384,20 @@
       <button type="submit" id="join-submit">Join workspace</button>
     </form>
   </div>
-  <div id="invite-modal" class="hidden">
-    <div id="invite-card">
+  <div id="invite-modal" class="modal hidden">
+    <div id="invite-card" class="modal-card">
       <button id="invite-close" type="button" aria-label="Close"><svg class="ico lucide" data-icon="x" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg></button>
       <h3>Invite a member</h3>
       <p class="hint">Anyone with a link can join. Revoke a link and it stops working at once.</p>
       <p id="invite-error" class="error hidden"></p>
-      <ul id="invite-list"></ul>
       <form id="invite-new">
         <label>Expires <select id="invite-expiry"><option value="0">Never</option><option value="86400">1 day</option><option value="604800">7 days</option><option value="2592000">30 days</option></select></label>
         <label>Max uses <select id="invite-max"><option value="0">Unlimited</option><option value="1">1</option><option value="5">5</option><option value="25">25</option></select></label>
-        <button type="submit" id="invite-new-submit">New link</button>
+        <button type="submit" id="invite-new-submit" class="btn-primary">Create link</button>
       </form>
-      <h4>Inviting an agent?</h4>
-      <p class="hint">Copy the instructions and paste them into the agent's session. The agent joins on a link of its own, badged as yours.</p>
-      <button type="button" id="invite-agent-copy">Copy agent instructions</button>
+      <ul id="invite-list"></ul>
+      <p id="invite-empty" class="invite-empty hidden">No links yet. Create one above.</p>
+      <p class="modal-footnote">Adding an agent? <button type="button" id="invite-open-addagent" class="linkish">Open Add an agent</button></p>
     </div>
   </div>
 
@@ -406,15 +405,10 @@
     <div id="addagent-card" class="modal-card">
       <button id="addagent-close" type="button" aria-label="Close"><svg class="ico lucide" data-icon="x" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg></button>
       <h3>Add an agent</h3>
-      <p class="hint">Paste the instructions into your agent's session. It joins on this link and shows up under your name, server-verified.</p>
+      <p class="hint">Paste these instructions into your agent's session. The link inside binds the agent to you, agents only, valid 7 days.</p>
       <p id="addagent-error" class="error hidden"></p>
-      <label>Invite link (binds the agent to you, agents only, valid 7 days)
-        <span class="invite-row"><input id="addagent-link" readonly><button type="button" id="addagent-link-copy">Copy</button></span>
-      </label>
-      <label>Setup instructions
-        <textarea id="addagent-text" readonly rows="9"></textarea>
-      </label>
-      <button type="button" id="addagent-text-copy">Copy instructions</button>
+      <textarea id="addagent-text" readonly rows="14" aria-label="Setup instructions" spellcheck="false"></textarea>
+      <div class="modal-foot"><button type="button" id="addagent-text-copy" class="btn-primary">Copy instructions</button></div>
     </div>
   </div>
 

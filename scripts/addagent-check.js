@@ -92,16 +92,32 @@ const expand = async (page, name) => {
   // 3. click: the modal mints a link bound to Bob and shows the instructions
   await bob.click('#addagent-row');
   await bob.waitForSelector('#addagent-modal:not(.hidden)', { timeout: 5000 });
-  await bob.waitForFunction(() => document.getElementById('addagent-link').value.includes('/join/inv-'), { timeout: 8000 });
-  const link = await bob.$eval('#addagent-link', (el) => el.value);
-  assert(link.startsWith(SERVER + '/join/inv-'), 'modal link: ' + link);
+  await bob.waitForFunction(() => document.getElementById('addagent-text').value.includes('/join/inv-'), { timeout: 8000 });
   const text = await bob.$eval('#addagent-text', (el) => el.value);
-  assert(text.includes(link) && text.includes(SERVER + '/skill') && text.includes('#general') && text.includes('Bob Member'), 'instructions: ' + text);
+  const link = (text.match(/(\S+\/join\/inv-\S+)/) || [])[1];
+  assert(link && link.startsWith(SERVER + '/join/inv-'), 'instructions carry no link: ' + text);
+  assert(text.includes(SERVER + '/skill') && text.includes('#general') && text.includes('Bob Member'), 'instructions: ' + text);
+  // redesign: no separate link field, wide card, the whole text visible without
+  // scrolling, no resize handle, one primary Copy instructions action
+  assert(!(await bob.$('#addagent-link')), 'the old link field is back');
+  const box = await bob.evaluate(() => {
+    const ta = document.getElementById('addagent-text');
+    const cs = getComputedStyle(ta);
+    return { width: document.getElementById('addagent-card').getBoundingClientRect().width, scroll: ta.scrollHeight, client: ta.clientHeight, resize: cs.resize, mono: cs.fontFamily,
+      subtitle: document.querySelector('#addagent-card .hint').textContent, focused: document.activeElement === document.getElementById('addagent-text-copy') };
+  });
+  assert(box.width >= 640 && box.width <= 720, 'card width: ' + box.width);
+  assert(box.scroll <= box.client + 2, 'instructions need scrolling: ' + box.scroll + ' > ' + box.client);
+  assert(box.resize === 'none' && /mono/i.test(box.mono), 'textarea chrome: ' + JSON.stringify(box));
+  assert(/binds the agent to you/.test(box.subtitle) && /7 days/.test(box.subtitle), 'subtitle: ' + box.subtitle);
+  assert(box.focused, 'Copy instructions is not focused on open');
   await shot(bob, 'modal.png');
-  await bob.click('#addagent-link-copy');
-  await bob.waitForFunction(() => /copied|copy failed/.test(document.getElementById('addagent-link-copy').textContent), { timeout: 3000 });
+  await ctxB.overridePermissions(SERVER, ['clipboard-read', 'clipboard-write']);
   await bob.click('#addagent-text-copy');
-  await bob.waitForFunction(() => /copied|copy failed/.test(document.getElementById('addagent-text-copy').textContent), { timeout: 3000 });
+  await bob.waitForFunction(() => /Copied|copy failed/.test(document.getElementById('addagent-text-copy').textContent), { timeout: 3000 });
+  assert(/Copied/.test(await bob.$eval('#addagent-text-copy', (b) => b.textContent)), 'copy did not confirm');
+  const clip = await bob.evaluate(() => navigator.clipboard.readText());
+  assert(clip.includes(link) && clip === text, 'clipboard lacks the instructions with the link');
 
   step = '4';
   // 4. an agent joins on the link: it is Bob's, and it nests under him above the add row

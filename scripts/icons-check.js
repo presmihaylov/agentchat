@@ -48,6 +48,13 @@ const AUDIT = (names, where) => {
     seen.push(info);
     if (!svg.classList.contains('lucide') || !name) bad.push({ why: 'not a set icon', ...info });
     else if (!names.includes(name)) bad.push({ why: 'name outside the set', ...info });
+    // a channel sigil is text-sized: 1em, same weight as the name (stroke follows the font)
+    const sigil = !!svg.closest('.sigil, .browse-name');
+    if (sigil) {
+      const fs = Math.round(parseFloat(getComputedStyle(svg.parentElement).fontSize));
+      if (Math.abs(w - fs) > 1 || w !== h) bad.push({ why: 'sigil not text-sized', fs, ...info });
+      continue;
+    }
     if (cs.strokeWidth !== '2px') bad.push({ why: 'stroke width', ...info });
     if (![16, 20, 24].includes(w) || w !== h) bad.push({ why: 'size', ...info });
   }
@@ -195,7 +202,10 @@ const AUDIT = (names, where) => {
       const rows = await page.$$eval('#browse-list .browse-row .browse-name', (ns) => ns.map((n) => (n.querySelector('svg') || {}).dataset?.icon + ':' + n.textContent));
       assert(rows.some((r) => r === 'hash:general'), 'browse rows: ' + rows.join(' '));
     }
-    if (name === 'members') assert(await page.$('#members-invite svg[data-icon="plus"]'), 'Add people lost its plus');
+    if (name === 'members') {
+      assert(await page.$('#members-invite svg[data-icon="plus"]'), 'Add member lost its plus');
+      assert((await page.$eval('#members-invite', (b) => b.textContent.trim())) === 'Add member', 'members button label is not Add member');
+    }
     await audit(name);
     await shot(name);
     // the close button is the one thing every modal shares (not all take Escape)

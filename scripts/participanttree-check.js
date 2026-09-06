@@ -41,6 +41,7 @@ const mint = (tok) => api('/api/v1/invites', { method: 'POST', token: tok, body:
     headless: 'new', args: ['--no-sandbox', '--disable-dev-shm-usage'],
   });
   const page = await browser.newPage();
+  await page.setViewport({ width: 1280, height: 800 });
   const fail = (m) => { console.error('FAIL: ' + m); process.exitCode = 1; };
   page.on('pageerror', (e) => fail('pageerror ' + e.message));
 
@@ -95,6 +96,18 @@ const mint = (tok) => api('/api/v1/invites', { method: 'POST', token: tok, body:
     if (JSON.stringify(kidNames(u)) !== JSON.stringify(['lonerbot'])) fail('unowned kids = ' + JSON.stringify(kidNames(u)) + ', want lonerbot');
     if (u.kids.some((k) => k.badge)) fail('ownerless agent unexpectedly shows an owner badge');
   }
+  // agent rows sit 16-20px right of the owner's dot, behind a thin guide line
+  const indent = await page.evaluate(() => {
+    const lis = [...document.querySelectorAll('#participant-list li')];
+    const i = lis.findIndex((li) => li.querySelector('.pname')?.textContent === 'maya');
+    const leaf = lis.slice(i + 1).find((li) => li.classList.contains('participant-leaf'));
+    const dot = (li) => li.querySelector('.dot, .pdot, .status-dot, [class*="dot"]');
+    const ox = dot(lis[i]).getBoundingClientRect().left, lx = dot(leaf).getBoundingClientRect().left;
+    const cs = getComputedStyle(leaf);
+    return { offset: lx - ox, ox, lx, leafName: leaf.querySelector('.pname')?.textContent, border: cs.borderLeftWidth + ' ' + cs.borderLeftStyle };
+  });
+  if (!(indent.offset >= 16 && indent.offset <= 20)) fail('agent row offset from the owner dot is ' + indent.offset + 'px, want 16-20: ' + JSON.stringify(indent));
+  if (indent.border !== '1px solid') fail('agent block lacks the guide line: ' + indent.border);
   // an owned agent must never appear as its own top-level parent row
   if (parent('mayabot1') || parent('danabot')) fail('an owned agent rendered as a top-level row, not nested');
 

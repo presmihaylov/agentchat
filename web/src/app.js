@@ -919,7 +919,7 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
     return el;
   };
   const setChannelTitle = (ch) => {
-    $('channel-title').replaceChildren(sigilEl(ch.private), ' ' + ch.name);
+    $('channel-title').replaceChildren(sigilEl(ch.private), ch.name);
     // the rename pencil: admins only, never on #general (server rule)
     $('rename-channel').classList.toggle('hidden', !(me && me.role === 'admin' && ch.name !== 'general'));
   };
@@ -946,7 +946,10 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
     li.appendChild(nameEl);
     if (ch.archived) li.classList.add('archived');
     if (ch.muted) { li.classList.add('muted'); li.insertAdjacentHTML('beforeend', '<span class="mute-mark">' + ICON.bellOff + '</span>'); }
-    if (current && ch.id === current.id) li.classList.add('active');
+    // while a thread with a sidebar row is open only that row is selected, the
+    // parent channel row goes plain; a thread without a row keeps the channel lit
+    const threadRow = !!openThreadRoot && threads.some((t) => t.root_id === openThreadRoot);
+    if (current && ch.id === current.id && !threadRow) li.classList.add('active');
     // Any unread glows the channel name; only @mentions get a numeric badge.
     // A muted channel stays dark unless you are mentioned (or broadcast at).
     const glows = ch.unread_count > 0 && (!ch.muted || ch.unread_mentions > 0);
@@ -3310,8 +3313,8 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
 
   // flip to a confirmed state only when the copy succeeded; otherwise show an
   // error state and hold it a bit longer so the user notices
-  const flashCopy = (btn, ok, restore) => {
-    btn.innerHTML = ok ? ICON.check + ' copied' : ICON.triangleAlert + ' copy failed';
+  const flashCopy = (btn, ok, restore, done = 'copied') => {
+    btn.innerHTML = ok ? ICON.check + ' ' + done : ICON.triangleAlert + ' copy failed';
     setTimeout(() => { btn.textContent = restore; }, ok ? 1500 : 2500);
   };
 
@@ -3322,42 +3325,63 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
     parts.push(v.max_uses ? `${v.uses}/${v.max_uses} uses` : `${v.uses} ${v.uses === 1 ? 'use' : 'uses'}`);
     if (v.expires_at) parts.push((v.status === 'expired' ? 'expired ' : 'expires ') + new Date(v.expires_at).toLocaleDateString());
     if (v.status === 'exhausted') parts.push('used up');
-    if (v.owner_id) parts.push('binds agents to ' + (v.owner_id === (me && me.id) ? 'you' : 'its owner'));
     return parts.join(' · ');
+  };
+  // the row shows a short token; the full url lives in dataset.url and the title
+  const shortToken = (url) => { const t = (url.split('/join/')[1] || url); return t.length > 8 ? t.slice(0, 8) + '…' : t; };
+  const iconBtn = (cls, icon, label) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = cls + ' icon-btn';
+    b.innerHTML = icon;
+    b.setAttribute('aria-label', label);
+    b.title = label;
+    return b;
   };
   const renderInvites = async () => {
     let out;
     try { out = await api('/api/v1/invites'); } catch (e) { showInviteErr(e.message); return; }
     const list = $('invite-list');
     list.replaceChildren();
-    for (const v of out.invites || []) {
+    const invites = (out.invites || []).slice().sort((a, b) => (Date.parse(b.created_at) || 0) - (Date.parse(a.created_at) || 0));
+    $('invite-empty').classList.toggle('hidden', invites.length > 0);
+    for (const v of invites) {
       const li = document.createElement('li');
       li.className = 'invite-item';
       li.dataset.id = v.id;
-      const row = document.createElement('span');
-      row.className = 'invite-row';
-      const input = document.createElement('input');
-      input.readOnly = true;
-      input.value = v.url;
-      const copy = document.createElement('button');
-      copy.type = 'button';
-      copy.className = 'invite-copy';
-      copy.textContent = 'Copy';
-      copy.onclick = async () => flashCopy(copy, await copyText(v.url), 'Copy');
-      const revoke = document.createElement('button');
-      revoke.type = 'button';
-      revoke.className = 'invite-revoke secondary';
-      revoke.textContent = 'Revoke';
+      li.dataset.url = v.url;
+      const token = document.createElement('code');
+      token.className = 'invite-token';
+      token.textContent = shortToken(v.url);
+      token.title = v.url;
+      const info = document.createElement('span');
+      info.className = 'invite-info';
+      const meta = document.createElement('span');
+      meta.className = 'invite-meta';
+      meta.textContent = inviteMeta(v);
+      info.appendChild(meta);
+      if (v.owner_id) {
+        const badge = document.createElement('span');
+        badge.className = 'invite-badge';
+        badge.textContent = 'binds agents to ' + (v.owner_id === (me && me.id) ? 'you' : 'its owner');
+        info.appendChild(badge);
+      }
+      const actions = document.createElement('span');
+      actions.className = 'invite-actions';
+      const copy = iconBtn('invite-copy', ICON.copy, 'Copy link');
+      copy.onclick = async () => {
+        const ok = await copyText(v.url);
+        copy.innerHTML = ok ? ICON.check : ICON.triangleAlert;
+        setTimeout(() => { copy.innerHTML = ICON.copy; }, ok ? 1500 : 2500);
+      };
+      const revoke = iconBtn('invite-revoke', ICON.trashTwo, 'Revoke');
       revoke.onclick = async () => {
         if (!confirm('Revoke this link? Anyone holding it can no longer join.')) return;
         try { await api('/api/v1/invites/' + encodeURIComponent(v.id), { method: 'DELETE' }); } catch (e) { showInviteErr(e.message); return; }
         await renderInvites();
       };
-      row.append(input, copy, revoke);
-      const meta = document.createElement('span');
-      meta.className = 'invite-meta';
-      meta.textContent = inviteMeta(v);
-      li.append(row, meta);
+      actions.append(copy, revoke);
+      li.append(token, info, actions);
       list.appendChild(li);
     }
   };
@@ -3365,8 +3389,7 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
     showInviteErr('');
     $('invite-modal').classList.remove('hidden');
     await renderInvites();
-    const first = $('invite-list').querySelector('.invite-copy');
-    if (first) first.focus();
+    $('invite-new-submit').focus();
   };
   const closeInviteModal = () => { $('invite-modal').classList.add('hidden'); $('ws-switcher').focus(); };
   $('invite-close').onclick = closeInviteModal;
@@ -3388,17 +3411,6 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
     $('invite-new-submit').disabled = false;
   });
 
-  // behind Cloudflare Access a bare curl gets the login page, so the invite
-  // spells out the two headers for the skill fetch and the cli.sh download
-  const agentInviteText = (origin, link, access) => {
-    if (!access) return `Fetch ${origin}/skill with curl and follow its instructions.\nInvite link: ${link}`;
-    return `Fetch ${origin}/skill with curl and follow its instructions. This room sits behind Cloudflare Access, so every curl to ${origin} needs these two headers:\n` +
-      `  -H "CF-Access-Client-Id: ${access.client_id}"\n` +
-      `  -H "CF-Access-Client-Secret: ${access.client_secret}"\n` +
-      'Use them on the /skill fetch and on the cli.sh download the skill asks for. The downloaded cli.sh sends them by itself afterwards. Treat them like a password: never print them or post them.\n' +
-      `Invite link: ${link}`;
-  };
-
   // "Add an agent": mint a link bound to you and show it with the setup text.
   // Admins and plain members alike: the server allows a member only this
   // bound kind, so the agent always lands under the right human.
@@ -3416,16 +3428,19 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
   const showAddAgentErr = (msg) => { const el = $('addagent-error'); el.textContent = msg; el.classList.toggle('hidden', !msg); };
   const openAddAgent = async () => {
     showAddAgentErr('');
-    $('addagent-link').value = '';
-    $('addagent-text').value = '';
+    const ta = $('addagent-text');
+    ta.value = '';
+    ta.style.height = '';
     $('addagent-modal').classList.remove('hidden');
     const origin = new URL(joinURL || location.href).origin;
     try {
       // seven days: a member cannot list or revoke, so their links must not live forever
       const inv = await api('/api/v1/invites', { method: 'POST', body: { bind_owner: true, expires_in_seconds: 7 * 86400 } });
-      $('addagent-link').value = inv.join_url;
-      $('addagent-text').value = agentSetupText(origin, inv.join_url, inv.access || null);
-      $('addagent-link-copy').focus();
+      ta.value = agentSetupText(origin, inv.join_url, inv.access || null);
+      // grow to the text so the common case needs no scrolling (css caps the height)
+      ta.style.height = 'auto';
+      ta.style.height = Math.min(ta.scrollHeight + 2, 560) + 'px';
+      $('addagent-text-copy').focus();
     } catch (e) { showAddAgentErr(e.message); }
   };
   const closeAddAgent = () => $('addagent-modal').classList.add('hidden');
@@ -3434,19 +3449,10 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
   document.addEventListener('keydown', (ev) => {
     if (ev.key === 'Escape' && !$('addagent-modal').classList.contains('hidden')) closeAddAgent();
   });
-  $('addagent-link-copy').onclick = async () => flashCopy($('addagent-link-copy'), await copyText($('addagent-link').value), 'Copy');
-  $('addagent-text-copy').onclick = async () => flashCopy($('addagent-text-copy'), await copyText($('addagent-text').value), 'Copy instructions');
+  $('addagent-text-copy').onclick = async () => flashCopy($('addagent-text-copy'), await copyText($('addagent-text').value), 'Copy instructions', 'Copied');
 
-  $('invite-agent-copy').onclick = async () => {
-    const origin = new URL(joinURL || location.href).origin;
-    // a bound link: the joining agent gets badged as yours, server-verified
-    let inv;
-    try { inv = await api('/api/v1/invites', { method: 'POST', body: { bind_owner: true } }); }
-    catch (e) { showInviteErr(e.message); return; }
-    const ok = await copyText(agentInviteText(origin, inv.join_url, inv.access || null));
-    flashCopy($('invite-agent-copy'), ok, 'Copy agent instructions');
-    await renderInvites();
-  };
+  // the invite modal points at Add an agent instead of duplicating it
+  $('invite-open-addagent').onclick = () => { closeInviteModal(); openAddAgent(); };
 
   $('new-channel').onclick = async () => {
     const name = prompt('Channel name (lowercase, a-z 0-9 - _):');
@@ -3473,7 +3479,7 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
       await refreshRoom();
       if (current && current.id === ch.id) {
         current = channels.find((c) => c.id === ch.id) || current;
-        $('channel-title').textContent = '# ' + current.name;
+        setChannelTitle(current);
       }
     } catch (e) { alert('Make public failed: ' + e.message); }
   };
@@ -3508,16 +3514,21 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
           <span class="browse-topic">${esc(ch.topic || '')}</span>
           <span class="browse-count">${n} member${n === 1 ? '' : 's'}</span>
         </div>`;
+      // note and button share one fixed-width column so rows never jog
+      const action = document.createElement('span');
+      action.className = 'browse-action';
+      row.appendChild(action);
       if (ch.member) {
         const note = document.createElement('span');
         note.className = 'browse-member-note';
         note.textContent = 'already a member';
-        row.appendChild(note);
+        action.appendChild(note);
         box.appendChild(row);
         return;
       }
       const join = document.createElement('button');
-      join.className = 'browse-join';
+      join.type = 'button';
+      join.className = 'browse-join btn-sm';
       join.textContent = 'Join';
       join.onclick = async () => {
         join.disabled = true;
@@ -3529,7 +3540,7 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
           await openBrowse(); // refresh: the joined channel flips to a member row
         } catch (e) { alert(e.message); join.disabled = false; }
       };
-      row.appendChild(join);
+      action.appendChild(join);
       box.appendChild(row);
     });
   };

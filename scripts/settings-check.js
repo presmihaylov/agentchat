@@ -74,13 +74,14 @@ const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR
   // kills the original, so the old code is dead and the new link enters
   await openInviteModal(page);
   await page.waitForSelector('#invite-list .invite-item', { timeout: 8000 });
-  assert((await page.$$eval('#invite-list .invite-item input', (els) => els.map((e) => e.value))).join() === room.invite, 'first link is not the workspace link');
+  assert((await page.$$eval('#invite-list .invite-item', (els) => els.map((e) => e.dataset.url))).join() === room.invite, 'first link is not the workspace link');
   await page.click('#invite-new-submit');
   await page.waitForFunction(() => document.querySelectorAll('#invite-list .invite-item').length === 2, { timeout: 8000 });
-  const newLink = await page.$$eval('#invite-list .invite-item input', (els) => els[1].value);
+  const newLink = await page.$$eval('#invite-list .invite-item', (els) => els[0].dataset.url); // newest first
   assert(/\/join\/inv-/.test(newLink) && newLink !== room.invite, 'new link: ' + newLink);
   await page.screenshot({ path: path.join(OUT, 'invite-links.png') });
-  await page.click('#invite-list .invite-item .invite-revoke');
+  // revoke the original workspace link (the list is newest first)
+  await page.$$eval('#invite-list .invite-item', (els, u) => els.find((e) => e.dataset.url === u).querySelector('.invite-revoke').click(), room.invite);
   await page.waitForFunction(() => document.querySelectorAll('#invite-list .invite-item').length === 1, { timeout: 8000 });
   await page.keyboard.press('Escape');
   const bobCtx = await browser.createBrowserContext();

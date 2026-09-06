@@ -32,10 +32,13 @@ const clickLeaf = (page, snippetPrefix) => page.evaluate((pre) => {
     .find((x) => (x.querySelector('.t-snippet') || {}).textContent.startsWith(pre));
   li.click();
 }, snippetPrefix);
-const isAccent = (bg) => {
-  const m = bg.match(/\d+/g);
-  return m && Number(m[2]) > Number(m[0]) && Number(m[2]) > 120; // bluish accent fill
+// the selected row is a neutral, translucent fill (Discord-like), never the accent blue
+const isNeutral = (bg) => {
+  const m = (bg.match(/[\d.]+/g) || []).map(Number);
+  return m.length === 4 && Math.max(m[0], m[1], m[2]) - Math.min(m[0], m[1], m[2]) <= 12 && m[3] > 0 && m[3] < 1;
 };
+const activeCount = (page) => page.$$eval('#channel-list li.active', (els) => els.length);
+const channelActive = (page) => page.$$eval('#channel-list li:not(.thread-leaf)', (els) => els.filter((li) => li.classList.contains('active')).length);
 
 (async () => {
   const created = await newRoom(SERVER, 'thread active check');
@@ -76,7 +79,10 @@ const isAccent = (bg) => {
   const bravo = ls.find((l) => l.snippet.startsWith('bravo'));
   if (!alpha.active) throw new Error('alpha leaf should be active: ' + JSON.stringify(ls));
   if (bravo.active) throw new Error('bravo leaf should stay inactive: ' + JSON.stringify(ls));
-  if (!isAccent(alpha.bg)) throw new Error('active leaf should have an accent fill, got ' + alpha.bg);
+  if (!isNeutral(alpha.bg)) throw new Error('active leaf should have a neutral translucent fill, got ' + alpha.bg);
+  // only the thread row is selected: the parent channel row goes plain
+  if (await channelActive(page) !== 0) throw new Error('parent channel row stays highlighted while a thread is open');
+  if (await activeCount(page) !== 1) throw new Error('expected exactly one selected row, got ' + await activeCount(page));
   // Maya FR: the highlight is rounded on every corner, not square down its left
   // edge, and translucent enough to read as a highlight over the sidebar
   if (/^0px/.test(alpha.radius) || !/^\d+px$/.test(alpha.radius)) throw new Error('leaf highlight is not evenly rounded: ' + alpha.radius);

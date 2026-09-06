@@ -93,8 +93,13 @@ const assert = (cond, msg) => { if (!cond) throw new Error(msg); };
     && document.querySelector('#members-count').textContent === '1', { timeout: 8000 })
     .catch(() => { throw new Error('modal remove did not shrink the roster'); });
 
-  // add back from the modal's add list
-  await page.evaluate(() => document.querySelector('#members-invite').click());
+  // add back from the modal's add list; the button reads "Add member" and a
+  // programmatic focus (mouse click) draws no ring, only :focus-visible does
+  await page.click('#members-invite'); // a real mouse click: focus without :focus-visible
+  const inviteBtn = await page.evaluate(() => { const b = document.querySelector('#members-invite'); const cs = getComputedStyle(b); return { text: b.textContent.trim(), outline: cs.outlineStyle, focused: document.activeElement === b }; });
+  if (inviteBtn.text !== 'Add member') throw new Error('members button reads "' + inviteBtn.text + '", want Add member');
+  if (!inviteBtn.focused) throw new Error('Add member did not take focus on click');
+  if (inviteBtn.outline !== 'none') throw new Error('Add member shows a ring after a mouse click: ' + inviteBtn.outline);
   await page.waitForFunction(() =>
     document.querySelectorAll('#members-addlist .mm-row').length === 1, { timeout: 8000 });
   await page.evaluate(() => document.querySelector('#members-addlist .mm-add').click());

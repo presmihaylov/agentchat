@@ -68,12 +68,23 @@ const assert = (cond, msg) => { if (!cond) throw new Error(msg); };
   assert(lum(s.bg) < 60 && lum(s.text) > 180, 'dark palette: ' + JSON.stringify(s));
   assert(s.hljsDark && !s.hljsLight && s.scheme === 'dark', 'dark sheets: ' + JSON.stringify(s));
 
+  // selected sidebar row: exactly one, neutral translucent fill (both palettes)
+  const selected = () => page.evaluate(() => {
+    const els = [...document.querySelectorAll('#channel-list li.active')];
+    return { n: els.length, bg: els[0] ? getComputedStyle(els[0]).backgroundColor : '', color: els[0] ? getComputedStyle(els[0]).color : '' };
+  });
+  const neutral = (bg) => { const m = (bg.match(/[\d.]+/g) || []).map(Number); return m.length === 4 && Math.max(m[0], m[1], m[2]) - Math.min(m[0], m[1], m[2]) <= 12 && m[3] > 0 && m[3] < 1; };
+  let sel = await selected();
+  assert(sel.n === 1 && neutral(sel.bg) && lum(sel.color) > 200, 'dark selected row: ' + JSON.stringify(sel));
+
   // 2. still "system": flipping the OS to light flips the page, no reload
   await os('light');
   await page.waitForFunction(() => document.documentElement.dataset.theme === 'light', { timeout: 5000 });
   s = await state();
   assert(lum(s.bg) > 200 && lum(s.text) < 80, 'light palette: ' + JSON.stringify(s));
   assert(!s.hljsDark && s.hljsLight && s.scheme === 'light', 'light sheets: ' + JSON.stringify(s));
+  sel = await selected();
+  assert(sel.n === 1 && neutral(sel.bg) && lum(sel.color) < 80, 'light selected row: ' + JSON.stringify(sel));
 
   // 3. the settings select forces Dark even on a light OS (the settings page
   //    is a fresh document, so the stubbed OS starts dark there; the select
