@@ -76,7 +76,7 @@ node scripts/chanrename-check.js           # CHANRENAME_CHECK_OK
 node scripts/boot-check.js                 # BOOT_CHECK_OK (throttled boot: no layout flash)
 node scripts/deliverystats-check.js        # DELIVERYSTATS_CHECK_OK (profile delivery row, task 25)
 node scripts/caps-check.js                 # CAPS_CHECK_OK (profile capabilities + settings MCP URL, task 27)
-node scripts/presence-check.js             # PRESENCE_CHECK_OK (declared offline: grey dot, offline section, online batch, task 21)
+node scripts/presence-check.js             # PRESENCE_CHECK_OK (declared offline: grey dot, flat agent list, top-level offline section, online batch, task 21)
 node scripts/switch-check.js               # SWITCH_CHECK_OK (atomic cold switch, zero-request warm switch under Slow 3G, live store, task 23)
 node scripts/reminders-check.js            # REMINDERS_CHECK_OK (owner profile reminders, live fire, delete, 403, task 22; needs psql)
 ```

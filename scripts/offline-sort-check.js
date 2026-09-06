@@ -54,19 +54,14 @@ async function api(path, opts = {}) {
     const li = [...document.querySelectorAll('#participant-list li')].find((x) => (x.querySelector('.pname') || {}).textContent === name);
     (li.querySelector('.p-toggle') || li).click(); // the chevron expands; the row itself opens a profile
   }, 'boss');
-  // the offline marker now nests INSIDE the expanded tree; offline agents hide behind it.
-  await page.waitForSelector('#participant-list li.offline-toggle.participant-leaf', { timeout: 4000 });
-  await page.evaluate(() => {
-    document.querySelector('#participant-list li.offline-toggle.participant-leaf').click();
-  });
-
   // read the rendered order of H's four owned agents (nested rows, in DOM order).
   await page.waitForFunction(() => {
     const names = [...document.querySelectorAll('#participant-list li .pname')].map((e) => e.textContent);
     return ['on-alpha', 'off-bravo', 'on-charlie', 'off-delta'].every((n) => names.includes(n));
   }, { timeout: 4000 });
 
-  // include the divider row so we can assert offline agents render BELOW it.
+  // a human's agents are ONE flat list: no divider and no second toggle
+  // inside the tree, just online rows first and offline rows after.
   const rows = await page.$$eval('#participant-list li', (lis) => lis
     .filter((li) => li.querySelector('.pname') || li.classList.contains('offline-toggle'))
     .map((li) => ({
@@ -74,13 +69,10 @@ async function api(path, opts = {}) {
       offline: li.classList.contains('offline'),
       divider: li.classList.contains('offline-toggle'),
     })));
-  const dividerIdx = rows.findIndex((r) => r.divider);
-  if (dividerIdx === -1) throw new Error('no offline divider row rendered');
-  rows.forEach((r, i) => {
-    if (r.divider || !['on-alpha', 'off-bravo', 'on-charlie', 'off-delta'].includes(r.name)) return;
-    if (r.offline && i < dividerIdx) throw new Error('offline agent above the divider: ' + r.name);
-    if (!r.offline && i > dividerIdx) throw new Error('online agent below the divider: ' + r.name);
-  });
+  const first = rows.findIndex((r) => r.name === 'on-alpha');
+  const last = rows.map((r) => r.name).lastIndexOf('off-delta');
+  const nested = rows.slice(first, last + 1).find((r) => r.divider);
+  if (nested) throw new Error('a divider or sub-toggle is back inside a human\'s agent list');
 
   // isolate the four owned agents in render order.
   const agentNames = ['on-alpha', 'off-bravo', 'on-charlie', 'off-delta'];
@@ -90,7 +82,7 @@ async function api(path, opts = {}) {
   // every online agent must precede every offline agent in the parent's list.
   const firstOffline = seq.findIndex((r) => r.offline);
   const lastOnline = seq.map((r) => r.offline).lastIndexOf(false);
-  if (firstOffline === -1) throw new Error('no offline agents rendered (offline toggle did not reveal them): ' + JSON.stringify(order));
+  if (firstOffline === -1) throw new Error('no offline agents rendered in the flat list: ' + JSON.stringify(order));
   if (lastOnline > firstOffline) throw new Error('offline agent mixed above an online one: ' + JSON.stringify(order));
   // sanity: the two online and two offline all present.
   const onlineCount = seq.filter((r) => !r.offline).length;

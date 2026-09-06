@@ -45,31 +45,44 @@ let step = 'start';
     const li = [...document.querySelectorAll('#participant-list li')].find((x) => (x.querySelector('.pname') || {}).textContent === 'boss');
     (li.querySelector('.p-toggle') || li).click();
   });
-  // rowOf: {online dot, below the divider} for one agent, revealing the offline section first
-  const rowOf = (name) => page.evaluate((n) => {
-    const t = document.querySelector('#participant-list li.offline-toggle.participant-leaf');
-    if (t && t.textContent.includes('offline') && !t.textContent.includes('(0)') && !t.dataset.opened) { t.dataset.opened = '1'; t.click(); }
+  // the kid list under a human is ONE flat list: online agents first,
+  // then the offline ones with a grey dot. No sub-header, no second toggle.
+  const kidRows = () => page.evaluate(() => {
     const lis = [...document.querySelectorAll('#participant-list li')];
-    const li = lis.find((x) => (x.querySelector('.pname') || {}).textContent === n);
-    if (!li) return null;
-    const dividerIdx = lis.findIndex((x) => x.classList.contains('offline-toggle') && x.classList.contains('participant-leaf'));
-    const dot = li.querySelector('.dot');
-    return { online: !!(dot && dot.classList.contains('online')), offlineClass: li.classList.contains('offline'), belowDivider: dividerIdx >= 0 && lis.indexOf(li) > dividerIdx };
-  }, name);
+    const start = lis.findIndex((x) => (x.querySelector('.pname') || {}).textContent === 'boss');
+    const rows = [];
+    // stop at the next top-level row, but keep any divider found among the kids
+    // so a re-added sub-header shows up as a row instead of truncating the scan
+    for (let i = start + 1; i < lis.length; i++) {
+      const li = lis[i];
+      if (!li.classList.contains('participant-leaf') && !li.classList.contains('offline-toggle')) break;
+      if (li.classList.contains('addagent-row')) continue;
+      const dot = li.querySelector('.dot');
+      rows.push({ name: (li.querySelector('.pname') || {}).textContent, online: !!(dot && dot.classList.contains('online')), divider: li.classList.contains('offline-toggle') });
+    }
+    return rows;
+  });
+  // flat = no divider among the kids, and every online kid before every offline one
+  const flat = (rows) => {
+    if (rows.some((r) => r.divider)) throw new Error('a divider came back inside the kid list: ' + JSON.stringify(rows));
+    const firstOffline = rows.findIndex((r) => !r.online);
+    if (firstOffline >= 0 && rows.slice(firstOffline).some((r) => r.online)) throw new Error('kids are not online-first: ' + JSON.stringify(rows));
+  };
   const waitRow = async (name, want) => {
     const until = Date.now() + 6000;
-    let row = null;
+    let rows = [];
     while (Date.now() < until) {
-      row = await rowOf(name);
-      if (row && row.online === want.online && row.belowDivider === want.belowDivider) return row;
+      rows = await kidRows();
+      const row = rows.find((r) => r.name === name);
+      if (row && row.online === want.online) { flat(rows); return row; }
       await new Promise((r) => setTimeout(r, 200));
     }
-    throw new Error(`${name}: want ${JSON.stringify(want)}, got ${JSON.stringify(row)} (step ${step})`);
+    throw new Error(`${name}: want ${JSON.stringify(want)}, got ${JSON.stringify(rows)} (step ${step})`);
   };
 
   step = 'both online';
-  await waitRow('parker', { online: true, belowDivider: false });
-  await waitRow('stayer', { online: true, belowDivider: false });
+  await waitRow('parker', { online: true });
+  await waitRow('stayer', { online: true });
   await shot('presence-before');
 
   step = 'parker offline';
@@ -80,9 +93,10 @@ let step = 'start';
   const roster = await api('/api/v1/participants', { token: H.token });
   const p = roster.participants.find((x) => x.name === 'parker');
   if (!p || p.online !== false || p.presence !== 'offline' || p.declared_offline !== true) throw new Error('roster JSON: ' + JSON.stringify(p));
-  await waitRow('parker', { online: false, belowDivider: true });
-  await waitRow('stayer', { online: true, belowDivider: false });
-  await page.evaluate(() => { const t = document.querySelector('#participant-list li.offline-toggle.participant-leaf'); if (t && !document.querySelector('#participant-list li.offline .pname')) t.click(); });
+  await waitRow('parker', { online: false });
+  await waitRow('stayer', { online: true });
+  const order = await kidRows();
+  if (order.length !== 2 || order[0].name !== 'stayer' || order[1].name !== 'parker') throw new Error('offline kid must sit last in the same list: ' + JSON.stringify(order));
   await new Promise((r) => setTimeout(r, 300));
   await shot('presence-offline');
 
@@ -92,8 +106,21 @@ let step = 'start';
   step = 'parker online';
   const on = await api('/api/v1/me/presence', { method: 'POST', token: parker.token, body: { status: 'online' } });
   if (on.was_offline !== true || on.events.length !== 1 || on.events[0].payload.body !== '@parker while you were parked') throw new Error('online batch: ' + JSON.stringify(on));
-  await waitRow('parker', { online: true, belowDivider: false });
+  await waitRow('parker', { online: true });
   await shot('presence-online');
+
+  step = 'top-level offline section';
+  // the one divider that stays: a human with no online agent sinks below it
+  const ghost = await api('/api/v1/rooms/join', { method: 'POST', body: { invite_code: code, name: 'ghost', avatar: '\u{1F47B}', is_human: true } });
+  await api('/api/v1/me/offline', { method: 'POST', token: ghost.token });
+  await page.waitForFunction(() => {
+    const t = [...document.querySelectorAll('#participant-list li.offline-toggle')];
+    const shown = [...document.querySelectorAll('#participant-list li .pname')].some((e) => e.textContent === 'ghost');
+    return t.length === 1 && /offline \(1\)/.test(t[0].textContent) && !shown;
+  }, { timeout: 8000 });
+  await page.evaluate(() => document.querySelector('#participant-list li.offline-toggle').click());
+  await page.waitForFunction(() => [...document.querySelectorAll('#participant-list li .pname')].some((e) => e.textContent === 'ghost'), { timeout: 4000 });
+  await shot('presence-root-offline');
 
   await browser.close();
   console.log('PRESENCE_CHECK_OK');

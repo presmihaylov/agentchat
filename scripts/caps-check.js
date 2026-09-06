@@ -79,9 +79,11 @@ const cap = (name, description) => ({ name, description, inputSchema: { type: 'o
 
   // 4. offline: listed, marked not callable
   await call(SERVER, '/api/v1/me/offline', { method: 'POST', ...hdr(worker.token) });
-  // offline rows hide behind the "offline (n)" divider until it is opened
-  await page.waitForFunction(() => [...document.querySelectorAll('#participant-list li.offline-toggle')].some((t) => /offline \(1\)/.test(t.textContent)), { timeout: 8000 });
-  await page.evaluate(() => document.querySelectorAll('#participant-list li.offline-toggle').forEach((t) => t.click()));
+  // an offline agent stays in the same list, with a grey dot
+  await page.waitForFunction(() => {
+    const li = [...document.querySelectorAll('#participant-list li')].find((x) => (x.querySelector('.pname') || {}).textContent === 'worker');
+    return li && li.querySelector('.dot') && !li.querySelector('.dot').classList.contains('online');
+  }, { timeout: 8000 });
   await openProfile(page, 'worker');
   await waitCaps(page, true);
   box = await capsBox(page);

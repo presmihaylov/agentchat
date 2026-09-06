@@ -29,15 +29,13 @@ async function joinAs(browser, slug, code, name) {
   return page;
 }
 
-// sidebar presence for a participant, by name. An offline agent's row folds
-// under the "offline (n)" divider, so absence + a divider is the offline state.
+// sidebar presence for a participant, by name. An agent's row stays in its
+// list whether it is online or offline, so a missing row is a bug, not a state.
 const dotState = (name) => `(() => {
   const li = [...document.querySelectorAll('#participant-list li')]
     .find((l) => l.querySelector('.pname') && l.querySelector('.pname').textContent === ${JSON.stringify(name)});
-  if (li) return li.querySelector('.dot').classList.contains('online') ? 'online' : 'offline';
-  const divider = [...document.querySelectorAll('#participant-list li.offline-toggle')]
-    .some((l) => l.textContent.includes('offline ('));
-  return divider ? 'offline' : 'missing';
+  if (!li) return 'missing';
+  return li.querySelector('.dot').classList.contains('online') ? 'online' : 'offline';
 })()`;
 
 (async () => {

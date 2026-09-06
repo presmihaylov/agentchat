@@ -1135,9 +1135,9 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
     });
   };
 
-  // per-section offline reveal: keys are a human's id, 'unowned', or 'root'.
+  // the top-level offline section's reveal state.
   // in-memory only — collapses back on reload by design.
-  const offlineOpen = new Set();
+  let offlineOpen = false;
 
   const showProfile = (p) => {
     const slot = $('profile-avatar');
@@ -1325,28 +1325,26 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
     const ownerOf = (a) => (a.owner_id && humans.find((h) => h.id === a.owner_id)) ? a.owner_id : null;
     const expanded = expandedSet();
 
-    // "▸ offline (n)" divider row inside the tree: offline rows render BELOW it,
-    // and only when its section is toggled open. leaf=true indents it to agent depth.
-    const offlineDivider = (key, count, leaf) => {
+    // the one "▸ offline (n)" divider, at the top level: fully-offline humans
+    // render BELOW it, and only when it is toggled open.
+    const offlineDivider = (count) => {
       const t = document.createElement('li');
-      t.className = 'offline-toggle' + (leaf ? ' participant-leaf' : '');
-      t.innerHTML = `${offlineOpen.has(key) ? ICON.chevronDown : ICON.chevronRight} offline (${count})`;
+      t.className = 'offline-toggle';
+      t.innerHTML = `${offlineOpen ? ICON.chevronDown : ICON.chevronRight} offline (${count})`;
       t.onclick = () => {
-        offlineOpen.has(key) ? offlineOpen.delete(key) : offlineOpen.add(key);
+        offlineOpen = !offlineOpen;
         renderParticipants();
       };
       ul.appendChild(t);
     };
 
-    // renders a parent's kid list: online kids, then the offline divider,
-    // then (if open) the offline kids beneath it.
-    const renderKids = (key, kids) => {
+    // renders a parent's kid list as ONE flat list: online kids first, then the
+    // offline ones with their grey dot. No sub-header and no second toggle
+    // inside a parent: only the top-level offline section collapses.
+    const renderKids = (kids) => {
       const on = kids.filter((a) => a.online);
       const off = kids.filter((a) => !a.online);
-      on.forEach((a) => ul.appendChild(participantLi(a, true)));
-      if (off.length === 0) return;
-      offlineDivider(key, off.length, true);
-      if (offlineOpen.has(key)) off.forEach((a) => ul.appendChild(participantLi(a, true)));
+      [...on, ...off].forEach((a) => ul.appendChild(participantLi(a, true)));
     };
 
     // an offline human with an online agent stays above the root divider so the
@@ -1376,7 +1374,7 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
         onToggle: hasKids ? () => toggleHuman(h.id) : null,
       }));
       if (collapsed) return;
-      renderKids(h.id, kids);
+      renderKids(kids);
       if (mine(h)) addAgentRow();
     };
 
@@ -1388,13 +1386,13 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
       g.className = 'group-label';
       g.textContent = 'unowned agents';
       ul.appendChild(g);
-      renderKids('unowned', ownerless);
+      renderKids(ownerless);
     }
 
     const sunkHumans = humans.filter((h) => sunk(h, kidsOf(h)));
     if (sunkHumans.length === 0) return;
-    offlineDivider('root', sunkHumans.length, false);
-    if (offlineOpen.has('root')) sunkHumans.forEach(renderHuman);
+    offlineDivider(sunkHumans.length);
+    if (offlineOpen) sunkHumans.forEach(renderHuman);
   };
 
   // the unread total behind the tab title and the favicon pill (task 18):
