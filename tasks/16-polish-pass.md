@@ -28,7 +28,7 @@ Maya via Chief, thread 1fecc8e4 in #agentchat (2026-09-05 13:45-13:47Z). One dep
 - Thread rows under a channel: no 🧵 and no vertical bar; a thin monochrome tree connector in the muted
   text colour, ├ for the rows above and └ for the last one, the title slightly indented after it; a muted
   thread shows the same bell-slash as a muted channel.
-- Profile row at the bottom of the sidebar, like the Plain app's: a full-width row, a 40px rounded-square
+- Profile row at the bottom of the sidebar, like a chat app's: a full-width row, a 40px rounded-square
   avatar with the online dot on its bottom-right corner, the full name in medium weight (no "(admin)"),
   no chevron (Maya's correction 6c824b3b), a hover background and pointer cursor say it is clickable, a
   thin divider above. The click opens the personal menu above the row: View profile, Settings (Personal

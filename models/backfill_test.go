@@ -37,7 +37,7 @@ func TestBackfillUsers(t *testing.T) {
 	defer conn.Close(ctx)
 
 	// seed at 25
-	const mayaHash, samHash = "$2a$04$preshashpreshashpreshash", "$2a$04$samhashsamhashsamhashsam"
+	const mayaHash, samHash = "$2a$04$mayahashmayahashmayahash", "$2a$04$samhashsamhashsamhashsam"
 	maya, err := s.CreatePasswordUser(ctx, "maya", "Maya", []byte(mayaHash))
 	if err != nil {
 		t.Fatal(err)
@@ -58,7 +58,7 @@ func TestBackfillUsers(t *testing.T) {
 	mariaLit := human(roomA.ID, "maria-chen-2", nil) // literal '-2': keeps it, maria2 moves to '-3'
 	eve := human(roomA.ID, "Eve", nil)
 	samRow := human(roomA.ID, "Sam", nil)
-	mayaUpper := human(roomA.ID, "PRES", nil) // same-room clash with the pre-linked maya
+	mayaUpper := human(roomA.ID, "MAYA", nil) // same-room clash with the pre-linked maya
 	hanaA := human(roomA.ID, "Hana", nil)
 	_, botHash := secrets.NewToken()
 	bot := legacyParticipant(t, s, roomA.ID, "bot", "🤖", false, botHash, nil, nil)

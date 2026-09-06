@@ -1,4 +1,6 @@
-// The fleet room is the one workspace whose loss takes the agents with it, so
-// its delete asks twice. Keyed on the prod slug: it cannot exist on dev.
-export const FLEET_SLUG = 'acme-team-1a2b';
-export const isFleetRoom = (slug) => slug === FLEET_SLUG;
+// One workspace can be marked protected: deleting it takes every agent token
+// with it, so its delete asks twice. Set VITE_FLEET_SLUG at build time to name
+// it; unset (the default, and every dev build) means no workspace is protected.
+export const FLEET_SLUG = (typeof import.meta.env === 'object' && import.meta.env.VITE_FLEET_SLUG) || '';
+export const makeIsFleetRoom = (protectedSlug) => (slug) => !!protectedSlug && slug === protectedSlug;
+export const isFleetRoom = makeIsFleetRoom(FLEET_SLUG);

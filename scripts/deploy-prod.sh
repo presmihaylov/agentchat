@@ -4,6 +4,7 @@
 # The ssh host and the health URL come from scripts/deploy-prod.env (gitignored):
 #   AGENTCHAT_PROD_HOST=<ssh host>
 #   AGENTCHAT_PROD_HEALTH_URL=http://<prod host>:<port>/healthz
+#   VITE_FLEET_SLUG=<slug of the workspace whose delete asks twice>   (optional)
 set -euo pipefail
 
 ENV_FILE="$(dirname "$0")/deploy-prod.env"
@@ -17,7 +18,7 @@ trap 'rm -rf "$WORK"' EXIT
 # build from a clean checkout so uncommitted local changes never reach prod
 git archive "$COMMIT" | tar -x -C "$WORK"
 echo "building agentchatd @ $COMMIT..."
-(cd "$WORK/web" && npm ci --silent && npm run build --silent)
+(cd "$WORK/web" && npm ci --silent && VITE_FLEET_SLUG="${VITE_FLEET_SLUG:-}" npm run build --silent)
 (cd "$WORK" && CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -o "agentchatd-$COMMIT" ./cmd/agentchatd)
 
 # dump the prod db before anything moves, so a bad migration has a restore

@@ -179,8 +179,8 @@ func TestInviteLinksMigration(t *testing.T) {
 	_, hash := secrets.NewToken()
 	chief := legacyParticipant(t, s, room.ID, "chief", "🤖", false, hash, &maya.ID, nil)
 	// owner-scoped invites of the old shape: one by the human, one by the agent
-	byPres, byChief := secrets.InviteCode(), secrets.InviteCode()
-	for _, row := range [][2]string{{byPres, maya.ID}, {byChief, chief.ID}} {
+	byMaya, byChief := secrets.InviteCode(), secrets.InviteCode()
+	for _, row := range [][2]string{{byMaya, maya.ID}, {byChief, chief.ID}} {
 		if _, err := pool.Exec(ctx, `INSERT INTO invites (secret, room_id, issuer_id) VALUES ($1, $2, $3)`, row[0], room.ID, row[1]); err != nil {
 			t.Fatal(err)
 		}
@@ -204,7 +204,7 @@ func TestInviteLinksMigration(t *testing.T) {
 	}
 
 	// the old owner-scoped invites still join, and still bind
-	for _, c := range []struct{ token, owner, name string }{{byPres, maya.ID, "maya-bot"}, {byChief, maya.ID, "chief-bot"}} {
+	for _, c := range []struct{ token, owner, name string }{{byMaya, maya.ID, "maya-bot"}, {byChief, maya.ID, "chief-bot"}} {
 		v, _, err := s.InviteByToken(ctx, c.token)
 		if err != nil || v.Status != "active" || v.RevokedAt != nil || v.Uses != 0 || v.OwnerID == nil || *v.OwnerID != c.owner {
 			t.Fatalf("legacy invite %s: %v %+v", c.name, err, v)

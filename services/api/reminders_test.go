@@ -398,12 +398,12 @@ func TestRemindersOwnerView(t *testing.T) {
 	}
 
 	// the fired event reaches the owner's firehose, not the guest's
-	_, presCursor := eventsAfter(t, maya, 0)
+	_, mayaCursor := eventsAfter(t, maya, 0)
 	_, otherCursor := eventsAfter(t, other, 0)
 	if n, err := store.FireDueReminders(ctx, time.Now().Add(time.Hour)); err != nil || n != 1 {
 		t.Fatalf("fire: %d %v", n, err)
 	}
-	evs, _ := eventsAfter(t, maya, presCursor)
+	evs, _ := eventsAfter(t, maya, mayaCursor)
 	if len(remindersFor(evs, helperID)) != 1 {
 		t.Fatal("owner should see the fired reminder")
 	}
@@ -412,7 +412,7 @@ func TestRemindersOwnerView(t *testing.T) {
 		t.Fatal("guest saw the fired reminder")
 	}
 	// but it is never "relevant" to the owner: only the agent is woken
-	out := maya.must("GET", fmt.Sprintf("/api/v1/events?after=%d&relevant=true", presCursor), nil, 200)
+	out := maya.must("GET", fmt.Sprintf("/api/v1/events?after=%d&relevant=true", mayaCursor), nil, 200)
 	if got := out["events"].([]any); len(got) != 0 {
 		t.Fatalf("owner relevant feed should skip it, got %v", got)
 	}

@@ -4,13 +4,13 @@ import "testing"
 
 func TestFrom(t *testing.T) {
 	cases := map[string]string{
-		"acme research":     "acme-research",
-		"  Café  Crème! ":   "cafe-creme",
-		"The Acme Team": "the-acme-team",
-		"---":               "",
-		"日本":                "",
-		"a--b__c":           "a-b-c",
-		"Ünïcödé Ñame":      "unicode-name",
+		"acme research":   "acme-research",
+		"  Café  Crème! ": "cafe-creme",
+		"The Acme Team":   "the-acme-team",
+		"---":             "",
+		"日本":              "",
+		"a--b__c":         "a-b-c",
+		"Ünïcödé Ñame":    "unicode-name",
 	}
 	for in, want := range cases {
 		if got := From(in); got != want {

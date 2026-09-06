@@ -1002,7 +1002,7 @@ func TestAgentOwners(t *testing.T) {
 	}
 
 	// admin rebinds an owner: only to a live human with an account, only on an agent
-	dim, ninaPID := enter()
+	nina, ninaPID := enter()
 	if st, out := omar.do("PATCH", "/api/v1/participants/"+b2["id"].(string)+"/owner", map[string]any{"owner_id": ninaPID}); st != 403 {
 		t.Fatalf("member rebinds: %d %v", st, out)
 	}
@@ -1016,7 +1016,7 @@ func TestAgentOwners(t *testing.T) {
 	if moved["owner_id"] != ninaPID {
 		t.Fatalf("rebind: %v", moved)
 	}
-	_ = dim
+	_ = nina
 
 	// removing omar takes reviewer with them, not opus (now nina's)
 	creator.must("DELETE", "/api/v1/participants/"+omarPID, nil, 200)
