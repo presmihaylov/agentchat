@@ -21,7 +21,7 @@ const openMenu = async (page) => { await visible(page, '#ws-switcher-wrap'); awa
 
 // a 48x48 solid orange png, so the logo reads in the screenshots
 const png = () => {
-  const w = 48, h = 48, raw = Buffer.alloc((w * 3 + 1) * h);
+  const w = 300, h = 300, raw = Buffer.alloc((w * 3 + 1) * h);
   for (let y = 0; y < h; y++) { raw[y * (w * 3 + 1)] = 0; for (let x = 0; x < w; x++) raw.set([230, 120, 20], y * (w * 3 + 1) + 1 + x * 3); }
   const crc = (b) => { let c = -1; for (const v of b) { c ^= v; for (let k = 0; k < 8; k++) c = (c >>> 1) ^ (0xEDB88320 & -(c & 1)); } return (c ^ -1) >>> 0; };
   const chunk = (t, d) => { const len = Buffer.alloc(4); len.writeUInt32BE(d.length); const td = Buffer.concat([Buffer.from(t), d]); const c = Buffer.alloc(4); c.writeUInt32BE(crc(td)); return Buffer.concat([len, td, c]); };
@@ -33,6 +33,7 @@ const png = () => {
   fs.mkdirSync(OUT, { recursive: true });
   const logo = path.join(OUT, 'wsavatar-logo.png');
   fs.writeFileSync(logo, png());
+  const origBytes = fs.statSync(logo).size;
   const room = await newRoom(SERVER, 'avatar check');
   const slug = room.room.slug;
   const browser = await puppeteer.launch({
@@ -98,10 +99,29 @@ const png = () => {
   const after = await call(SERVER, '/api/v1/room', { token: adminSession, headers: { 'X-Workspace-Slug': slug } });
   assert(after.room.avatar_url && after.room.avatar_url.startsWith('/api/v1/attachments/'), 'avatar_url after upload: ' + JSON.stringify(after.room));
 
-  // 4. back in the room: the switcher and the menu show the image
+  // 3b. the chrome loads the resized copies, never the upload: the 96px
+  // settings mark took ?size=512, smaller than the original
+  const attURL = after.room.avatar_url;
+  const entries = (page) => page.evaluate((u) => performance.getEntriesByType('resource').filter((e) => e.name.includes(u)).map((e) => ({ q: new URL(e.name).search, bytes: e.transferSize, enc: e.encodedBodySize })), attURL);
+  let loads = await entries(admin);
+  lastStep = 'settings loads ' + JSON.stringify(loads);
+  assert(loads.some((e) => e.q === '?size=512') && !loads.some((e) => e.q === ''), 'settings mark: ' + JSON.stringify(loads));
+  assert(loads.every((e) => e.enc > 0 && e.enc < origBytes), 'variant not smaller than the upload (' + origBytes + '): ' + JSON.stringify(loads));
+
+  // 4. back in the room: the switcher and the menu show the image, from the
+  // ?size=128 copy; a reload serves it from the browser cache (no bytes moved)
   await backToRoom(admin);
   await waitMark(admin, '#rail-list .rail-item[aria-current]', true);
   await shot(admin, 'after.png');
+  loads = await entries(admin);
+  lastStep = 'rail loads ' + JSON.stringify(loads);
+  assert(loads.some((e) => e.q === '?size=128') && !loads.some((e) => e.q === ''), 'rail mark: ' + JSON.stringify(loads));
+  assert(loads.every((e) => e.enc > 0 && e.enc < origBytes), 'variant not smaller than the upload (' + origBytes + '): ' + JSON.stringify(loads));
+  await admin.reload({ waitUntil: 'domcontentloaded' });
+  await waitMark(admin, '#rail-list .rail-item[aria-current]', true);
+  loads = await entries(admin);
+  lastStep = 'reload loads ' + JSON.stringify(loads);
+  assert(loads.length && loads.every((e) => e.bytes === 0), 'reload refetched the mark: ' + JSON.stringify(loads));
 
   // 5. a member sees the image too, and Workspace settings shows it read-only
   const member = await newPage();

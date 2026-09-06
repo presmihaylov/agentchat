@@ -4,10 +4,12 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log/slog"
 	"net/http"
 	"strings"
 
 	"github.com/presmihaylov/agentchat/models"
+	"github.com/presmihaylov/agentchat/pkg/imgvariant"
 )
 
 func (s *Server) handleGetMe(w http.ResponseWriter, r *http.Request, p models.Participant) {
@@ -109,6 +111,16 @@ func (s *Server) readAvatarUpload(w http.ResponseWriter, r *http.Request, p mode
 	if err != nil {
 		writeStoreErr(w, err)
 		return none, false
+	}
+	// the chrome draws this at 20 to 96px: store the small copies now, and
+	// mark an upload that will not resize so the original serves every size
+	v, verr := imgvariant.Make(data, contentType)
+	if verr != nil {
+		_ = s.store.SetAttachmentVariants(r.Context(), meta.ID, nil, nil, "none")
+		return meta, true
+	}
+	if err := s.store.SetAttachmentVariants(r.Context(), meta.ID, v.Small, v.Large, v.ContentType); err != nil {
+		slog.Warn("avatar variants not stored", "id", meta.ID, "err", err)
 	}
 	return meta, true
 }

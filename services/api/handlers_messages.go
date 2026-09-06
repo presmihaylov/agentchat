@@ -618,15 +618,40 @@ func (s *Server) handleGetAttachment(w http.ResponseWriter, r *http.Request, p m
 		writeErr(w, http.StatusNotFound, "not found")
 		return
 	}
-	a, err := s.store.AttachmentByID(r.Context(), p.RoomID, id)
+	// ?size=128|512 serves the resized copy an avatar or logo got on upload;
+	// an upload that has none (older, non-image) falls back to the original
+	size := 0
+	switch r.URL.Query().Get("size") {
+	case "":
+	case "128":
+		size = models.VariantSmall
+	case "512":
+		size = models.VariantLarge
+	default:
+		writeErr(w, http.StatusBadRequest, "size must be 128 or 512")
+		return
+	}
+	// an attachment never changes under its id (a new avatar is a new id), so
+	// the browser may keep it for good; private keeps shared caches out
+	// (the byte count is in the tag so a later backfill invalidates a client
+	// that cached the original under ?size= before the variant existed)
+	a, err := s.store.AttachmentSized(r.Context(), p.RoomID, id, size)
 	if err != nil {
 		writeStoreErr(w, err)
+		return
+	}
+	etag := `"` + id + `-` + strconv.Itoa(size) + `-` + strconv.Itoa(len(a.Data)) + `"`
+	w.Header().Set("ETag", etag)
+	w.Header().Set("Cache-Control", "private, max-age=31536000, immutable")
+	if r.Header.Get("If-None-Match") == etag {
+		w.WriteHeader(http.StatusNotModified)
 		return
 	}
 	// never let uploaded content execute in the UI's origin
 	w.Header().Set("Content-Type", safeContentType(a.ContentType))
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Content-Disposition", `attachment; filename="`+sanitizeFilename(a.Filename)+`"`)
+	w.Header().Set("Content-Length", strconv.Itoa(len(a.Data)))
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(a.Data)
 }

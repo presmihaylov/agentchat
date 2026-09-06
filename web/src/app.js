@@ -320,23 +320,26 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
 
   // attachment images sit behind bearer auth — blob-fetch once, cache the
   // object URL per attachment id (avatars and inline images share this)
+  // size 128 or 512 asks for the copy the server resized on upload; avatars
+  // draw at 20 to 96px and the originals run to megabytes
   const blobURLs = {};
-  const blobURL = (attID) => {
-    if (!blobURLs[attID]) {
-      blobURLs[attID] = fetch('/api/v1/attachments/' + attID, { headers: authHeaders() })
+  const blobURL = (attID, size) => {
+    const key = attID + ':' + (size || 0);
+    if (!blobURLs[key]) {
+      blobURLs[key] = fetch('/api/v1/attachments/' + attID + (size ? '?size=' + size : ''), { headers: authHeaders() })
         .then((r) => (r.ok ? r.blob() : Promise.reject(new Error('image fetch failed'))))
         .then((b) => URL.createObjectURL(b))
-        .catch(() => { delete blobURLs[attID]; return null; });
+        .catch(() => { delete blobURLs[key]; return null; });
     }
-    return blobURLs[attID];
+    return blobURLs[key];
   };
-  const loadAvatarInto = (attID, img) => blobURL(attID).then((url) => { if (url) img.src = url; });
+  const loadAvatarInto = (attID, img, size) => blobURL(attID, size).then((url) => { if (url) img.src = url; });
   const avatarCore = (p, cls) => {
     if (p && p.avatar_attachment_id) {
       const img = document.createElement('img');
       img.className = cls + ' avatar-img';
       img.alt = p.name;
-      loadAvatarInto(p.avatar_attachment_id, img);
+      loadAvatarInto(p.avatar_attachment_id, img, cls === 'avatar-lg' ? 512 : 128);
       return img;
     }
     const span = document.createElement('span');

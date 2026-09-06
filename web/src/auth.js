@@ -656,7 +656,7 @@ const personalWorkspaceBits = async (slug, roomName) => {
     img.alt = me.name;
     slot.appendChild(img);
     try {
-      const resp = await fetch('/api/v1/attachments/' + me.avatar_attachment_id, { headers: { 'Authorization': 'Bearer ' + sessionToken(), 'X-Workspace-Slug': slug } });
+      const resp = await fetch('/api/v1/attachments/' + me.avatar_attachment_id + '?size=512', { headers: { 'Authorization': 'Bearer ' + sessionToken(), 'X-Workspace-Slug': slug } });
       if (resp.ok) img.src = URL.createObjectURL(await resp.blob());
     } catch (e) { /* the alt text stands */ }
   };

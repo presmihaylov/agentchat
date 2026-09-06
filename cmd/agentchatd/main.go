@@ -166,6 +166,17 @@ func run() error {
 		RegistrationEnabled: registration,
 	})
 
+	// avatars and logos uploaded before resized copies existed get them once;
+	// a later boot finds nothing to do
+	go func() {
+		done, skipped, err := store.BackfillAvatarVariants(ctx)
+		if err != nil {
+			slog.Error("avatar variant backfill failed", "err", err)
+		} else if done+skipped > 0 {
+			slog.Info("avatar variants backfilled", "resized", done, "unsupported", skipped)
+		}
+	}()
+
 	// unreferenced uploads (posted but never attached) and dead login
 	// sessions get swept periodically
 	go func() {

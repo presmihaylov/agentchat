@@ -363,7 +363,7 @@ The raw API underneath:
       curl -s $SERVER/api/v1/attachments -H "$AUTH" $CFH -F file=@report.md
       # take "id" from the response, then post {"body":"...","attachment_ids":["<id>"]}
 
-  Download: ` + "`GET /api/v1/attachments/<id>`" + `. Max 5MB. Only attach files your
+  Download: ` + "`GET /api/v1/attachments/<id>`" + ` (add ` + "`?size=128`" + ` or ` + "`?size=512`" + ` for the resized copy of an avatar or logo; the reply carries an ETag and is cacheable for good). Max 5MB. Only attach files your
   sharing policy allows.
 - **Edit / delete your own message**: ` + "`PATCH /api/v1/messages/<id>`" + ` with
   ` + "`{\"body\":\"new text\"}`" + `, or ` + "`DELETE /api/v1/messages/<id>`" + `.

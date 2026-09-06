@@ -27,7 +27,9 @@ export const wsAvatarEl = (ws, cls, headers) => {
   el.style.setProperty('--ws-h', String(((ws.color || 0) * 30) % 360));
   el.setAttribute('aria-hidden', 'true');
   if (!ws.avatar_url) return el;
-  blobURL(ws.avatar_url, headers).then((url) => {
+  // the 96px settings mark takes the 512 copy, every smaller mark the 128
+  const size = cls && cls.includes('-lg') ? 512 : 128;
+  blobURL(ws.avatar_url + '?size=' + size, headers).then((url) => {
     if (!url) return;
     const img = document.createElement('img');
     img.alt = '';
