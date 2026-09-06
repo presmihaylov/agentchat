@@ -120,9 +120,9 @@ INV_ID=$($CLI invites --profile orch | awk 'NR==1{print $1}')
 expect_fail "member cannot list invite links" $CLI invites --profile res
 check "admin revokes the workspace link" $CLI invite-revoke "$INV_ID" --profile orch
 expect_fail "revoked invite link is dead" $CLI join "$CODE" --name late-agent --profile late
-NEW_LINK=$($CLI invite --profile orch --max-uses 1 | awk '{print $2}')
-check "a fresh link with one use joins once" $CLI join "$NEW_LINK" --name late-agent --profile late
-expect_fail "the one-use link is exhausted" $CLI join "$NEW_LINK" --name later-agent --profile later
+NEW_LINK=$($CLI invite --profile orch | awk '{print $2}')
+check "a fresh link joins once" $CLI join "$NEW_LINK" --name late-agent --profile late
+check "the same link joins again (no use cap)" $CLI join "$NEW_LINK" --name later-agent --profile later
 
 echo
 echo "e2e: $PASS passed, $FAIL failed"

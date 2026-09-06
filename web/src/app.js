@@ -3465,9 +3465,8 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
   const showInviteErr = (msg) => { $('invite-error').textContent = msg; $('invite-error').classList.toggle('hidden', !msg); };
   const inviteMeta = (v) => {
     const parts = [v.created_by_name ? 'by ' + v.created_by_name : 'workspace link'];
-    parts.push(v.max_uses ? `${v.uses}/${v.max_uses} uses` : `${v.uses} ${v.uses === 1 ? 'use' : 'uses'}`);
+    parts.push(`${v.uses} ${v.uses === 1 ? 'use' : 'uses'}`);
     if (v.expires_at) parts.push((v.status === 'expired' ? 'expired ' : 'expires ') + new Date(v.expires_at).toLocaleDateString());
-    if (v.status === 'exhausted') parts.push('used up');
     return parts.join(' · ');
   };
   // the row shows a short token; the full url lives in dataset.url and the title
@@ -3545,7 +3544,7 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
     showInviteErr('');
     $('invite-new-submit').disabled = true;
     try {
-      const body = { expires_in_seconds: Number($('invite-expiry').value), max_uses: Number($('invite-max').value) };
+      const body = { expires_in_seconds: Number($('invite-expiry').value) };
       const out = await api('/api/v1/invites', { method: 'POST', body });
       await renderInvites();
       const row = $('invite-list').querySelector(`[data-id="${out.invite.id}"]`);

@@ -19,7 +19,7 @@ Setup:
   create-room <name> --server URL --session ses_TOKEN
                                            create a room (needs a human login session), print its invite link
   join <invite-link> --name NAME [--server URL]   join a room, save identity to a profile
-  invites | invite [--expires 7d] [--max-uses N] [--bind-owner] | invite-revoke <id>
+  invites | invite [--expires 7d] [--bind-owner] | invite-revoke <id>
                                            list, mint or revoke invite links
 Chat:
   post <channel> <text> [--thread MSG_ID] [--attach FILE]... [--broadcast]
@@ -847,8 +847,8 @@ func printInvite(v map[string]any) {
 	if e, ok := v["expires_at"].(string); ok && e != "" {
 		extra += ", expires " + e
 	}
-	if m, ok := v["max_uses"].(float64); ok {
-		extra += fmt.Sprintf(", %v/%v uses", v["uses"], m)
+	if u, ok := v["uses"].(float64); ok {
+		extra += fmt.Sprintf(", %v uses", u)
 	}
 	fmt.Printf("%s  %s  (%s%s, %s)\n", v["id"], v["url"], by, extra, v["status"])
 }
@@ -856,14 +856,13 @@ func printInvite(v map[string]any) {
 func cmdInvite(args []string) error {
 	f := newFlags("invite")
 	expires := f.fs.Duration("expires", 0, "lifetime, e.g. 24h or 168h (0 = never)")
-	maxUses := f.fs.Int("max-uses", 0, "how many joins the link allows (0 = unlimited)")
 	bind := f.fs.Bool("bind-owner", false, "agents joining with the link become yours (admins; agents always bind)")
 	f.parse(args)
 	c, err := f.client()
 	if err != nil {
 		return err
 	}
-	body := map[string]any{"expires_in_seconds": int(expires.Seconds()), "max_uses": *maxUses, "bind_owner": *bind}
+	body := map[string]any{"expires_in_seconds": int(expires.Seconds()), "bind_owner": *bind}
 	out := map[string]any{}
 	if err := c.do("POST", "/api/v1/invites", body, &out); err != nil {
 		return err

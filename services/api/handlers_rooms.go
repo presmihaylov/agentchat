@@ -174,10 +174,7 @@ func (s *Server) handleJoinRoom(w http.ResponseWriter, r *http.Request) {
 	if errors.Is(err, models.ErrNotFound) {
 		err = models.ErrInviteInvalid
 	}
-	// a reclaim is the same participant re-authenticating, not a new member:
-	// it spends no use, so an exhausted link still lets it back in
-	exhausted := errors.Is(err, models.ErrInviteExhausted)
-	if err != nil && !exhausted {
+	if err != nil {
 		writeStoreErr(w, err)
 		return
 	}
@@ -200,10 +197,7 @@ func (s *Server) handleJoinRoom(w http.ResponseWriter, r *http.Request) {
 
 	token, hash := secrets.NewToken()
 	var p models.Participant
-	err = models.ErrConflict
-	if !exhausted {
-		p, err = s.store.CreateParticipant(r.Context(), room.ID, req.Name, req.Avatar, req.Description, req.IsHuman, hash, newOwner, nil, inv.ID)
-	}
+	p, err = s.store.CreateParticipant(r.Context(), room.ID, req.Name, req.Avatar, req.Description, req.IsHuman, hash, newOwner, nil, inv.ID)
 	if errors.Is(err, models.ErrConflict) {
 		// same name = same identity: re-claim it with a fresh token so a
 		// restarted agent does not pile up orphan duplicates
@@ -211,10 +205,6 @@ func (s *Server) handleJoinRoom(w http.ResponseWriter, r *http.Request) {
 		if errors.Is(err, models.ErrIdentityOnline) {
 			writeErr(w, http.StatusConflict,
 				"that name is taken by a participant that is online right now; wait for it to go offline (~90s idle) or pick another name")
-			return
-		}
-		if exhausted && errors.Is(err, models.ErrNotFound) {
-			writeStoreErr(w, models.ErrInviteExhausted)
 			return
 		}
 		if err != nil {
@@ -242,7 +232,6 @@ func (s *Server) handleJoinRoom(w http.ResponseWriter, r *http.Request) {
 
 type createInviteReq struct {
 	ExpiresInSeconds int  `json:"expires_in_seconds"`
-	MaxUses          int  `json:"max_uses"`
 	BindOwner        bool `json:"bind_owner"`
 }
 
@@ -260,8 +249,8 @@ func (s *Server) handleCreateInvite(w http.ResponseWriter, r *http.Request, p mo
 		writeErr(w, http.StatusForbidden, "members can only create invite links bound to themselves (bind_owner)")
 		return
 	}
-	if req.ExpiresInSeconds < 0 || req.MaxUses < 0 {
-		writeErr(w, http.StatusBadRequest, "expires_in_seconds and max_uses must be positive")
+	if req.ExpiresInSeconds < 0 {
+		writeErr(w, http.StatusBadRequest, "expires_in_seconds must be positive")
 		return
 	}
 	var ownerID *string
@@ -281,11 +270,7 @@ func (s *Server) handleCreateInvite(w http.ResponseWriter, r *http.Request, p mo
 		t := time.Now().Add(time.Duration(req.ExpiresInSeconds) * time.Second)
 		expiresAt = &t
 	}
-	var maxUses *int
-	if req.MaxUses > 0 {
-		maxUses = &req.MaxUses
-	}
-	inv, err := s.store.CreateInvite(r.Context(), p.RoomID, secrets.InviteCode(), &p.ID, ownerID, expiresAt, maxUses)
+	inv, err := s.store.CreateInvite(r.Context(), p.RoomID, secrets.InviteCode(), &p.ID, ownerID, expiresAt)
 	if err != nil {
 		writeStoreErr(w, err)
 		return
@@ -355,8 +340,6 @@ func (s *Server) handlePeekInvite(w http.ResponseWriter, r *http.Request) {
 		status = "revoked"
 	case errors.Is(err, models.ErrInviteExpired):
 		status = "expired"
-	case errors.Is(err, models.ErrInviteExhausted):
-		status = "exhausted"
 	case err != nil:
 		writeStoreErr(w, err)
 		return

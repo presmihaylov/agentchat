@@ -3,7 +3,6 @@ package models
 import (
 	"context"
 	"errors"
-	"sync"
 	"testing"
 	"time"
 
@@ -31,7 +30,7 @@ func TestInviteLinks(t *testing.T) {
 	}
 
 	// an admin-minted plain link joins without binding an owner
-	plain, err := s.CreateInvite(ctx, r.ID, secrets.InviteCode(), &admin.ID, nil, nil, nil)
+	plain, err := s.CreateInvite(ctx, r.ID, secrets.InviteCode(), &admin.ID, nil, nil)
 	if err != nil || plain.Status != "active" || *plain.CreatedByName != "admin" {
 		t.Fatalf("create: %v %+v", err, plain)
 	}
@@ -39,12 +38,12 @@ func TestInviteLinks(t *testing.T) {
 	if err != nil || p.OwnerID != nil {
 		t.Fatalf("join plain: %v %+v", err, p)
 	}
-	if v, _, err := s.InviteByToken(ctx, plain.Token); err != nil || v.Uses != 1 || v.MaxUses != nil {
+	if v, _, err := s.InviteByToken(ctx, plain.Token); err != nil || v.Uses != 1 {
 		t.Fatalf("uses after join: %v %+v", err, v)
 	}
 
 	// a bound link stamps the owner on the joiner
-	bound, err := s.CreateInvite(ctx, r.ID, secrets.InviteCode(), &admin.ID, &admin.ID, nil, nil)
+	bound, err := s.CreateInvite(ctx, r.ID, secrets.InviteCode(), &admin.ID, &admin.ID, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,7 +54,7 @@ func TestInviteLinks(t *testing.T) {
 
 	// expiry
 	past := time.Now().Add(-time.Minute)
-	old, err := s.CreateInvite(ctx, r.ID, secrets.InviteCode(), &admin.ID, nil, &past, nil)
+	old, err := s.CreateInvite(ctx, r.ID, secrets.InviteCode(), &admin.ID, nil, &past)
 	if err != nil || old.Status != "expired" {
 		t.Fatalf("expired link: %v %+v", err, old)
 	}
@@ -66,24 +65,14 @@ func TestInviteLinks(t *testing.T) {
 		t.Fatalf("join expired: %v", err)
 	}
 
-	// use limit
-	one := 1
-	once, err := s.CreateInvite(ctx, r.ID, secrets.InviteCode(), &admin.ID, nil, nil, &one)
-	if err != nil {
-		t.Fatal(err)
+	// no use cap: the same link keeps admitting joiners and only counts them
+	for i, name := range []string{"bot-d", "bot-e", "bot-f2"} {
+		if _, err := joinWith(t, s, r.ID, name, plain); err != nil {
+			t.Fatalf("join %d on the plain link: %v", i, err)
+		}
 	}
-	if _, err := joinWith(t, s, r.ID, "bot-d", once); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := joinWith(t, s, r.ID, "bot-e", once); !errors.Is(err, ErrInviteExhausted) {
-		t.Fatalf("second use: %v", err)
-	}
-	if v, _, err := s.InviteByToken(ctx, once.Token); !errors.Is(err, ErrInviteExhausted) || v.Status != "exhausted" {
-		t.Fatalf("resolve exhausted: %v %+v", err, v)
-	}
-	// a failed join must not leave a participant behind
-	if _, err := s.ParticipantByName(ctx, r.ID, "bot-e"); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("bot-e exists after refused join: %v", err)
+	if v, _, err := s.InviteByToken(ctx, plain.Token); err != nil || v.Uses != 4 || v.Status != "active" {
+		t.Fatalf("uses after four joins: %v %+v", err, v)
 	}
 
 	// revoke: gone from the list, dead for joiners, foreign ids refused
@@ -113,11 +102,11 @@ func TestInviteLinks(t *testing.T) {
 	// kicking a member kills the links they minted, and a bound link whose
 	// owner is gone is dead even if it was minted by someone else
 	agent, _ := mkParticipant(t, s, r.ID, "agent")
-	byAgent, err := s.CreateInvite(ctx, r.ID, secrets.InviteCode(), &agent.ID, &agent.ID, nil, nil)
+	byAgent, err := s.CreateInvite(ctx, r.ID, secrets.InviteCode(), &agent.ID, &agent.ID, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	toAgent, err := s.CreateInvite(ctx, r.ID, secrets.InviteCode(), &admin.ID, &agent.ID, nil, nil)
+	toAgent, err := s.CreateInvite(ctx, r.ID, secrets.InviteCode(), &admin.ID, &agent.ID, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -164,47 +153,6 @@ func TestInviteEnterRoomConsumes(t *testing.T) {
 	}
 }
 
-// Two joiners racing for the last use of a link get exactly one winner.
-func TestInviteLastUseRace(t *testing.T) {
-	s := testStore(t)
-	ctx := context.Background()
-	r := mkRoom(t, s)
-	admin, _ := mkParticipant(t, s, r.ID, "admin")
-	one := 1
-	inv, err := s.CreateInvite(ctx, r.ID, secrets.InviteCode(), &admin.ID, nil, nil, &one)
-	if err != nil {
-		t.Fatal(err)
-	}
-	const n = 6
-	errs := make([]error, n)
-	var wg sync.WaitGroup
-	for i := 0; i < n; i++ {
-		wg.Add(1)
-		go func(i int) {
-			defer wg.Done()
-			_, hash := secrets.NewToken()
-			_, errs[i] = s.CreateParticipant(ctx, r.ID, "racer-"+string(rune('a'+i)), "🤖", "", false, hash, nil, nil, inv.ID)
-		}(i)
-	}
-	wg.Wait()
-	won := 0
-	for _, err := range errs {
-		if err == nil {
-			won++
-			continue
-		}
-		if !errors.Is(err, ErrInviteExhausted) {
-			t.Fatalf("racer error: %v", err)
-		}
-	}
-	if won != 1 {
-		t.Fatalf("winners: %d, want 1 (%v)", won, errs)
-	}
-	if v, _, err := s.InviteByToken(ctx, inv.Token); !errors.Is(err, ErrInviteExhausted) || v.Uses != 1 {
-		t.Fatalf("after race: %v %+v", err, v)
-	}
-}
-
 // 000033 turns the room code and every owner-scoped invite of the old table
 // into working links, and rolls back to the same room code.
 func TestInviteLinksMigration(t *testing.T) {
@@ -248,7 +196,7 @@ func TestInviteLinksMigration(t *testing.T) {
 
 	// the room code is now a plain link
 	v, got, err := s.InviteByToken(ctx, roomSecret)
-	if err != nil || got.ID != room.ID || v.CreatedBy != nil || v.OwnerID != nil || v.MaxUses != nil || v.Uses != 0 || v.Status != "active" {
+	if err != nil || got.ID != room.ID || v.CreatedBy != nil || v.OwnerID != nil || v.Uses != 0 || v.Status != "active" {
 		t.Fatalf("room code as link: %v %+v", err, v)
 	}
 	if _, err := joinWith(t, s, room.ID, "newbie", v); err != nil {
@@ -258,7 +206,7 @@ func TestInviteLinksMigration(t *testing.T) {
 	// the old owner-scoped invites still join, and still bind
 	for _, c := range []struct{ token, owner, name string }{{byPres, maya.ID, "maya-bot"}, {byChief, maya.ID, "chief-bot"}} {
 		v, _, err := s.InviteByToken(ctx, c.token)
-		if err != nil || v.Status != "active" || v.RevokedAt != nil || v.MaxUses != nil || v.Uses != 0 || v.OwnerID == nil || *v.OwnerID != c.owner {
+		if err != nil || v.Status != "active" || v.RevokedAt != nil || v.Uses != 0 || v.OwnerID == nil || *v.OwnerID != c.owner {
 			t.Fatalf("legacy invite %s: %v %+v", c.name, err, v)
 		}
 		p, err := joinWith(t, s, room.ID, c.name, v)

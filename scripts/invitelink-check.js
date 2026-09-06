@@ -24,7 +24,8 @@ const tokenOf = (link) => link.split('/join/')[1];
   await admin.setViewport({ width: 1280, height: 800 });
   const adminSession = await enterAs(admin, SERVER, slug, room.invite, 'Alice');
   const mint = (body) => call(SERVER, '/api/v1/invites', { method: 'POST', token: adminSession, headers: { 'X-Workspace-Slug': slug }, body });
-  const minted = await mint({ max_uses: 5 });
+  const minted = await mint({});
+  assert(!('max_uses' in minted.invite), 'the use cap is gone: max_uses came back on a minted link');
   const link = minted.join_url;
   assert(link.startsWith(SERVER + '/join/inv-'), 'minted link: ' + link);
 

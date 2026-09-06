@@ -74,14 +74,15 @@ const rows = (page) => page.$$eval('#invite-list .invite-item', (els) => els.map
   const copied = await page.evaluate(() => window.__copied);
   assert(copied === room.invite, 'copied text is not the link: ' + copied);
 
-  // 2. New link with a 1-use cap, then Revoke it: the list follows
-  await page.select('#invite-max', '1');
+  // 2. New link, then Revoke it: the list follows. The modal offers an expiry
+  // only; the use cap is gone.
+  assert(!(await page.$('#invite-max')), 'Max uses select still in the invite modal');
   await page.click('#invite-new-submit');
   await page.waitForFunction(() => document.querySelectorAll('#invite-list .invite-item').length === 2, { timeout: 8000 });
   // newest first
   const [minted] = await links(page);
   assert(/\/join\/inv-/.test(minted) && minted !== room.invite, 'minted link: ' + minted);
-  assert(/by Alice/.test((await rows(page))[0]) && /0\/1 uses/.test((await rows(page))[0]), 'minted meta: ' + (await rows(page))[0]);
+  assert(/by Alice/.test((await rows(page))[0]) && /0 uses/.test((await rows(page))[0]), 'minted meta: ' + (await rows(page))[0]);
   await page.screenshot({ path: OUT + '/invite-modal-two.png' });
   await page.$$eval('#invite-list .invite-revoke', (els) => els[0].click());
   await page.waitForFunction(() => document.querySelectorAll('#invite-list .invite-item').length === 1, { timeout: 8000 });

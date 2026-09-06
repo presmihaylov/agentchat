@@ -59,8 +59,6 @@ func writeStoreErr(w http.ResponseWriter, err error) {
 		writeErrCode(w, http.StatusBadRequest, "invite_invalid", err.Error())
 	case errors.Is(err, models.ErrInviteExpired):
 		writeErrCode(w, http.StatusForbidden, "invite_expired", err.Error())
-	case errors.Is(err, models.ErrInviteExhausted):
-		writeErrCode(w, http.StatusForbidden, "invite_exhausted", err.Error())
 	case errors.Is(err, models.ErrInviteRevoked):
 		writeErrCode(w, http.StatusForbidden, "invite_revoked", err.Error())
 	case errors.Is(err, models.ErrInviteAgentsOnly):

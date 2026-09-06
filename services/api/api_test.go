@@ -1232,7 +1232,7 @@ func TestMemberMintsOwnAgentLink(t *testing.T) {
 	if st, out := member.do("POST", "/api/v1/invites", map[string]any{}); st != 403 {
 		t.Fatalf("unbound member link: %d %v", st, out)
 	}
-	out := member.must("POST", "/api/v1/invites", map[string]any{"bind_owner": true, "max_uses": 1}, 201)
+	out := member.must("POST", "/api/v1/invites", map[string]any{"bind_owner": true}, 201)
 	inv := out["invite"].(map[string]any)
 	if inv["owner_id"] != mia["id"] || inv["created_by"] != mia["id"] {
 		t.Fatalf("member link must bind to the member: %v", inv)
@@ -1271,26 +1271,28 @@ func TestMemberMintsOwnAgentLink(t *testing.T) {
 	}
 }
 
-// TestInviteLinkLimits: expiry and use limits refuse new members, but a
-// reclaim is the same participant coming back and spends nothing.
+// TestInviteLinkLimits: expiry refuses new members; there is no use cap (the
+// old max_uses field is gone), and a reclaim is the same participant coming
+// back, so it spends nothing.
 func TestInviteLinkLimits(t *testing.T) {
 	srv, _ := newTestServer(t)
 	_, alice, _ := setupRoom(t, srv.URL)
 
-	if st, _ := alice.do("POST", "/api/v1/invites", map[string]any{"max_uses": -1}); st != 400 {
-		t.Fatalf("negative max_uses: %d", st)
+	if st, _ := alice.do("POST", "/api/v1/invites", map[string]any{"expires_in_seconds": -1}); st != 400 {
+		t.Fatalf("negative expiry: %d", st)
 	}
-	once := alice.must("POST", "/api/v1/invites", map[string]any{"max_uses": 1, "expires_in_seconds": 3600}, 201)["invite"].(map[string]any)
-	if once["max_uses"] != 1.0 || once["expires_at"] == nil {
-		t.Fatalf("bounded link: %v", once)
+	if st, _ := alice.do("POST", "/api/v1/invites", map[string]any{"max_uses": 1}); st != 400 {
+		t.Fatalf("max_uses must no longer be accepted: %d", st)
+	}
+	once := alice.must("POST", "/api/v1/invites", map[string]any{"expires_in_seconds": 3600}, 201)["invite"].(map[string]any)
+	if _, has := once["max_uses"]; has || once["expires_at"] == nil {
+		t.Fatalf("link must carry an expiry and no use cap: %v", once)
 	}
 	url := once["url"].(string)
 	first := &testClient{t: t, base: srv.URL}
 	first.token = first.must("POST", "/api/v1/rooms/join", map[string]any{"invite": url, "name": "solo"}, 201)["token"].(string)
-	if st, out := (&testClient{t: t, base: srv.URL}).do("POST", "/api/v1/rooms/join", map[string]any{"invite": url, "name": "second"}); st != 403 || out["code"] != "invite_exhausted" {
-		t.Fatalf("second use: %d %v", st, out)
-	}
-	// solo restarts and reclaims its name on the same, exhausted link
+	(&testClient{t: t, base: srv.URL}).must("POST", "/api/v1/rooms/join", map[string]any{"invite": url, "name": "second"}, 201)
+	// solo restarts and reclaims its name on the same link
 	first.must("POST", "/api/v1/me/offline", nil, 200)
 	out := (&testClient{t: t, base: srv.URL}).must("POST", "/api/v1/rooms/join", map[string]any{"invite": url, "name": "solo"}, 200)
 	if out["reclaimed"] != true {
@@ -1298,8 +1300,8 @@ func TestInviteLinkLimits(t *testing.T) {
 	}
 	for _, v := range alice.must("GET", "/api/v1/invites", nil, 200)["invites"].([]any) {
 		vm := v.(map[string]any)
-		if vm["id"] == once["id"] && (vm["uses"] != 1.0 || vm["status"] != "exhausted") {
-			t.Fatalf("reclaim spent a use: %v", vm)
+		if vm["id"] == once["id"] && (vm["uses"] != 2.0 || vm["status"] != "active") {
+			t.Fatalf("two joins and a reclaim must count two uses: %v", vm)
 		}
 	}
 
@@ -1315,7 +1317,7 @@ func TestInviteLinkLimits(t *testing.T) {
 
 	// peek answers for a live and a dead link, never for an unknown one
 	peek := (&testClient{t: t, base: srv.URL}).must("GET", "/api/v1/invites/peek?token="+strings.TrimPrefix(url, "http://public.test/join/"), nil, 200)
-	if peek["name"] != "test room" || peek["status"] != "exhausted" || peek["slug"] == nil {
+	if peek["name"] != "test room" || peek["status"] != "active" || peek["slug"] == nil {
 		t.Fatalf("peek: %v", peek)
 	}
 	(&testClient{t: t, base: srv.URL}).must("GET", "/api/v1/invites/peek?token=inv-nope-nope-nope-nope", nil, 404)

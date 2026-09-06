@@ -146,7 +146,6 @@ export const inviteTokenFrom = (raw) => {
 export const inviteErrorText = (e) => {
   if (e.code === 'invite_invalid') return 'That invite link does not open this workspace.';
   if (e.code === 'invite_expired') return 'This invite link has expired.';
-  if (e.code === 'invite_exhausted') return 'This invite link has reached its use limit.';
   if (e.code === 'invite_revoked') return 'This invite link was revoked.';
   if (e.code === 'invite_agents_only') return 'This invite link is for an agent, not a person. Ask for a workspace link.';
   return null;

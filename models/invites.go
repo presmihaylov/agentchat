@@ -21,30 +21,27 @@ type Invite struct {
 	OwnerID       *string    `json:"owner_id,omitempty"`
 	CreatedAt     time.Time  `json:"created_at"`
 	ExpiresAt     *time.Time `json:"expires_at,omitempty"`
-	MaxUses       *int       `json:"max_uses,omitempty"`
 	Uses          int        `json:"uses"`
 	RevokedAt     *time.Time `json:"revoked_at,omitempty"`
-	// Status is active, expired, exhausted or revoked, computed at read time.
+	// Status is active, expired or revoked, computed at read time.
 	Status string `json:"status"`
 }
 
 var (
-	ErrInviteExpired   = errors.New("that invite link has expired")
-	ErrInviteExhausted = errors.New("that invite link has reached its use limit")
-	ErrInviteRevoked   = errors.New("that invite link was revoked")
+	ErrInviteExpired = errors.New("that invite link has expired")
+	ErrInviteRevoked = errors.New("that invite link was revoked")
 )
 
-const inviteColumns = `v.id, v.token, v.room_id, v.created_by, c.name, v.owner_id, v.created_at, v.expires_at, v.max_uses, v.uses, v.revoked_at,
+const inviteColumns = `v.id, v.token, v.room_id, v.created_by, c.name, v.owner_id, v.created_at, v.expires_at, v.uses, v.revoked_at,
 	CASE WHEN v.revoked_at IS NOT NULL THEN 'revoked'
 	     WHEN v.expires_at IS NOT NULL AND v.expires_at <= now() THEN 'expired'
-	     WHEN v.max_uses IS NOT NULL AND v.uses >= v.max_uses THEN 'exhausted'
 	     ELSE 'active' END`
 
 const inviteFrom = ` FROM invites v LEFT JOIN participants c ON c.id = v.created_by `
 
 func scanInvite(row pgx.Row, v *Invite) error {
 	return row.Scan(&v.ID, &v.Token, &v.RoomID, &v.CreatedBy, &v.CreatedByName, &v.OwnerID, &v.CreatedAt,
-		&v.ExpiresAt, &v.MaxUses, &v.Uses, &v.RevokedAt, &v.Status)
+		&v.ExpiresAt, &v.Uses, &v.RevokedAt, &v.Status)
 }
 
 // statusErr maps a link's computed status to the error a joiner sees.
@@ -54,22 +51,20 @@ func (v Invite) statusErr() error {
 		return ErrInviteRevoked
 	case "expired":
 		return ErrInviteExpired
-	case "exhausted":
-		return ErrInviteExhausted
 	}
 	return nil
 }
 
 // CreateInvite mints a link. ownerID binds agents that join with it to that
 // principal; createdBy is the minting participant (nil for a system link).
-func (s *Store) CreateInvite(ctx context.Context, roomID, token string, createdBy, ownerID *string, expiresAt *time.Time, maxUses *int) (Invite, error) {
+func (s *Store) CreateInvite(ctx context.Context, roomID, token string, createdBy, ownerID *string, expiresAt *time.Time) (Invite, error) {
 	var v Invite
 	err := scanInvite(s.pool.QueryRow(ctx,
 		`WITH ins AS (
-		   INSERT INTO invites (token, room_id, created_by, owner_id, expires_at, max_uses)
-		   VALUES ($1, $2, $3, $4, $5, $6) RETURNING *)
+		   INSERT INTO invites (token, room_id, created_by, owner_id, expires_at)
+		   VALUES ($1, $2, $3, $4, $5) RETURNING *)
 		 SELECT `+inviteColumns+` FROM ins v LEFT JOIN participants c ON c.id = v.created_by`,
-		token, roomID, createdBy, ownerID, expiresAt, maxUses), &v)
+		token, roomID, createdBy, ownerID, expiresAt), &v)
 	return v, err
 }
 
@@ -120,7 +115,7 @@ func (s *Store) InviteByToken(ctx context.Context, token string) (Invite, Room, 
 		 LEFT JOIN participants o ON o.id = v.owner_id
 		 WHERE v.token = $1`, token,
 	).Scan(append(append([]any{&v.ID, &v.Token, &v.RoomID, &v.CreatedBy, &v.CreatedByName, &v.OwnerID, &v.CreatedAt,
-		&v.ExpiresAt, &v.MaxUses, &v.Uses, &v.RevokedAt, &v.Status}, roomDest(&r)...), &ownerRevoked)...)
+		&v.ExpiresAt, &v.Uses, &v.RevokedAt, &v.Status}, roomDest(&r)...), &ownerRevoked)...)
 	if err != nil {
 		return v, r, mapRowErr(err)
 	}
@@ -131,16 +126,14 @@ func (s *Store) InviteByToken(ctx context.Context, token string) (Invite, Room, 
 	return v, r, v.statusErr()
 }
 
-// consumeInviteTx spends one use. The predicate re-checks every limit under
-// the row lock, so two joiners racing for the last use of a link get exactly
-// one winner. Call it after lockRoomEvents.
+// consumeInviteTx counts one use. The predicate re-checks expiry and
+// revocation under the row lock. Call it after lockRoomEvents.
 func consumeInviteTx(ctx context.Context, tx pgx.Tx, inviteID string) error {
 	var status string
 	err := tx.QueryRow(ctx,
 		`UPDATE invites v SET uses = uses + 1
 		 WHERE id = $1 AND revoked_at IS NULL
 		   AND (expires_at IS NULL OR expires_at > now())
-		   AND (max_uses IS NULL OR uses < max_uses)
 		 RETURNING 'active'`, inviteID).Scan(&status)
 	if err == nil {
 		return nil

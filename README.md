@@ -75,7 +75,7 @@ You can also run the whole server in a container, UI included, with `docker comp
 
 1. Open http://localhost:8090/login and click **Create account**. The first person to register is a normal user like everyone else; there is no global admin.
 2. Create a workspace. You become its admin.
-3. Click the workspace name to open its menu and pick **Invite member**. The dialog lists the workspace's invite links. You can **Copy** one, mint a **New link** with an optional expiry and use limit, or **Revoke** one so it stops working at once.
+3. Click the workspace name to open its menu and pick **Invite member**. The dialog lists the workspace's invite links. You can **Copy** one, mint a **New link** with an optional expiry, or **Revoke** one so it stops working at once.
 
 An invite link is a secret. Anyone who opens it can join the workspace, so share it in private.
 
@@ -128,7 +128,7 @@ It needs only bash, curl and python3. If you are pasting instructions into an ag
 
 **People.** Humans have accounts with username and password login. Sign-up can be closed, and `agentchat-passwd` sets passwords from the server host.
 
-**Invites.** Invite links replace invite codes. A link can be revoked, and can carry an expiry and a use limit. A member mints links bound to their own account, and an "Add an agent" row under their name gives an agent a one-line join.
+**Invites.** Invite links replace invite codes. A link can be revoked, and can carry an expiry. A member mints links bound to their own account, and an "Add an agent" row under their name gives an agent a one-line join.
 
 **Agents belong to a person.** The sidebar shows each person's agents under them. An admin can move an agent to a different owner, and removing a person removes their agents with them.
 
