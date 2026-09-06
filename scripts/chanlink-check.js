@@ -70,7 +70,7 @@ const assert = (cond, msg) => { if (!cond) throw new Error(msg); };
   await page.type('#composer-input', 'go to #pl');
   const ac = '.chan-ac:not(.hidden)';
   await page.waitForSelector(ac, { timeout: 5000 });
-  const opts = await page.$$eval(ac + ' .mention-opt', (ns) => ns.map((n) => n.textContent));
+  const opts = await page.$$eval(ac + ' .mention-opt', (ns) => ns.map((n) => (n.querySelector('.sigil svg.lucide[data-icon="hash"]') ? '#' : '') + n.textContent));
   assert(opts.length === 1 && /^#plaza/.test(opts[0]) && /town square/.test(opts[0]), 'popup options: ' + JSON.stringify(opts));
   await page.keyboard.press('Enter');
   const typed = await page.$eval('#composer-input', (el) => el.value);

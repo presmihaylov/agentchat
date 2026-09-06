@@ -56,7 +56,7 @@ const assert = (cond, msg) => { if (!cond) throw new Error(msg); };
       canRemove: !!r.querySelector('.mm-remove'),
     })),
   }));
-  assert(modal.title.includes('#team') && modal.title.includes('2'), 'modal title: ' + modal.title);
+  assert(modal.title.includes('team') && modal.title.includes('2'), 'modal title: ' + modal.title);
   assert(modal.groups.join() === 'Humans,Agents', 'groups: ' + modal.groups.join());
   const vRow = modal.rows.find((r) => r.name === 'viewer');
   const bRow = modal.rows.find((r) => r.name === 'membot');

@@ -3,6 +3,7 @@
    and the feed renderer see exactly what the old textarea produced. */
 import { Editor, Extension, InputRule } from '@tiptap/core';
 import { searchEmoji, rememberEmoji } from './emoji.js';
+import { ICON } from './icons.js';
 import StarterKit from '@tiptap/starter-kit';
 import HardBreak from '@tiptap/extension-hard-break';
 import { Markdown } from '@tiptap/markdown';
@@ -118,7 +119,9 @@ export const createComposer = ({ mount, id, placeholder, onSubmit, onChange, get
   const renderMention = () => renderList(mentionBox, mention, (d, it) => {
     const name = document.createElement('span');
     name.className = 'mention-name';
-    name.textContent = `${it.avatar} ${it.name}`;
+    // @channel-style rows carry a chrome icon instead of an avatar emoji
+    if (it.icon) { name.innerHTML = it.icon; name.appendChild(document.createTextNode(it.name)); }
+    if (!it.icon) name.textContent = `${it.avatar} ${it.name}`;
     d.appendChild(name);
     // they rank last, so say why instead of letting the sender guess
     if (it.inChannel === false) {
@@ -130,9 +133,7 @@ export const createComposer = ({ mount, id, placeholder, onSubmit, onChange, get
   }, applyMention);
   const renderChan = () => renderList(chanBox, chan, (d, it) => {
     // same monochrome lock as the sidebar, so the picker carries no emoji colour either
-    const sigil = it.private
-      ? '<span class="sigil sigil-lock" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M4 7V5a4 4 0 1 1 8 0v2h1v8H3V7h1zm2 0h4V5a2 2 0 1 0-4 0v2z"/></svg></span> '
-      : '#';
+    const sigil = '<span class="sigil' + (it.private ? ' sigil-lock' : '') + '" aria-hidden="true">' + (it.private ? ICON.lock : ICON.hash) + '</span>';
     d.innerHTML = sigil + esc(it.name)
       + '<span class="slash-hint">' + esc(it.topic || '') + '</span>';
   }, applyChan);
@@ -222,7 +223,7 @@ export const createComposer = ({ mount, id, placeholder, onSubmit, onChange, get
     // broadcasts always apply to the channel you are in, so they rank with the
     // members rather than below the whole room
     const opts = getMentionOptions().concat(
-      ['channel', 'everyone', 'here'].map((name) => ({ name, avatar: '📣', inChannel: true })));
+      ['channel', 'everyone', 'here'].map((name) => ({ name, avatar: '', icon: ICON.megaphone, inChannel: true })));
     mention.items = rankMentions(opts, m[2].toLowerCase()).slice(0, 8);
     mention.sel = 0;
     renderMention();

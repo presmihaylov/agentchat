@@ -175,10 +175,11 @@ body.has-banner.has-header .auth-view, body.has-banner.has-header #create-view, 
 #profile-actions { display: flex; gap: 8px; align-items: center; flex: none; }
 /* a muted channel stays dark on unread (mentions still glow); the bell says it will not ping */
 #channel-list li.muted { opacity: .7; }
-/* the muted mark: a bell-slash in the row's dim colour (a masked SVG, so it follows the theme) */
-#channel-list li.muted::after { content: ''; flex: none; width: 12px; height: 12px; margin-left: auto; background: var(--dim); -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M8 1.5a4 4 0 0 0-4 4V9L2.5 11v1h6.6l1-1H4.3L5 9.6V5.5a3 3 0 0 1 5.7-1.3l.8-.8A4 4 0 0 0 8 1.5zm4 4v3.1l1.5 2.4v1h-.9l1-1L14 10 12.7 8V5.5c0-.3 0-.6-.1-.9l-1 1c.1 0 .1 0 .1.1zM6.5 13.5a1.5 1.5 0 0 0 3 0h-3zM13.3 2.3l.7.7L3.3 13.7l-.7-.7z'/%3E%3C/svg%3E") center / contain no-repeat; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M8 1.5a4 4 0 0 0-4 4V9L2.5 11v1h6.6l1-1H4.3L5 9.6V5.5a3 3 0 0 1 5.7-1.3l.8-.8A4 4 0 0 0 8 1.5zm4 4v3.1l1.5 2.4v1h-.9l1-1L14 10 12.7 8V5.5c0-.3 0-.6-.1-.9l-1 1c.1 0 .1 0 .1.1zM6.5 13.5a1.5 1.5 0 0 0 3 0h-3zM13.3 2.3l.7.7L3.3 13.7l-.7-.7z'/%3E%3C/svg%3E") center / contain no-repeat; }
-#channel-list li .sigil, #channel-title .sigil, .chan-ac .sigil { display: inline-flex; align-items: center; justify-content: center; width: 12px; flex: none; color: inherit; }
-#channel-list li .sigil svg, #channel-title .sigil svg, .chan-ac .sigil svg { width: 11px; height: 11px; fill: currentColor; }
+/* the muted mark: an inline bell-off in the row's dim colour, pushed to the right edge */
+#channel-list li .mute-mark { display: inline-flex; margin-left: auto; color: var(--dim); }
+#channel-list li .mute-mark + .unread-badge { margin-left: 4px; }
+#channel-list li .sigil, #channel-title .sigil, #members-title .sigil, .chan-ac .sigil, .browse-name { display: inline-flex; align-items: center; gap: 4px; flex: none; color: inherit; }
+#channel-list li .sigil svg, #channel-title .sigil svg, .chan-ac .sigil svg { opacity: .8; }
 #channel-list li .chan-name { overflow: hidden; text-overflow: ellipsis; }
 #sidebar li.archived { color: var(--dim); font-style: italic; }
 /* Unread with no @mention: bold + a soft accent glow on the name, no number. */
@@ -186,7 +187,7 @@ body.has-banner.has-header .auth-view, body.has-banner.has-header #create-view, 
 .unread-badge { margin-left: auto; background: var(--badge); color: #fff; font-size: 11px; font-weight: 700; border-radius: 10px; padding: 0 7px; line-height: 17px; flex: none; }
 /* Channel-group sections: a collapsible header above the channels it holds. */
 #channel-list li.section-header { color: var(--dim); font-size: 11px; text-transform: uppercase; letter-spacing: .06em; margin-top: 8px; font-weight: 600; }
-#channel-list li.section-header .sec-chevron { flex: none; font-size: 9px; width: 10px; opacity: .8; }
+#channel-list li.section-header .sec-chevron { flex: none; width: 16px; display: inline-flex; opacity: .8; }
 #channel-list li.section-header .sec-name { overflow: hidden; text-overflow: ellipsis; }
 /* Drag-and-drop: sections are valid targets, the dragged row lifts, and a
    2px accent rule marks exactly where the drop lands. */
@@ -224,10 +225,7 @@ body.has-banner.has-header .auth-view, body.has-banner.has-header #create-view, 
    any row height. The trunk runs the full row (into the 4px padding, rows sit
    flush) and stops at the middle of the last leaf; the elbow is the tick. */
 #channel-list li.thread-leaf { margin-left: 14px; padding-left: 6px; border-radius: 6px; font-size: 13px; }
-#channel-list li.thread-leaf .t-icon { flex: none; width: 12px; align-self: stretch; position: relative; color: var(--dim); }
-#channel-list li.thread-leaf .t-icon::before { content: ''; position: absolute; left: 5px; top: -4px; bottom: -4px; border-left: 1px solid currentColor; }
-#channel-list li.thread-leaf.last .t-icon::before { bottom: 50%; }
-#channel-list li.thread-leaf .t-icon::after { content: ''; position: absolute; left: 5px; right: 0; top: 50%; border-top: 1px solid currentColor; }
+#channel-list li.thread-leaf .t-icon { flex: none; display: inline-flex; align-items: center; color: var(--dim); }
 #channel-list li.thread-leaf .t-snippet { overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1; color: var(--dim); }
 #channel-list li.thread-leaf.unread .t-snippet { color: var(--hot); }
 #channel-list li.thread-leaf.active .t-snippet { color: var(--hot); }
@@ -265,7 +263,7 @@ body.has-banner.has-header .auth-view, body.has-banner.has-header #create-view, 
 #participant-list li.participant-leaf { margin-left: 15px; padding-left: 8px; border-left: 1px solid var(--border); border-radius: 0 6px 6px 0; }
 /* collapsible agent list: a chevron column reserved on every parent row so
    avatars stay aligned whether or not a human has nested agents */
-#participant-list li .p-toggle { width: 12px; flex: none; text-align: center; color: var(--dim); font-size: 10px; cursor: pointer; }
+#participant-list li .p-toggle { width: 16px; flex: none; display: inline-flex; justify-content: center; color: var(--dim); cursor: pointer; }
 #participant-list li .p-toggle:hover { color: var(--text); }
 #participant-list li .p-toggle.spacer { cursor: default; }
 #participant-list li .p-agentcount { margin-left: auto; flex: none; font-size: 11px; color: var(--dim); background: rgba(127, 127, 127, .12); border: 0; border-radius: 9px; padding: 0 6px; line-height: 16px; }
@@ -293,8 +291,10 @@ body.has-banner.has-header .auth-view, body.has-banner.has-header #create-view, 
 #me-menu .ws-item:hover, #me-menu .ws-item:focus { background: var(--panel); color: var(--accent); outline: none; }
 
 /* inline chrome icons: 1em, stroke in the surrounding text colour */
-.ico { width: 1em; height: 1em; flex: none; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; vertical-align: -.15em; }
-h1 .ico { width: .9em; height: .9em; vertical-align: -.08em; }
+.ico, .lucide { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; vertical-align: -3px; }
+.ico-20, h1 .ico { width: 20px; height: 20px; vertical-align: -4px; }
+h2 .ico { vertical-align: -3px; margin-right: 2px; }
+.ico-24 { width: 24px; height: 24px; vertical-align: -5px; }
 /* the app mark: the trimmed logo on a transparent ground, so it sits on either theme */
 h1 .logo { width: 1.5em; height: 1.5em; vertical-align: -.42em; margin-right: 2px; object-fit: contain; }
 #app-brand .logo { width: 22px; height: 22px; vertical-align: -6px; margin-right: 2px; object-fit: contain; }
@@ -306,7 +306,6 @@ h1 .logo { width: 1.5em; height: 1.5em; vertical-align: -.42em; margin-right: 2p
 @keyframes splash-pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.06); } }
 body:not(.booting):has(> :not(#splash):not(#pw-banner):not(script):not(.hidden)) #splash { display: none; }
 #attach-label .ico, #thread-attach-label .ico { width: 16px; height: 16px; vertical-align: middle; }
-.msg-actions .ico { width: 14px; height: 14px; vertical-align: -3px; }
 
 /* main */
 #main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
@@ -314,7 +313,7 @@ body:not(.booting):has(> :not(#splash):not(#pw-banner):not(script):not(.hidden))
 #channel-title { font-weight: 700; }
 /* the rename pencil shows on header hover or keyboard focus, so the title stays quiet */
 #rename-channel { background: none; border: 0; padding: 2px; margin-left: -6px; color: var(--dim); cursor: pointer; opacity: 0; transition: opacity .12s; display: inline-flex; border-radius: 4px; }
-#rename-channel .ico { width: 13px; height: 13px; }
+#rename-channel .ico { display: block; }
 #channel-header:hover #rename-channel, #rename-channel:focus-visible { opacity: 1; }
 #rename-channel:hover { color: var(--text); background: var(--panel2); }
 #channel-topic { color: var(--dim); font-size: 13px; margin-left: 12px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -443,7 +442,7 @@ a.chanlink:hover { text-decoration: underline; }
 .msg-actions, .msg .meta, .date-divider, .msg-reactions, #participant-list, #members-btn, .p-agentcount, #channel-list { user-select: none; -webkit-user-select: none; }
 .msg .content { user-select: text; -webkit-user-select: text; }
 .lucide { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-.p-toggle .ico, .sec-chevron .ico, .offline-toggle .ico { width: 12px; height: 12px; vertical-align: -2px; }
+.p-toggle .ico, .sec-chevron .ico, .offline-toggle .ico { vertical-align: -4px; }
 /* no hover on touch: the toolbar is always there */
 @media (hover: none) { .msg-actions { opacity: 1; pointer-events: auto; } }
 .reply-bar { display: flex; align-items: center; gap: 7px; margin-top: 4px; max-width: 420px; font-size: 12px; cursor: pointer; background: none; border: 1px solid transparent; border-radius: 8px; padding: 3px 8px; text-align: left; }
@@ -745,7 +744,6 @@ button.danger:disabled { opacity: .45; cursor: not-allowed; }
 .rail-menu-item:hover, .rail-menu-item:focus { background: var(--panel); color: var(--accent); outline: none; }
 .mi-icon { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; flex: none; font-weight: 700; color: var(--dim); }
 /* the workspace menu's action rows: icon first, then the label, like the rail menu */
-#ws-menu .ws-item[data-icon]::before { content: attr(data-icon); display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; flex: none; font-weight: 700; color: var(--dim); }
 #join-card { display: block; }
 #join-card input { width: 100%; box-sizing: border-box; margin-top: 4px; background: var(--panel2); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; color: var(--text); font-size: 15px; }
 #join-card button[type=submit] { width: 100%; margin-top: 8px; background: var(--accent); border: 0; border-radius: 6px; padding: 10px; color: var(--on-accent); font-size: 15px; font-weight: 600; cursor: pointer; }
@@ -754,3 +752,29 @@ button.danger:disabled { opacity: .45; cursor: not-allowed; }
 #switch-progress { position: fixed; top: 0; left: 0; right: 0; height: 3px; z-index: 60; overflow: hidden; background: var(--accent-soft); }
 #switch-progress::after { content: ''; position: absolute; top: 0; bottom: 0; width: 30%; background: var(--accent); animation: switch-slide 1s ease-in-out infinite; }
 @keyframes switch-slide { from { left: -30%; } to { left: 100%; } }
+
+/* Icon polish (task 24): every chrome icon is a Lucide glyph in the muted text
+   colour; the accent only arrives on hover or the active state, and a few of
+   them move a little on hover. Reduced motion turns all of that off. */
+.lucide { transform-origin: 50% 50%; transition: transform .15s ease; }
+.mi-icon .lucide, .ws-caret .lucide, .os-icon .lucide, .t-icon .lucide, .mute-mark .lucide, .addagent-plus .lucide { display: block; }
+.avatar-emoji .lucide { width: 20px; height: 20px; color: var(--dim); }
+.avatar-lg .lucide { width: 24px; height: 24px; }
+.mention-name .lucide { margin-right: 4px; }
+#app-signout .lucide, #settings-signout .lucide, .back-link .lucide, #settings-nav [role="tab"] .lucide { vertical-align: -3px; }
+#new-channel .lucide, #browse-channels .lucide, #thread-close .lucide, #search-close .lucide, #browse-close .lucide, #members-close .lucide,
+#profile-close .lucide, #join-close .lucide, #invite-close .lucide, #addagent-close .lucide, #doc-close .lucide, .pending-clear .lucide, .rem-delete .lucide, .t-archive .lucide { display: block; }
+@keyframes ico-ring { 0%, 100% { transform: rotate(0); } 20% { transform: rotate(14deg); } 40% { transform: rotate(-12deg); } 60% { transform: rotate(8deg); } 80% { transform: rotate(-4deg); } }
+@keyframes ico-turn { to { transform: rotate(180deg); } }
+@keyframes ico-pop { 50% { transform: scale(1.2); } }
+@keyframes ico-nudge { 50% { transform: translateX(3px); } }
+@keyframes ico-nudge-back { 50% { transform: translateX(-3px); } }
+:is(button, a, label, li, [role="tab"]):hover > [data-icon="bell"], :is(button, a, li):hover > .mute-mark > [data-icon="bell-off"] { animation: ico-ring .6s ease; }
+:is(button, a, li):hover [data-icon="settings"] { animation: ico-turn .5s ease; }
+:is(button, a, li):hover [data-icon="plus"], :is(button, a, li):hover [data-icon="folder-plus"] { transform: rotate(90deg); }
+:is(button, a, label, li):hover [data-icon="search"], :is(button, a, li):hover [data-icon="users"], :is(button, a, li):hover [data-icon="user-plus"] { animation: ico-pop .4s ease; }
+:is(button, a, li):hover [data-icon="log-out"], :is(button, a, li):hover [data-icon="log-in"], :is(button, a, li):hover [data-icon="arrow-right"] { animation: ico-nudge .4s ease; }
+:is(button, a, li):hover [data-icon="arrow-left"] { animation: ico-nudge-back .4s ease; }
+:is(button, a, li):hover [data-icon="trash-2"], :is(button, a, li):hover [data-icon="pencil"] { animation: ico-ring .6s ease; }
+:is(button, a):hover [data-icon="x"] { transform: rotate(90deg); }
+@media (prefers-reduced-motion: reduce) { .lucide { animation: none !important; transition: none !important; transform: none !important; } }

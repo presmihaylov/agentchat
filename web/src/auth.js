@@ -1,3 +1,4 @@
+import { ICON } from './icons.js';
 import { wsAvatarEl } from './wsavatar.js';
 import { isFleetRoom } from './fleet.js';
 /* Account pages (/login, /register, /settings) and the password banner.
@@ -541,7 +542,7 @@ const membersSection = async (slug, getRoom) => {
     const fold = document.createElement('button');
     fold.type = 'button';
     fold.className = 'secondary member-fold';
-    const paint = () => { fold.textContent = (open.has(p.id) ? '▾ ' : '▸ ') + agents.length + (agents.length === 1 ? ' agent' : ' agents'); };
+    const paint = () => { fold.innerHTML = (open.has(p.id) ? ICON.chevronDown : ICON.chevronRight) + ' ' + agents.length + (agents.length === 1 ? ' agent' : ' agents'); };
     paint();
     fold.disabled = agents.length === 0;
     head.appendChild(fold);
@@ -645,7 +646,8 @@ const personalWorkspaceBits = async (slug, roomName) => {
     if (!me.avatar_attachment_id) {
       const span = document.createElement('span');
       span.className = 'avatar-lg avatar-emoji';
-      span.textContent = me.avatar || '👻';
+      if (me.avatar) span.textContent = me.avatar;
+      if (!me.avatar) span.innerHTML = ICON.ghost;
       slot.appendChild(span);
       return;
     }

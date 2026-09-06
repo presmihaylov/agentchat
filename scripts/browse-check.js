@@ -65,7 +65,7 @@ const assert = (cond, msg) => { if (!cond) throw new Error(msg); };
     join: !!r.querySelector('.browse-join'),
     nameColor: getComputedStyle(r.querySelector('.browse-name')).color,
   })));
-  const by = (n) => rows.find((r) => r.name === '#' + n);
+  const by = (n) => rows.find((r) => r.name === n);
   assert(by('general') && by('general').member, '#general (a member channel) missing or unmarked');
   assert(by('mine') && by('mine').member, '#mine (a member channel) missing or unmarked');
   assert(by('open-one') && !by('open-one').member, '#open-one should be joinable');
@@ -78,10 +78,10 @@ const assert = (cond, msg) => { if (!cond) throw new Error(msg); };
 
   // joining flips the row to a member row in place
   await page.evaluate(() => [...document.querySelectorAll('#browse-list .browse-row')]
-    .find((r) => r.querySelector('.browse-name').textContent === '#open-one').querySelector('.browse-join').click());
+    .find((r) => r.querySelector('.browse-name').textContent === 'open-one').querySelector('.browse-join').click());
   await page.waitForFunction(() => {
     const r = [...document.querySelectorAll('#browse-list .browse-row')]
-      .find((x) => x.querySelector('.browse-name').textContent === '#open-one');
+      .find((x) => x.querySelector('.browse-name').textContent === 'open-one');
     return r && r.classList.contains('member') && !r.querySelector('.browse-join');
   }, { timeout: 8000 });
 

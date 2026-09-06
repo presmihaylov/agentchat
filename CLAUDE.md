@@ -52,6 +52,7 @@ node scripts/archive-check.js               # ARCHIVE_CHECK_OK
 node scripts/emoji-check.js                 # EMOJI_CHECK_OK
 node scripts/theme-check.js                 # THEME_CHECK_OK
 node scripts/settings-check.js              # SETTINGS_CHECK_OK (same)
+node scripts/icons-check.js                # ICONS_CHECK_OK (every chrome icon is an inline Lucide svg, stroke 2, 16/20/24, no glyphs, task 24)
 node scripts/wsavatar-check.js              # WSAVATAR_CHECK_OK
 node scripts/rail-check.js                  # RAIL_CHECK_OK
 node scripts/railbadge-check.js             # RAILBADGE_CHECK_OK (count pills, 99+, title, favicon)

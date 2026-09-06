@@ -91,7 +91,7 @@ const assert = (cond, msg) => { if (!cond) throw new Error(msg); };
   };
 
   // 1. drop a channel onto a section header
-  await dragTo('# alpha', 'WORK');
+  await dragTo('alpha', 'WORK');
   await page.waitForFunction(() => {
     const ns = [...document.querySelectorAll('#channel-list li')];
     const h = ns.findIndex((n) => n.textContent.includes('Work'));
@@ -100,9 +100,9 @@ const assert = (cond, msg) => { if (!cond) throw new Error(msg); };
   await expect({ Work: 'alpha' }, 'alpha did not persist into Work');
 
   // 2. a second channel, then reorder above the first
-  await dragTo('# beta', 'WORK');
+  await dragTo('beta', 'WORK');
   await expect({ Work: 'alpha,beta' }, 'Work order before reorder');
-  await dragTo('# beta', '# alpha', 'top');
+  await dragTo('beta', 'alpha', 'top');
   await expect({ Work: 'beta,alpha' }, 'reorder did not persist');
 
   // the sidebar shows the same order after a reload, not just in memory
@@ -117,11 +117,11 @@ const assert = (cond, msg) => { if (!cond) throw new Error(msg); };
     .find((n) => /Ops/i.test(n.textContent)).click());
   await page.waitForFunction(() => [...document.querySelectorAll('#channel-list li.section-header')]
     .some((n) => /Ops/i.test(n.textContent) && n.classList.contains('collapsed')), { timeout: 5000 });
-  await dragTo('# gamma', 'OPS');
+  await dragTo('gamma', 'OPS');
   await expect({ Ops: 'gamma' }, 'collapsed drop failed');
 
   // 4. the strip drops a channel back out of every section
-  await dragTo('# alpha', 'drop here for no section');
+  await dragTo('alpha', 'drop here for no section');
   await expect({ Work: 'beta' }, 'alpha did not leave Work');
 
   // 5. the mid-drag affordances: lifted row, drop line, sections outlined

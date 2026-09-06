@@ -76,7 +76,7 @@ const sectionHeader = (page, name) => page.evaluate((n) =>
   // --- move #proj into a brand-new "Work" section ---
   await rightClickChannel(ap, 'proj');
   await clickMenuItem(ap, 'Move to section…');
-  await clickMenuItem(ap, '＋ New section…');           // opens the "section name" prompt
+  await clickMenuItem(ap, 'New section…');           // opens the "section name" prompt
   await ap.waitForFunction(() =>
     [...document.querySelectorAll('#channel-list li.section-header')].some((h) => h.textContent.includes('Work')),
     { timeout: 5000 });

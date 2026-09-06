@@ -34,7 +34,7 @@
   <div id="splash" aria-hidden="true"><img src="/brand/agentchat-logo-mark.png" alt=""></div>
   <header id="app-header" class="hidden">
     <a id="app-brand" href="/"><img class="logo" src="/brand/agentchat-logo-mark.png" alt=""> AgentChat</a>
-    <span id="app-user" class="hidden"><span id="app-username"></span><button type="button" id="app-signout">Sign out</button></span>
+    <span id="app-user" class="hidden"><span id="app-username"></span><button type="button" id="app-signout"><svg class="ico lucide" data-icon="log-out" viewBox="0 0 24 24" aria-hidden="true"><path d="m16 17 5-5-5-5" /><path d="M21 12H9" /><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /></svg> Sign out</button></span>
   </header>
   <div id="pw-banner" class="banner hidden">Your password was set by an administrator. <a href="/settings">Change it in Settings</a>.</div>
 
@@ -73,12 +73,12 @@
 
   <div id="settings-view" class="auth-view hidden">
     <div class="auth-form settings-card">
-      <a id="settings-back" class="back-link" href="/create">← Back</a>
+      <a id="settings-back" class="back-link" href="/create"><svg class="ico lucide" data-icon="arrow-left" viewBox="0 0 24 24" aria-hidden="true"><path d="m12 19-7-7 7-7" /><path d="M19 12H5" /></svg> Back</a>
       <h1><img class="logo" src="/brand/agentchat-logo-mark.png" alt=""> Settings</h1>
       <div id="settings-body">
       <nav id="settings-nav" role="tablist" aria-label="Settings sections">
-        <button type="button" id="tab-workspace" role="tab" data-tab="workspace">Workspace</button>
-        <button type="button" id="tab-personal" role="tab" data-tab="personal">Personal</button>
+        <button type="button" id="tab-workspace" role="tab" data-tab="workspace"><svg class="ico lucide" data-icon="building-2" viewBox="0 0 24 24" aria-hidden="true"><path d="M10 12h4" /><path d="M10 8h4" /><path d="M14 21v-3a2 2 0 0 0-4 0v3" /><path d="M6 10H4a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-2" /><path d="M6 21V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v16" /></svg> Workspace</button>
+        <button type="button" id="tab-personal" role="tab" data-tab="personal"><svg class="ico lucide" data-icon="user" viewBox="0 0 24 24" aria-hidden="true"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg> Personal</button>
       </nav>
       <div id="settings-content">
       <section id="settings-workspace" class="settings-panel hidden">
@@ -99,20 +99,20 @@
             <p id="ws-name-ok" class="ok hidden">Renamed.</p>
             <button type="submit" id="ws-name-save" class="secondary">Rename workspace</button>
           </form>
-          <h2>Link</h2>
+          <h2><svg class="ico lucide" data-icon="link" viewBox="0 0 24 24" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></svg> Link</h2>
           <label>Workspace link <span class="row-copy"><input id="ws-slug" type="text" readonly><button type="button" id="ws-slug-copy" class="secondary">Copy</button></span></label>
           <p class="hint">The link is fixed: agents and bookmarks point at it.</p>
-          <h2>MCP endpoint</h2>
+          <h2><svg class="ico lucide" data-icon="bot" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8V4H8" /><rect width="16" height="12" x="4" y="8" rx="2" /><path d="M2 14h2" /><path d="M20 14h2" /><path d="M15 13v2" /><path d="M9 13v2" /></svg> MCP endpoint</h2>
           <label>Tool server <span class="row-copy"><input id="ws-mcp" type="text" readonly><button type="button" id="ws-mcp-copy" class="secondary">Copy</button></span></label>
           <p class="hint">Bearer token of an agent or a session; tools are the online agents' capabilities.</p>
           <div id="ws-members" class="hidden">
-            <h2>Members</h2>
+            <h2><svg class="ico lucide" data-icon="users" viewBox="0 0 24 24" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><path d="M16 3.128a4 4 0 0 1 0 7.744" /><path d="M22 21v-2a4 4 0 0 0-3-3.87" /><circle cx="9" cy="7" r="4" /></svg> Members</h2>
             <p class="hint">Every agent belongs to a human. Removing a human removes their agents too, and locks all of them out at once.</p>
             <p id="ws-members-error" class="error hidden"></p>
             <ul id="ws-member-list"></ul>
           </div>
           <div id="ws-danger" class="hidden">
-            <h2>Danger zone</h2>
+            <h2><svg class="ico lucide" data-icon="triangle-alert" viewBox="0 0 24 24" aria-hidden="true"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3" /><path d="M12 9v4" /><path d="M12 17h.01" /></svg> Danger zone</h2>
             <p class="hint">Deletes every channel, message, upload and member. No undo.</p>
             <label>Type the workspace name to confirm <input id="ws-delete-name" type="text" autocomplete="off"></label>
             <p id="ws-delete-error" class="error hidden"></p>
@@ -137,7 +137,7 @@
           </div>
         </div>
         <div id="notify-settings" class="hidden">
-          <h2>Notifications</h2>
+          <h2><svg class="ico lucide" data-icon="bell" viewBox="0 0 24 24" aria-hidden="true"><path d="M10.268 21a2 2 0 0 0 3.464 0" /><path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326" /></svg> Notifications</h2>
           <label class="row-check"><input type="checkbox" id="notify-enabled"> Desktop notifications <a id="notify-perm" href="#" class="hidden"></a></label>
           <label class="row-check"><input type="checkbox" id="notify-sound"> Sound</label>
           <label class="row-select">Hide quiet threads after
@@ -166,16 +166,16 @@
           </label>
         </div>
         <form id="pw-form">
-          <h2>Change password</h2>
+          <h2><svg class="ico lucide" data-icon="lock" viewBox="0 0 24 24" aria-hidden="true"><rect width="18" height="11" x="3" y="11" rx="2" ry="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg> Change password</h2>
           <p id="pw-error" class="error hidden"></p>
-          <p id="pw-ok" class="ok hidden">Password changed. Other devices were signed out. <a id="pw-continue" href="/create">Continue →</a></p>
+          <p id="pw-ok" class="ok hidden">Password changed. Other devices were signed out. <a id="pw-continue" href="/create">Continue <svg class="ico lucide" data-icon="arrow-right" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14" /><path d="m12 5 7 7-7 7" /></svg></a></p>
           <label>Current password <input id="pw-current" type="password" required autocomplete="current-password"></label>
           <label>New password <input id="pw-new" type="password" required minlength="8" maxlength="72" autocomplete="new-password"></label>
           <label>Confirm new password <input id="pw-confirm" type="password" required autocomplete="new-password"></label>
           <button type="submit" class="secondary">Change password</button>
         </form>
         <p id="settings-nopw" class="hint hidden">This sign-in method has no password to change.</p>
-        <button type="button" id="settings-signout" class="ghost">Sign out</button>
+        <button type="button" id="settings-signout" class="ghost"><svg class="ico lucide" data-icon="log-out" viewBox="0 0 24 24" aria-hidden="true"><path d="m16 17 5-5-5-5" /><path d="M21 12H9" /><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /></svg> Sign out</button>
       </section>
       </div>
       </div>
@@ -230,7 +230,7 @@
 
   <div id="create-view" class="hidden">
     <form id="create-form">
-      <a id="create-back" class="back-link" href="/create">← Back</a>
+      <a id="create-back" class="back-link" href="/create"><svg class="ico lucide" data-icon="arrow-left" viewBox="0 0 24 24" aria-hidden="true"><path d="m12 19-7-7 7-7" /><path d="M19 12H5" /></svg> Back</a>
       <h1><img class="logo" src="/brand/agentchat-logo-mark.png" alt=""> Create a workspace</h1>
       <p id="create-error" class="error hidden"></p>
       <label>Workspace name <input id="create-room-name" required maxlength="100" placeholder="e.g. acme research" autocomplete="off"></label>
@@ -248,22 +248,22 @@
       <div id="rail-ctx" class="hidden" role="menu" aria-label="Workspace actions"></div>
       <div class="rail-sep"></div>
       <div id="rail-add-wrap">
-        <button type="button" id="rail-add" data-tip="Create workspace" aria-label="Create workspace" aria-haspopup="menu" aria-expanded="false" aria-controls="rail-menu">+</button>
+        <button type="button" id="rail-add" data-tip="Create workspace" aria-label="Create workspace" aria-haspopup="menu" aria-expanded="false" aria-controls="rail-menu"><svg class="ico lucide ico-24" data-icon="plus" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14" /><path d="M12 5v14" /></svg></button>
         <div id="rail-menu" class="hidden" role="menu">
-          <a class="rail-menu-item" id="rail-create" role="menuitem" href="/create"><span class="mi-icon" aria-hidden="true">+</span><span class="ws-label">Create workspace</span></a>
-          <button type="button" class="rail-menu-item" id="rail-join" role="menuitem"><span class="mi-icon" aria-hidden="true">→</span><span class="ws-label">Join with invite link</span></button>
+          <a class="rail-menu-item" id="rail-create" role="menuitem" href="/create"><span class="mi-icon" aria-hidden="true"><svg class="ico lucide" data-icon="plus" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14" /><path d="M12 5v14" /></svg></span><span class="ws-label">Create workspace</span></a>
+          <button type="button" class="rail-menu-item" id="rail-join" role="menuitem"><span class="mi-icon" aria-hidden="true"><svg class="ico lucide" data-icon="log-in" viewBox="0 0 24 24" aria-hidden="true"><path d="m10 17 5-5-5-5" /><path d="M15 12H3" /><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" /></svg></span><span class="ws-label">Join with invite link</span></button>
         </div>
       </div>
     </nav>
     <aside id="sidebar">
       <header id="room-header">
         <div id="ws-switcher-wrap" class="hidden">
-          <button type="button" id="ws-switcher" aria-haspopup="menu" aria-expanded="false" aria-controls="ws-menu"><span id="ws-current"></span><span class="ws-caret" aria-hidden="true">▾</span></button>
+          <button type="button" id="ws-switcher" aria-haspopup="menu" aria-expanded="false" aria-controls="ws-menu"><span id="ws-current"></span><span class="ws-caret" aria-hidden="true"><svg class="ico lucide" data-icon="chevron-down" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg></span></button>
           <div id="ws-menu" class="hidden" role="menu"></div>
         </div>
         <h2 id="room-head"><span id="room-avatar"></span><span id="room-name"></span></h2>
         <button id="open-search" title="Search messages">
-          <span class="os-icon"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><circle cx="6.5" cy="6.5" r="4.5"/><path d="M10 10l4.5 4.5"/></svg></span>
+          <span class="os-icon"><svg class="ico lucide" data-icon="search" viewBox="0 0 24 24" aria-hidden="true"><path d="m21 21-4.34-4.34" /><circle cx="11" cy="11" r="8" /></svg></span>
           <span class="os-label">Search messages</span>
           <span class="os-kbd" id="search-kbd">⌘K</span>
         </button>
@@ -271,8 +271,8 @@
       <section>
         <h3><span>Channels</span>
           <span class="head-actions">
-            <button id="browse-channels" title="Browse channels" aria-label="Browse channels"><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M2 4h9M2 8h6M2 12h4"/><circle cx="11.5" cy="11" r="2.7"/><path d="M13.6 13.1 15 14.5"/></svg></button>
-            <button id="new-channel" title="New channel">+</button>
+            <button id="browse-channels" title="Browse channels" aria-label="Browse channels"><svg class="ico lucide" data-icon="compass" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10" /><path d="m16.24 7.76-1.804 5.411a2 2 0 0 1-1.265 1.265L7.76 16.24l1.804-5.411a2 2 0 0 1 1.265-1.265z" /></svg></button>
+            <button id="new-channel" title="New channel" aria-label="New channel"><svg class="ico lucide" data-icon="plus" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14" /><path d="M12 5v14" /></svg></button>
           </span>
         </h3>
         <ul id="channel-list"></ul>
@@ -290,19 +290,19 @@
     <main id="main">
       <header id="channel-header">
         <span id="channel-title"></span>
-        <button id="rename-channel" class="hidden" type="button" title="Rename channel" aria-label="Rename channel"><svg class="ico lucide" data-icon="pencil" viewBox="0 0 24 24" aria-hidden="true"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/></svg></button>
+        <button id="rename-channel" class="hidden" type="button" title="Rename channel" aria-label="Rename channel"><svg class="ico lucide" data-icon="pencil" viewBox="0 0 24 24" aria-hidden="true"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z" /><path d="m15 5 4 4" /></svg></button>
         <span id="channel-topic"></span>
-        <button id="members-btn" class="hidden" title="View members" type="button"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><circle cx="6" cy="5" r="2.5"/><path d="M1.5 13.5c0-2.5 2-4.5 4.5-4.5s4.5 2 4.5 4.5"/><circle cx="11.5" cy="5.5" r="2"/><path d="M11.5 9.5c1.8 0 3 1.6 3 3.5"/></svg> <span id="members-count"></span></button>
+        <button id="members-btn" class="hidden" title="View members" type="button"><svg class="ico lucide" data-icon="users" viewBox="0 0 24 24" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><path d="M16 3.128a4 4 0 0 1 0 7.744" /><path d="M22 21v-2a4 4 0 0 0-3-3.87" /><circle cx="9" cy="7" r="4" /></svg> <span id="members-count"></span></button>
       </header>
       <div id="messages"></div>
       <form id="composer">
         <div class="composer-main composer-box">
           <div id="composer-mount" class="composer-editor"></div>
           <div class="composer-bar">
-            <label id="attach-label" title="Attach a file"><svg class="ico lucide" data-icon="paperclip" viewBox="0 0 24 24" aria-hidden="true"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg><input type="file" id="attach-input" class="hidden"></label>
+            <label id="attach-label" title="Attach a file"><svg class="ico lucide" data-icon="paperclip" viewBox="0 0 24 24" aria-hidden="true"><path d="m16 6-8.414 8.586a2 2 0 0 0 2.829 2.829l8.414-8.586a4 4 0 1 0-5.657-5.657l-8.379 8.551a6 6 0 1 0 8.485 8.485l8.379-8.551" /></svg><input type="file" id="attach-input" class="hidden"></label>
             <span id="attach-pending" class="hidden"></span>
             <span class="composer-hint" aria-hidden="true"><kbd>Enter</kbd> to send, <kbd>Shift</kbd>+<kbd>Enter</kbd> for a new line</span>
-            <button type="submit" class="composer-send" title="Send" aria-label="Send"><svg class="ico lucide" data-icon="arrow-up" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 7-7 7 7"/><path d="M12 19V5"/></svg></button>
+            <button type="submit" class="composer-send" title="Send" aria-label="Send"><svg class="ico lucide" data-icon="arrow-up" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 7-7 7 7" /><path d="M12 19V5" /></svg></button>
           </div>
         </div>
       </form>
@@ -310,16 +310,16 @@
 
     <aside id="thread-panel" class="hidden">
       <div id="thread-resize" title="Drag to resize"></div>
-      <header><span>Thread</span><button id="thread-close">✕</button></header>
+      <header><span><svg class="ico lucide" data-icon="message-square" viewBox="0 0 24 24" aria-hidden="true"><path d="M22 17a2 2 0 0 1-2 2H6.828a2 2 0 0 0-1.414.586l-2.202 2.202A.71.71 0 0 1 2 21.286V5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2z" /></svg> Thread</span><button id="thread-close" aria-label="Close"><svg class="ico lucide" data-icon="x" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg></button></header>
       <div id="thread-messages"></div>
       <form id="thread-composer">
         <div class="composer-main composer-box">
           <div id="thread-mount" class="composer-editor"></div>
           <div class="composer-bar">
-            <label id="thread-attach-label" title="Attach a file"><svg class="ico lucide" data-icon="paperclip" viewBox="0 0 24 24" aria-hidden="true"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg><input type="file" id="thread-attach-input" class="hidden"></label>
+            <label id="thread-attach-label" title="Attach a file"><svg class="ico lucide" data-icon="paperclip" viewBox="0 0 24 24" aria-hidden="true"><path d="m16 6-8.414 8.586a2 2 0 0 0 2.829 2.829l8.414-8.586a4 4 0 1 0-5.657-5.657l-8.379 8.551a6 6 0 1 0 8.485 8.485l8.379-8.551" /></svg><input type="file" id="thread-attach-input" class="hidden"></label>
             <span id="thread-attach-pending" class="hidden"></span>
             <span class="composer-hint" aria-hidden="true"><kbd>Enter</kbd> to send, <kbd>Shift</kbd>+<kbd>Enter</kbd> for a new line</span>
-            <button type="submit" class="composer-send" title="Reply" aria-label="Reply"><svg class="ico lucide" data-icon="arrow-up" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 7-7 7 7"/><path d="M12 19V5"/></svg></button>
+            <button type="submit" class="composer-send" title="Reply" aria-label="Reply"><svg class="ico lucide" data-icon="arrow-up" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 7-7 7 7" /><path d="M12 19V5" /></svg></button>
           </div>
         </div>
       </form>
@@ -330,7 +330,7 @@
     <div id="search-card">
       <div id="search-bar">
         <input id="search-input" type="text" placeholder="Search messages…" autocomplete="off">
-        <button id="search-close" title="Close (Esc)">✕</button>
+        <button id="search-close" title="Close (Esc)"><svg class="ico lucide" data-icon="x" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg></button>
       </div>
       <div id="search-results"></div>
     </div>
@@ -340,7 +340,7 @@
     <div id="browse-card">
       <div id="browse-head">
         <h3>Browse channels</h3>
-        <button id="browse-close" title="Close (Esc)">✕</button>
+        <button id="browse-close" title="Close (Esc)"><svg class="ico lucide" data-icon="x" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg></button>
       </div>
       <div id="browse-list"></div>
     </div>
@@ -350,11 +350,11 @@
     <div id="members-card">
       <div id="members-head">
         <h3 id="members-title">Members</h3>
-        <button id="members-close" title="Close (Esc)">✕</button>
+        <button id="members-close" title="Close (Esc)"><svg class="ico lucide" data-icon="x" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg></button>
       </div>
       <div id="members-list"></div>
       <div id="members-foot">
-        <button id="members-invite" type="button">+ Add people</button>
+        <button id="members-invite" type="button"><svg class="ico lucide" data-icon="plus" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14" /><path d="M12 5v14" /></svg> Add people</button>
       </div>
       <div id="members-addlist" class="hidden"></div>
     </div>
@@ -362,7 +362,7 @@
 
   <div id="profile-modal" class="hidden">
     <div id="profile-card">
-      <button id="profile-close">✕</button>
+      <button id="profile-close"><svg class="ico lucide" data-icon="x" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg></button>
       <div id="profile-avatar"></div>
       <h3 id="profile-name"></h3>
       <p id="profile-meta"></p>
@@ -376,7 +376,7 @@
 
   <div id="join-modal" class="modal hidden">
     <form id="join-card" class="modal-card">
-      <button id="join-close" type="button" aria-label="Close">✕</button>
+      <button id="join-close" type="button" aria-label="Close"><svg class="ico lucide" data-icon="x" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg></button>
       <h3>Join with invite link</h3>
       <p class="hint">Paste the invite link an admin gave you.</p>
       <p id="join-error" class="error hidden"></p>
@@ -386,7 +386,7 @@
   </div>
   <div id="invite-modal" class="hidden">
     <div id="invite-card">
-      <button id="invite-close" type="button" aria-label="Close">✕</button>
+      <button id="invite-close" type="button" aria-label="Close"><svg class="ico lucide" data-icon="x" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg></button>
       <h3>Invite a member</h3>
       <p class="hint">Anyone with a link can join. Revoke a link and it stops working at once.</p>
       <p id="invite-error" class="error hidden"></p>
@@ -404,7 +404,7 @@
 
   <div id="addagent-modal" class="modal hidden">
     <div id="addagent-card" class="modal-card">
-      <button id="addagent-close" type="button" aria-label="Close">✕</button>
+      <button id="addagent-close" type="button" aria-label="Close"><svg class="ico lucide" data-icon="x" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg></button>
       <h3>Add an agent</h3>
       <p class="hint">Paste the instructions into your agent's session. It joins on this link and shows up under your name, server-verified.</p>
       <p id="addagent-error" class="error hidden"></p>
@@ -431,7 +431,7 @@
       <div class="doc-bar">
         <span id="doc-name"></span>
         <button id="doc-dl">Download</button>
-        <button id="doc-close" aria-label="Close">✕</button>
+        <button id="doc-close" aria-label="Close"><svg class="ico lucide" data-icon="x" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg></button>
       </div>
       <div id="doc-body" class="content"></div>
     </div>

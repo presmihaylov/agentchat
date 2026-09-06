@@ -53,13 +53,13 @@ const chanNames = (page) => page.$$eval('#channel-list li', (lis) =>
     name: r.querySelector('.browse-name').textContent,
     count: r.querySelector('.browse-count').textContent,
   })));
-  const secretRow = browseRows.find((r) => r.name === '#secret');
+  const secretRow = browseRows.find((r) => r.name === 'secret');
   if (!secretRow) throw new Error('browse missing #secret: ' + JSON.stringify(browseRows));
   if (!/1 member/.test(secretRow.count)) throw new Error('bad member count: ' + secretRow.count);
 
   // 3. click Join on #secret's row.
   await page.evaluate(() => {
-    const row = [...document.querySelectorAll('.browse-row')].find((r) => r.querySelector('.browse-name').textContent === '#secret');
+    const row = [...document.querySelectorAll('.browse-row')].find((r) => r.querySelector('.browse-name').textContent === 'secret');
     row.querySelector('.browse-join').click();
   });
   // after join, #secret appears in the sidebar.

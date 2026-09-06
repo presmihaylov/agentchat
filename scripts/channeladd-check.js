@@ -61,7 +61,7 @@ const waitSidebar = (page, pred, what) => page.waitForFunction((src) => {
   await page.waitForSelector('#browse-modal:not(.hidden)', { timeout: 4000 });
   await api('/api/v1/channels', { method: 'POST', body: { name: 'plaza' }, token: alice.token });
   await page.waitForFunction(() => [...document.querySelectorAll('.browse-row .browse-name')]
-    .some((n) => n.textContent === '#plaza'), { timeout: 5000 })
+    .some((n) => n.textContent === 'plaza'), { timeout: 5000 })
     .catch(() => { throw new Error('open Browse never listed #plaza'); });
   await page.click('#browse-close');
 

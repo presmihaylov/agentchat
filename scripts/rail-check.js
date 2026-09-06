@@ -27,7 +27,8 @@ const iconFirst = (page, sel) => page.$$eval(sel, (els) => els.map((el) => {
   const icon = el.querySelector('.mi-icon, .ws-avatar');
   const before = getComputedStyle(el, '::before').content;
   const iconLeft = icon ? icon.getBoundingClientRect().left : (before && before !== 'none' && before !== '""' ? el.getBoundingClientRect().left : null);
-  return { text: el.textContent, hasIcon: iconLeft !== null, iconFirst: iconLeft !== null && label && iconLeft < label.getBoundingClientRect().left };
+  const svg = icon && icon.querySelector('svg.lucide[data-icon]');
+  return { text: (svg ? svg.dataset.icon + ':' : '') + el.textContent, hasIcon: iconLeft !== null, iconFirst: iconLeft !== null && label && iconLeft < label.getBoundingClientRect().left };
 }));
 
 (async () => {
@@ -98,7 +99,7 @@ const iconFirst = (page, sel) => page.$$eval(sel, (els) => els.map((el) => {
   await visible(page, '#rail-menu');
   assert(await page.$eval('#rail-add', (el) => el.getAttribute('aria-expanded')) === 'true', 'aria-expanded not true');
   const menuRows = await iconFirst(page, '#rail-menu .rail-menu-item');
-  assert(menuRows.map((r) => r.text.replace(/\s+/g, ' ').trim()).join('|') === '+Create workspace|→Join with invite link', 'rail menu rows: ' + JSON.stringify(menuRows));
+  assert(menuRows.map((r) => r.text.replace(/\s+/g, ' ').trim()).join('|') === 'plus:Create workspace|log-in:Join with invite link', 'rail menu rows: ' + JSON.stringify(menuRows));
   assert(menuRows.every((r) => r.iconFirst), 'rail menu icon not first: ' + JSON.stringify(menuRows));
   assert(await page.$eval('#rail-create', (a) => a.getAttribute('href')).then((h) => h.startsWith('/create?next=')), 'Create row does not lead to /create');
   await shot(page, 'add-menu.png');
@@ -121,7 +122,7 @@ const iconFirst = (page, sel) => page.$$eval(sel, (els) => els.map((el) => {
   await page.click('#ws-switcher');
   await visible(page, '#ws-menu');
   const wsRows = await iconFirst(page, '#ws-menu .ws-item');
-  assert(wsRows.map((r) => r.text).join('|') === 'Invite member|Join with invite link|Settings', 'ws menu rows: ' + JSON.stringify(wsRows));
+  assert(wsRows.map((r) => r.text).join('|') === 'mail:Invite member|log-in:Join with invite link|settings:Settings', 'ws menu rows: ' + JSON.stringify(wsRows));
   assert(wsRows.every((r) => r.hasIcon && r.iconFirst), 'ws menu icon not first: ' + JSON.stringify(wsRows));
   await shot(page, 'ws-menu.png');
   await page.click('#ws-join');

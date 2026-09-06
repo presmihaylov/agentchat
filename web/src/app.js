@@ -341,7 +341,8 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
     }
     const span = document.createElement('span');
     span.className = cls + ' avatar-emoji';
-    span.textContent = p ? p.avatar : '👻';
+    if (p) span.textContent = p.avatar;
+    if (!p) span.innerHTML = ICON.ghost;
     return span;
   };
   // Owner badge: overlay the human owner's avatar bottom-right, Slack-app-badge style.
@@ -367,12 +368,8 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
   const reactionMap = {};
   const QUICK_REACTIONS = ['👀', '✅', '👍', '🎉', '❤️', '🚀', '🙏', '😂'];
 
-  // Slack's add-reaction glyph: an outlined smiley with a plus at its shoulder
-  const ADD_REACTION_ICON = '<svg class="rx-add-icon" viewBox="0 0 20 20" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">'
-    + '<path d="M15.9 10.6a7 7 0 1 1-6.5-6.5"/>'
-    + '<path d="M6.3 11.6a3.4 3.4 0 0 0 5.4 0"/>'
-    + '<circle cx="7" cy="8.4" r=".7" fill="currentColor" stroke="none"/><circle cx="11" cy="8.4" r=".7" fill="currentColor" stroke="none"/>'
-    + '<path d="M15.5 2.5v5M13 5h5"/></svg>';
+  // the add-reaction pill: the same smile-plus as the toolbar, tagged for the checks
+  const ADD_REACTION_ICON = ICON.smilePlus.replace('class="ico lucide"', 'class="ico lucide rx-add-icon"');
 
   // "You, Ann and Ben reacted with :eyes:" — Slack's wording, you first
   const reactionTipText = (rx) => {
@@ -549,8 +546,8 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
     const actions = [];
     actions.push(`<button data-act="react" title="Add reaction" aria-label="Add reaction">${ICON.smilePlus}</button>`);
     if (!inThread && !m.thread_root_id) actions.push(`<button data-act="thread" title="Reply in thread" aria-label="Reply in thread">${ICON.messageSquare}</button>`);
-    if (canEdit) actions.push(`<button data-act="edit" title="Edit" aria-label="Edit">${ICON.pencilL}</button>`);
-    if (canDelete) actions.push(`<button data-act="delete" title="Delete" aria-label="Delete">${ICON.trash2}</button>`);
+    if (canEdit) actions.push(`<button data-act="edit" title="Edit" aria-label="Edit">${ICON.pencil}</button>`);
+    if (canDelete) actions.push(`<button data-act="delete" title="Delete" aria-label="Delete">${ICON.trashTwo}</button>`);
     // last item: every message action in one menu, reachable by keyboard and touch
     actions.push(`<button data-act="more" title="More actions" aria-label="More actions" aria-haspopup="menu">${ICON.moreVertical}</button>`);
 
@@ -558,7 +555,7 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
     const atts = (m.attachments || []).map((a) =>
       (a.content_type || '').startsWith('image/')
         ? `<img class="inline-img" data-att="${esc(a.id)}" data-name="${esc(a.filename)}" alt="${esc(a.filename)}">`
-        : `<button class="attachment" data-att="${esc(a.id)}" data-name="${esc(a.filename)}">${ICON.doc} ${esc(a.filename)}</button>`).join(' ');
+        : `<button class="attachment" data-att="${esc(a.id)}" data-name="${esc(a.filename)}">${ICON.fileText} ${esc(a.filename)}</button>`).join(' ');
 
     const replyBar = (!inThread && m.reply_count > 0)
       ? '<button class="reply-bar" data-act="thread"></button>' : '';
@@ -774,11 +771,11 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
     const active = t.root_id === openThreadRoot;
     if (active) li.classList.add('active');
     const snippet = t.body.replace(/\s+/g, ' ').slice(0, 30) || '(attachment)';
-    // the tree guide is drawn by CSS on .t-icon (a trunk, an elbow on the last
-    // leaf); a muted thread shows the same bell-slash as a muted channel
-    li.innerHTML = `<span class="t-icon" aria-hidden="true"></span>
+    // a thread hangs off its channel: the Lucide elbow marks every leaf; a muted
+    // thread shows the same bell-off as a muted channel
+    li.innerHTML = `<span class="t-icon" aria-hidden="true">${ICON.cornerDownRight}</span>
       <span class="t-snippet">${esc(snippet)}</span>`;
-    if (t.muted) li.classList.add('muted');
+    if (t.muted) { li.classList.add('muted'); li.insertAdjacentHTML('beforeend', '<span class="mute-mark">' + ICON.bellOff + '</span>'); }
     if (t.unread_count > 0 && !t.muted && !active) {
       li.classList.add('unread');
       if (t.unread_mentions > 0) {
@@ -800,7 +797,7 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
     const x = document.createElement('button');
     x.type = 'button';
     x.className = 't-archive';
-    x.textContent = '✕';
+    x.innerHTML = ICON.x;
     x.title = 'Hide thread';
     x.setAttribute('aria-label', x.title);
     x.onclick = (ev) => {
@@ -909,15 +906,13 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
     };
   };
 
-  // monochrome sigils: a text # for public, an inline lock for private, both
-  // in the row's own colour so the list carries no emoji colour
-  const LOCK_SVG = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 7V5a4 4 0 1 1 8 0v2h1v8H3V7h1zm2 0h4V5a2 2 0 1 0-4 0v2z"/></svg>';
+  // monochrome sigils: a hash for public, a lock for private, both in the
+  // row's own colour so the list carries no emoji colour
   const sigilEl = (priv) => {
     const el = document.createElement('span');
     el.className = 'sigil' + (priv ? ' sigil-lock' : '');
     el.setAttribute('aria-hidden', 'true');
-    if (priv) el.innerHTML = LOCK_SVG;
-    if (!priv) el.textContent = '#';
+    el.innerHTML = priv ? ICON.lock : ICON.hash;
     return el;
   };
   const setChannelTitle = (ch) => {
@@ -947,7 +942,7 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
     nameEl.textContent = ch.name + (ch.archived ? ' (archived)' : '');
     li.appendChild(nameEl);
     if (ch.archived) li.classList.add('archived');
-    if (ch.muted) li.classList.add('muted');
+    if (ch.muted) { li.classList.add('muted'); li.insertAdjacentHTML('beforeend', '<span class="mute-mark">' + ICON.bellOff + '</span>'); }
     if (current && ch.id === current.id) li.classList.add('active');
     // Any unread glows the channel name; only @mentions get a numeric badge.
     // A muted channel stays dark unless you are mentioned (or broadcast at).
@@ -1093,7 +1088,7 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
     const items = groups
       .filter((g) => placement[ch.id] !== g.id)
       .map((g) => ({ label: g.name, run: () => moveChannel(ch, g.id) }));
-    items.push({ label: '＋ New section…', run: () => createSectionAndMove(ch) });
+    items.push({ label: 'New section…', run: () => createSectionAndMove(ch) });
     if (placement[ch.id]) items.push({ label: 'Remove from section', danger: true, run: () => moveChannel(ch, null) });
     openContextMenu(x, y, items);
   };
@@ -1229,7 +1224,7 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
         del.type = 'button';
         del.className = 'rem-delete';
         del.title = 'Delete this reminder';
-        del.textContent = '✕';
+        del.innerHTML = ICON.x;
         del.onclick = async () => {
           if (!confirm('Delete this reminder?\n\n' + r.text)) return;
           try {
@@ -1360,7 +1355,7 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
       const li = document.createElement('li');
       li.className = 'addagent-row participant-leaf';
       li.id = 'addagent-row';
-      li.innerHTML = '<span class="addagent-plus" aria-hidden="true">+</span>Add an agent';
+      li.innerHTML = '<span class="addagent-plus" aria-hidden="true">' + ICON.plus + '</span>Add an agent';
       li.title = 'Mint a link that badges the joining agent as yours';
       li.onclick = () => openAddAgent();
       ul.appendChild(li);
@@ -2396,7 +2391,13 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
     if (!opts.href) el.type = 'button';
     if (opts.onclick) el.onclick = opts.onclick;
     if (opts.id) el.id = opts.id;
-    if (opts.icon) el.dataset.icon = opts.icon;
+    if (opts.icon) {
+      const i = document.createElement('span');
+      i.className = 'mi-icon';
+      i.setAttribute('aria-hidden', 'true');
+      i.innerHTML = opts.icon;
+      el.prepend(i);
+    }
     if (opts.current) el.setAttribute('aria-current', 'true');
     return el;
   };
@@ -2413,9 +2414,9 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
     const menu = $('ws-menu');
     menu.innerHTML = '';
     // only admins get the code from /room, and only they may hand it out
-    if (isAdmin) menu.appendChild(wsMenuItem('Invite member', { id: 'ws-invite-member', icon: '✉', onclick: () => { setMenuOpen(false); openInviteModal(); } }));
-    menu.appendChild(wsMenuItem('Join with invite link', { id: 'ws-join', icon: '→', onclick: () => { setMenuOpen(false); openJoinModal(); } }));
-    menu.appendChild(wsMenuItem('Settings', { icon: '⚙', href: '/settings?next=' + encodeURIComponent(here) }));
+    if (isAdmin) menu.appendChild(wsMenuItem('Invite member', { id: 'ws-invite-member', icon: ICON.mail, onclick: () => { setMenuOpen(false); openInviteModal(); } }));
+    menu.appendChild(wsMenuItem('Join with invite link', { id: 'ws-join', icon: ICON.logIn, onclick: () => { setMenuOpen(false); openJoinModal(); } }));
+    menu.appendChild(wsMenuItem('Settings', { icon: ICON.settings, href: '/settings?next=' + encodeURIComponent(here) }));
     $('ws-current').textContent = room.name;
     paintRoomMark();
   };
@@ -2965,8 +2966,8 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
 
   const renderMembersModal = () => {
     if (!current) return;
-    $('members-title').textContent = '#' + current.name + ' · ' + channelMembers.length +
-      (channelMembers.length === 1 ? ' member' : ' members');
+    $('members-title').replaceChildren(sigilEl(current.private), current.name + ' · ' + channelMembers.length +
+      (channelMembers.length === 1 ? ' member' : ' members'));
     const list = $('members-list');
     list.innerHTML = '';
     // removal is admin-only server-side (public and private alike); #general is pinned
@@ -3285,7 +3286,7 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
   // flip to a confirmed state only when the copy succeeded; otherwise show an
   // error state and hold it a bit longer so the user notices
   const flashCopy = (btn, ok, restore) => {
-    btn.textContent = ok ? '✓ copied' : '⚠ copy failed';
+    btn.innerHTML = ok ? ICON.check + ' copied' : ICON.triangleAlert + ' copy failed';
     setTimeout(() => { btn.textContent = restore; }, ok ? 1500 : 2500);
   };
 
@@ -3478,7 +3479,7 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
       row.className = 'browse-row' + (ch.member ? ' member' : '');
       const n = ch.member_count || 0;
       row.innerHTML = `<div class="browse-meta">
-          <span class="browse-name">#${esc(ch.name)}</span>
+          <span class="browse-name">${ch.private ? ICON.lock : ICON.hash}${esc(ch.name)}</span>
           <span class="browse-topic">${esc(ch.topic || '')}</span>
           <span class="browse-count">${n} member${n === 1 ? '' : 's'}</span>
         </div>`;
@@ -3542,12 +3543,12 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
       im.src = URL.createObjectURL(file);
       pend.appendChild(im);
     }
-    pend.insertAdjacentHTML('beforeend', ICON.clip + ' ');
+    pend.insertAdjacentHTML('beforeend', ICON.paperclip + ' ');
     pend.appendChild(document.createTextNode(pendingAtt[which].filename));
     const clear = document.createElement('button');
     clear.type = 'button';
     clear.className = 'pending-clear';
-    clear.textContent = '✕';
+    clear.innerHTML = ICON.x;
     clear.onclick = () => { pendingAtt[which] = null; pend.classList.add('hidden'); };
     pend.appendChild(clear);
     pend.classList.remove('hidden');

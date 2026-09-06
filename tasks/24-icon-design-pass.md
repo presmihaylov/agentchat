@@ -1,6 +1,6 @@
 # 24 Icon design pass (shadcn / Lucide)
 
-Status: todo
+Status: done
 
 Maya via Chief, root 37381fe8 in #agentchat (2026-09-05 14:59Z). After the polish pass; its own deploy.
 
@@ -19,3 +19,21 @@ Maya via Chief, root 37381fe8 in #agentchat (2026-09-05 14:59Z). After the polis
 - A browser check walks the chrome and asserts every icon is an inline SVG from the set (a data attribute
   names the icon), one stroke width, sizes in {16, 20, 24}, no emoji in chrome text.
 - Before/after screenshot grid in the done line.
+
+## Design
+- Source: `lucide-static` (devDependency, pinned). `web/scripts/gen-icons.mjs` reads the named SVGs
+  from node_modules and writes `web/src/icons.js`: every glyph inlined as
+  `<svg class="ico lucide" data-icon="<name>" viewBox="0 0 24 24">`, plus `ICON_NAMES` for the check.
+  Nothing is fetched at runtime; rerun the generator to add an icon.
+- Size scale in CSS only: `.ico` 16px (default), `.ico-20` / `h1 .ico` 20px, `.ico-24` (rail +) 24px.
+  Stroke 2 comes from the set. Colour is `currentColor`, so icons inherit the muted text colour of the
+  row or button and take the accent only where the row itself does (active, hover).
+- Every text glyph in the chrome is gone: `#`/lock sigils, `▾`/`▸` chevrons, `✕` closes, `←`/`→`,
+  `✉`, `⚙`, `✓`, `⚠`, `＋`, `👻` fallback avatar, `📣` broadcast row, the drawn thread-tree elbows
+  (now `corner-down-right`), the mask-based mute mark (now `bell-off`). Emoji stay in message content,
+  reactions and avatars.
+- Hover polish, CSS only and off under `prefers-reduced-motion`: bell and bell-off ring, cog turns,
+  plus rotates to x, search/users pop, log-in/out and arrows nudge, trash and pencil wiggle, x turns.
+- `scripts/icons-check.js` walks the chrome (room, hover toolbar, thread panel, both menus, every modal,
+  settings) and asserts every visible svg outside content areas is a Lucide glyph from `ICON_NAMES`,
+  stroke 2, square in {16, 20, 24}, and that no chrome text node holds a glyph or emoji.

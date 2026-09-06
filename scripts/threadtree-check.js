@@ -95,41 +95,22 @@ async function api(path, opts = {}) {
   // a thread must not leak under the wrong channel
   if (leafIn('general', 'topic B') || leafIn('proj', 'topic A')) fail('a thread nested under the wrong channel');
 
-  // the tree guide is drawn, not glyphs: one continuous trunk from the first
-  // leaf down to the middle of the last one, an elbow tick on every row
-  const guide = await page.evaluate(() => {
-    const leaves = [...document.querySelectorAll('#channel-list li.thread-leaf')];
-    const rows = leaves.map((li) => {
-      const icon = li.querySelector('.t-icon');
-      const r = li.getBoundingClientRect(), ir = icon.getBoundingClientRect();
-      const trunk = getComputedStyle(icon, '::before'), tick = getComputedStyle(icon, '::after');
-      return {
-        last: li.classList.contains('last'), top: r.top, bottom: r.bottom, iconTop: ir.top, iconBottom: ir.bottom,
-        glyph: trunk.content, trunkStyle: trunk.borderLeftStyle, trunkTop: trunk.top, trunkBottom: trunk.bottom,
-        tickStyle: tick.borderTopStyle, tickTop: tick.top, color: trunk.borderLeftColor,
-      };
-    });
-    // #general's two leaves are the first two rows of the list
-    return { rows, gap: rows.length > 1 ? rows[1].top - rows[0].bottom : null };
-  });
-  const rows = guide.rows;
+  // every leaf carries the Lucide elbow (task 24), never a text glyph; the
+  // last leaf under a channel is still marked so the styling can close the tree
+  const rows = await page.evaluate(() => [...document.querySelectorAll('#channel-list li.thread-leaf')].map((li) => {
+    const icon = li.querySelector('.t-icon');
+    const svg = icon && icon.querySelector('svg.lucide');
+    return { last: li.classList.contains('last'), icon: svg ? svg.dataset.icon : null, text: icon ? icon.textContent.trim() : null,
+      w: svg ? svg.getBoundingClientRect().width : 0 };
+  }));
   if (rows.length < 3) fail('expected three leaves, got ' + rows.length);
   for (const r of rows) {
-    if (r.glyph !== '""') fail('a leaf still carries a text glyph: ' + r.glyph);
-    if (r.trunkStyle !== 'solid' || r.tickStyle !== 'solid') fail('guide not drawn with borders: ' + JSON.stringify(r));
-    // percentages resolve to px once laid out: the middle is half the icon column
-    const half = (r.iconBottom - r.iconTop) / 2, near = (v) => Math.abs(parseFloat(v) - half) < 0.6;
-    if (!near(r.tickTop)) fail('elbow tick not at the row middle: ' + r.tickTop + ' vs ' + half);
-    if (Math.abs(r.iconTop - (r.top + 4)) > 0.6 || Math.abs(r.iconBottom - (r.bottom - 4)) > 0.6) fail('icon column does not span the row: ' + JSON.stringify(r));
-    // the trunk reaches 4px past the icon on both ends, i.e. the row edges, so two
-    // flush rows join with no gap; the last leaf stops at its middle (the elbow)
-    if (r.trunkTop !== '-4px') fail('trunk does not start at the row top: ' + r.trunkTop);
-    if (!r.last && r.trunkBottom !== '-4px') fail('trunk does not reach the row bottom: ' + r.trunkBottom);
-    if (r.last && !near(r.trunkBottom)) fail('last leaf trunk should stop at the middle: ' + r.trunkBottom + ' vs ' + half);
+    if (r.icon !== 'corner-down-right') fail('leaf without the elbow icon: ' + JSON.stringify(r));
+    if (r.text !== '') fail('a leaf still carries a text glyph: ' + r.text);
+    if (Math.round(r.w) !== 16) fail('elbow is not 16px: ' + r.w);
   }
   if (rows[0].last) fail('the first of two leaves is marked last');
   if (!rows[1].last) fail('the second leaf under #general is not marked last');
-  if (guide.gap !== 0) fail('leaf rows are not flush, the trunk would break: gap=' + guide.gap);
   const fs = require('fs'); fs.mkdirSync('tmp', { recursive: true });
   const side = await page.$('#sidebar');
   await side.screenshot({ path: 'tmp/threadtree-guide.png' });
