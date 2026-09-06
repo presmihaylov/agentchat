@@ -526,9 +526,15 @@ a.chanlink:hover { text-decoration: underline; }
 .mm-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--dim); opacity: .45; flex: none; }
 .mm-dot.on { background: #3fb950; opacity: 1; }
 .mm-owner { color: var(--dim); font-size: 11px; }
-.mm-remove, .mm-add { margin-left: auto; border-radius: 6px; padding: 4px 12px; font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }
-.mm-remove { background: none; border: 1px solid var(--border); color: var(--dim); }
-.mm-remove:hover { border-color: var(--danger, #e5534b); color: var(--danger, #e5534b); }
+.mm-remove, .mm-remove-gap, .mm-add { margin-left: auto; }
+.mm-add { border-radius: 6px; padding: 4px 12px; font: inherit; font-size: 13px; font-weight: 500; line-height: 20px; border: 1px solid transparent; cursor: pointer; }
+/* one Remove everywhere (Maya, 06e9f192): outline, muted, the settings button font,
+   a fixed width so it sits at one x down every list; .remove-gap keeps the slot */
+.remove-btn, .remove-gap { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 84px; box-sizing: border-box; padding: 4px 12px; border-radius: 6px; font: inherit; font-size: 13px; font-weight: 500; line-height: 20px; white-space: nowrap; }
+.remove-btn { background: none; border: 1px solid var(--border); color: var(--dim); cursor: pointer; }
+.remove-btn:hover, .remove-btn:focus-visible { background: var(--panel2); color: var(--text); outline: none; }
+.remove-btn:disabled { opacity: .5; cursor: not-allowed; }
+.remove-gap { visibility: hidden; }
 /* deeper than --accent so the white label clears WCAG AA */
 .mm-add { background: #15568a; border: 0; color: var(--on-accent); }
 .mm-add:hover { filter: brightness(1.08); }
@@ -646,6 +652,9 @@ a.chanlink:hover { text-decoration: underline; }
 .settings-panel button, .settings-panel .upload-btn { width: auto; align-self: flex-start; padding: 6px 12px; font-size: 13px; font-weight: 500; line-height: 20px; border-radius: 6px; }
 .settings-panel button.secondary, .settings-panel .upload-btn, .settings-panel #avatar-remove { background: none; border: 1px solid var(--border); color: var(--text); }
 .settings-panel button.secondary:hover, .settings-panel .upload-btn:hover, .settings-panel #avatar-remove:hover { background: var(--panel2); color: var(--text); }
+/* the shared Remove keeps its own width and padding inside the settings panel */
+.settings-panel button.remove-btn { width: 84px; padding: 4px 12px; align-self: auto; background: none; border: 1px solid var(--border); color: var(--dim); }
+.settings-panel button.remove-btn:hover { background: var(--panel2); color: var(--text); }
 .settings-panel button.ghost { background: none; border: 0; color: var(--dim); padding: 4px 0; }
 .settings-panel button.ghost:hover { color: var(--text); text-decoration: underline; }
 .settings-panel > div, .settings-panel > form { display: flex; flex-direction: column; gap: 8px; }
@@ -724,7 +733,7 @@ html:not([data-theme="light"]) .rail-item .ws-avatar { color: hsl(var(--ws-h) 55
 #ws-members { margin-top: 0; }
 /* Members table (task 19, styled pass): fixed grid columns so the role badge,
    the agents button and Remove sit at one x on every row, humans and agents alike. */
-.member-grid, #ws-member-list .member-head, #ws-member-list .member-agent { display: grid; grid-template-columns: minmax(0, 1fr) 84px 124px 108px; align-items: center; gap: 12px; padding: 8px 12px; }
+.member-grid, #ws-member-list .member-head, #ws-member-list .member-agent { display: grid; grid-template-columns: minmax(0, 1fr) 84px 124px 84px; align-items: center; gap: 12px; padding: 8px 12px; }
 #ws-member-header { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); border: 1px solid var(--border); border-bottom: 0; border-radius: 8px 8px 0 0; background: var(--panel2); }
 #ws-member-list { list-style: none; margin: 0; padding: 0; border: 1px solid var(--border); border-radius: 0 0 8px 8px; overflow: hidden; }
 #ws-member-list > li { border-top: 1px solid var(--border); }
@@ -742,12 +751,7 @@ html:not([data-theme="light"]) .rail-item .ws-avatar { color: hsl(var(--ws-h) 55
 #ws-member-list .member-agent:first-child { border-top: 0; }
 #ws-member-list .member-owner { width: 100%; box-sizing: border-box; font-size: 12px; padding: 3px 6px; }
 #ws-member-list .member-unowned .member-name { color: #e0736b; }
-#ws-member-list .member-remove, #ws-member-list .member-remove-gap { display: inline-flex; align-items: center; justify-content: center; gap: 6px; width: 100%; box-sizing: border-box; padding: 4px 8px; font-size: 12px; white-space: nowrap; }
-#ws-member-list .member-remove-gap { visibility: hidden; }
-.settings-panel button.destructive { background: var(--danger, #e5534b); border: 1px solid var(--danger, #e5534b); color: #fff; font-weight: 600; border-radius: 6px; }
-.settings-panel button.destructive:hover { filter: brightness(.9); }
-.settings-panel button.destructive:disabled { opacity: .5; cursor: not-allowed; }
-.settings-panel button.destructive svg { width: 16px; height: 16px; flex: none; }
+#ws-member-list .member-remove, #ws-member-list .member-remove-gap { justify-self: end; }
 #ws-danger { margin-top: 10px; padding-top: 16px; border-top: 1px solid var(--border); }
 #ws-danger h2 { color: #e0736b; }
 #ws-danger label { flex-direction: column; }

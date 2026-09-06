@@ -473,11 +473,13 @@ const membersSection = async (slug, getRoom) => {
       btn.disabled = false;
     }
   };
+  // one shared Remove look on every surface (Maya, 06e9f192): subtle outline,
+  // muted text, the settings button font; the danger lives in the confirm
   const removeButton = () => {
     const btn = document.createElement('button');
     btn.type = 'button';
-    btn.className = 'destructive member-remove';
-    btn.innerHTML = ICON.trashTwo + ' Remove';
+    btn.className = 'remove-btn member-remove';
+    btn.textContent = 'Remove';
     return btn;
   };
   const agentRow = (a, humans) => {
@@ -557,7 +559,7 @@ const membersSection = async (slug, getRoom) => {
     // Remove column keeps its width on every row.
     if (isCreator(p) || p.id === me.id) {
       const gap = document.createElement('span');
-      gap.className = 'member-remove-gap';
+      gap.className = 'remove-gap member-remove-gap';
       gap.setAttribute('aria-hidden', 'true');
       head.appendChild(gap);
     }

@@ -2994,9 +2994,15 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
       list.appendChild(h);
       for (const p of members) {
         let btn = null;
+        // my own row keeps an invisible placeholder, so Remove sits at one x down the list
+        if (canRemove && p.id === me.id) {
+          btn = document.createElement('span');
+          btn.className = 'remove-gap mm-remove-gap';
+          btn.setAttribute('aria-hidden', 'true');
+        }
         if (canRemove && p.id !== me.id) {
           btn = document.createElement('button');
-          btn.className = 'mm-remove';
+          btn.className = 'remove-btn mm-remove';
           btn.textContent = 'Remove';
           btn.onclick = async () => {
             try {

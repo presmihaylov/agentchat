@@ -2,6 +2,7 @@
 // the /remove slash command. The viewer joins first, so they are the admin.
 // Run: NODE_PATH=<dir with puppeteer-core> node scripts/members-check.js
 const puppeteer = require('puppeteer-core');
+const fs = require('fs');
 const { newRoom, openAsHuman } = require('./lib/login.js');
 const SERVER = process.env.SERVER || 'http://localhost:8095';
 
@@ -63,6 +64,23 @@ const assert = (cond, msg) => { if (!cond) throw new Error(msg); };
   assert(vRow && bRow, 'rows: ' + JSON.stringify(modal.rows));
   assert(vRow.online, 'viewer should show online');
   assert(!vRow.canRemove && bRow.canRemove, 'remove buttons: self must have none, membot must');
+  // Remove is the shared subtle .remove-btn (outline, muted, 13px/500, no icon), right-aligned at
+  // one x on every row; my own row keeps an invisible .remove-gap of the same width (Maya, 06e9f192)
+  const look = await page.evaluate(() => {
+    const box = (el) => { const r = el.getBoundingClientRect(); return { x: Math.round(r.left), w: Math.round(r.width) }; };
+    const btn = document.querySelector('#members-list .mm-remove');
+    const cs = getComputedStyle(btn);
+    const slots = [...document.querySelectorAll('#members-list .mm-remove, #members-list .mm-remove-gap')].map(box);
+    const gap = document.querySelector('#members-list .mm-remove-gap');
+    return {
+      shared: btn.classList.contains('remove-btn'), bg: cs.backgroundColor, border: cs.borderWidth + ' ' + cs.borderStyle, font: cs.fontSize + '/' + cs.fontWeight, icon: !!btn.querySelector('svg'),
+      slots, gapHidden: !!gap && getComputedStyle(gap).visibility === 'hidden' && gap.classList.contains('remove-gap'),
+      rightGap: Math.round(btn.closest('.mm-row').getBoundingClientRect().right - btn.getBoundingClientRect().right),
+    };
+  });
+  assert(look.shared && look.bg === 'rgba(0, 0, 0, 0)' && look.border === '1px solid' && look.font === '13px/500' && !look.icon, 'modal remove look: ' + JSON.stringify(look));
+  assert(look.slots.length === 2 && look.slots.every((s) => s.x === look.slots[0].x && s.w === look.slots[0].w) && look.gapHidden && look.rightGap === 16, 'modal remove column: ' + JSON.stringify(look));
+  if (process.env.OUT) { fs.mkdirSync(process.env.OUT, { recursive: true }); await page.screenshot({ path: process.env.OUT + '/members-modal.png' }); }
 
   // remove from the modal; the roster and header count follow
   await page.evaluate(() => {
