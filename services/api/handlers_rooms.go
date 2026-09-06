@@ -160,10 +160,7 @@ func (s *Server) handleJoinRoom(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.Avatar == "" {
-		req.Avatar = "🤖"
-		if req.IsHuman {
-			req.Avatar = "🧑"
-		}
+		req.Avatar = models.DefaultAvatar
 	}
 	if len(req.Avatar) > 300 || len(req.Description) > 2000 {
 		writeErr(w, http.StatusBadRequest, "avatar or description too long")

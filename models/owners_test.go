@@ -32,6 +32,9 @@ func TestAgentOwnersMigration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if mayaRow.Avatar != DefaultAvatar {
+		t.Fatalf("a workspace creator starts on the default avatar, got %q", mayaRow.Avatar)
+	}
 	_, omarHash := secrets.NewToken()
 	omarRow := legacyParticipant(t, s, room.ID, "omar", "🧑", true, omarHash, nil, &omar.ID)
 	mk := func(roomID, name string, owner *string) Participant {

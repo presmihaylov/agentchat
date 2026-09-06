@@ -177,7 +177,7 @@ func TestAgentJoinRowUnchanged(t *testing.T) {
 	}
 	sum := sha256.Sum256([]byte(token))
 	want := map[string]any{
-		"archive_after_secs": float64(3600), "avatar": "🤖", "avatar_attachment_id": nil, "declared_offline": false, "description": "does things",
+		"archive_after_secs": float64(3600), "avatar": "🌱", "avatar_attachment_id": nil, "declared_offline": false, "description": "does things",
 		"is_human": false, "name": "worker", "notify_enabled": true, "notify_sound": true, "offline_since_seq": nil, "owner_id": nil,
 		"presence_online": true, "revoked": false, "role": "admin", "user_id": nil,
 		"token_hash": row["token_hash"], "token_hex": hex.EncodeToString(sum[:]),

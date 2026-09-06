@@ -30,7 +30,8 @@ func HumanParticipantName(u User) string {
 	return u.Username
 }
 
-const humanAvatar = "🧑"
+// DefaultAvatar: a new member starts as a seedling until it picks its own.
+const DefaultAvatar = "🌱"
 
 // freeParticipantName returns base, or base-2, base-3, ... against the room's rows.
 func freeParticipantName(ctx context.Context, tx pgx.Tx, roomID, base string) (string, error) {
@@ -105,7 +106,7 @@ func (s *Store) CreateRoomAs(ctx context.Context, name, slug, token string, crea
 		return r, p, err
 	}
 
-	p, err = createParticipantTx(ctx, tx, r.ID, HumanParticipantName(creator), humanAvatar, "", true, nil, nil, &creator.ID)
+	p, err = createParticipantTx(ctx, tx, r.ID, HumanParticipantName(creator), DefaultAvatar, "", true, nil, nil, &creator.ID)
 	if err != nil {
 		return r, p, err
 	}
@@ -137,7 +138,7 @@ func (s *Store) EnterRoom(ctx context.Context, roomID string, user User, inviteI
 	if err != nil {
 		return p, err
 	}
-	p, err = createParticipantTx(ctx, tx, roomID, name, humanAvatar, "", true, nil, nil, &user.ID)
+	p, err = createParticipantTx(ctx, tx, roomID, name, DefaultAvatar, "", true, nil, nil, &user.ID)
 	if err != nil {
 		return p, err
 	}

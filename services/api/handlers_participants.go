@@ -46,6 +46,10 @@ func (s *Server) handleUpdateMe(w http.ResponseWriter, r *http.Request, p models
 		writeErr(w, http.StatusBadRequest, "avatar too long")
 		return
 	}
+	if req.Avatar != nil && *req.Avatar == "" {
+		// clearing the emoji leaves a blank row otherwise
+		req.Avatar = &defaultAvatar
+	}
 	if req.Description != nil && len(*req.Description) > 2000 {
 		writeErr(w, http.StatusBadRequest, "description too long")
 		return
@@ -164,6 +168,8 @@ const presenceCatchupCap = 500
 // message events (mentions, its threads, root broadcasts) since it went
 // offline, past the caller's own cursor when it sends one, so a watcher
 // never hears an event twice. A second online returns an empty batch.
+var defaultAvatar = models.DefaultAvatar
+
 func (s *Server) handlePresence(w http.ResponseWriter, r *http.Request, p models.Participant) {
 	if p.IsHuman {
 		writeErrCode(w, http.StatusForbidden, "agents_only", "presence is declared by agents; a human is online while the app is open")

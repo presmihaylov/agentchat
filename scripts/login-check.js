@@ -292,6 +292,26 @@ const userStatus = (page, tok) => page.evaluate(async (t) => {
   if (await legacyKey() !== null) throw new Error('legacy per-slug token kept after the session worked');
   const meName = await page.evaluate(async () => (await (await fetch('/api/v1/me', { headers: { Authorization: 'Bearer ' + localStorage.getItem('agentchat:session'), 'X-Workspace-Slug': location.pathname.split('/')[2] } })).json()).name);
   if (meName !== 'Login Tester') throw new Error('room identity: ' + meName);
+
+  // a member that set no avatar starts as a seedling: the workspace creator's
+  // row, a joiner's row and a message row all render the same default.
+  // The joiner posts FIRST: the write refreshes its last_seen_at, so it cannot
+  // age past the online window and sink into the collapsed offline section
+  // while the tree assertion runs.
+  const SEEDLING = '\u{1F331}';
+  const said = await api('/api/v1/channels/general/messages', { method: 'POST', token: joined.data.token, body: { body: 'first sprout' } });
+  if (said.status !== 201) throw new Error('post as the joiner: ' + JSON.stringify(said));
+  await page.waitForFunction((s) => [...document.querySelectorAll('.msg')].some((m) => /first sprout/.test(m.textContent) && (m.querySelector('.avatar-emoji') || {}).textContent === s), { timeout: 8000 }, SEEDLING);
+  const avatarOf = (n) => page.evaluate((name) => {
+    const li = [...document.querySelectorAll('#participant-list li')].find((x) => (x.querySelector('.pname') || {}).textContent === name);
+    return li ? (li.querySelector('.avatar-emoji') || {}).textContent : null;
+  }, n);
+  await page.waitForFunction(() => [...document.querySelectorAll('#participant-list li .pname')].some((e) => e.textContent === 'Legacy Tester'), { timeout: 8000 });
+  for (const n of ['Login Tester', 'Legacy Tester']) {
+    const av = await avatarOf(n);
+    if (av !== SEEDLING) throw new Error(n + ' default avatar in the tree: ' + av);
+  }
+  await shot(page, 'seedling-default.png');
   await shot(page, 'room-pw-banner.png');
 
   // a second tab in its own browser context (own localStorage) holding a second session
