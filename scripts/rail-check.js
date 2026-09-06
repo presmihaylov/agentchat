@@ -122,7 +122,7 @@ const iconFirst = (page, sel) => page.$$eval(sel, (els) => els.map((el) => {
   await page.click('#ws-switcher');
   await visible(page, '#ws-menu');
   const wsRows = await iconFirst(page, '#ws-menu .ws-item');
-  assert(wsRows.map((r) => r.text).join('|') === 'mail:Invite member|log-in:Join with invite link|settings:Settings', 'ws menu rows: ' + JSON.stringify(wsRows));
+  assert(wsRows.map((r) => r.text).join('|') === 'mail:Invite member|log-in:Join with invite link|bell-off:Mute workspace|settings:Settings', 'ws menu rows: ' + JSON.stringify(wsRows));
   assert(wsRows.every((r) => r.hasIcon && r.iconFirst), 'ws menu icon not first: ' + JSON.stringify(wsRows));
   await shot(page, 'ws-menu.png');
   await page.click('#ws-join');

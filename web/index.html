@@ -138,32 +138,31 @@
         </div>
         <div id="notify-settings" class="hidden">
           <h2><svg class="ico lucide" data-icon="bell" viewBox="0 0 24 24" aria-hidden="true"><path d="M10.268 21a2 2 0 0 0 3.464 0" /><path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326" /></svg> Notifications</h2>
-          <label class="row-check"><input type="checkbox" id="notify-enabled"> Desktop notifications <a id="notify-perm" href="#" class="hidden"></a></label>
-          <label class="row-check"><input type="checkbox" id="notify-sound"> Sound</label>
-          <label class="row-select">Hide quiet threads after
-            <select id="archive-after">
-              <option value="900">15 minutes</option>
-              <option value="3600">1 hour</option>
-              <option value="14400">4 hours</option>
-              <option value="86400">24 hours</option>
-              <option value="0">Off</option>
-            </select>
-          </label>
-        </div>
-        <div id="ws-mute-section" class="hidden">
-          <h2>Workspace</h2>
-          <label class="row-check"><input type="checkbox" id="ws-mute"> Mute <span id="ws-mute-name"></span></label>
-          <p class="hint">No notifications from this workspace on any device. The rail badge keeps its count, in gray.</p>
+          <div class="rows">
+            <label class="row-check"><span class="row-text">Desktop notifications <a id="notify-perm" href="#" class="hidden"></a></span><input type="checkbox" id="notify-enabled" class="switch" role="switch"></label>
+            <label class="row-check"><span class="row-text">Sound</span><input type="checkbox" id="notify-sound" class="switch" role="switch"></label>
+            <label class="row-select"><span class="row-text">Hide quiet threads after</span>
+              <span class="select-wrap"><select id="archive-after">
+                <option value="900">15 minutes</option>
+                <option value="3600">1 hour</option>
+                <option value="14400">4 hours</option>
+                <option value="86400">24 hours</option>
+                <option value="0">Off</option>
+              </select><svg class="ico lucide" data-icon="chevron-down" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg></span>
+            </label>
+          </div>
         </div>
         <div>
           <h2>Appearance</h2>
-          <label class="row-select">Theme
-            <select id="theme-mode">
-              <option value="system">System</option>
-              <option value="dark">Dark</option>
-              <option value="light">Light</option>
-            </select>
-          </label>
+          <div class="rows">
+            <label class="row-select"><span class="row-text">Theme</span>
+              <span class="select-wrap"><select id="theme-mode">
+                <option value="system">System</option>
+                <option value="dark">Dark</option>
+                <option value="light">Light</option>
+              </select><svg class="ico lucide" data-icon="chevron-down" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg></span>
+            </label>
+          </div>
         </div>
         <form id="pw-form">
           <h2><svg class="ico lucide" data-icon="lock" viewBox="0 0 24 24" aria-hidden="true"><rect width="18" height="11" x="3" y="11" rx="2" ry="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg> Change password</h2>
@@ -175,7 +174,7 @@
           <button type="submit" class="secondary">Change password</button>
         </form>
         <p id="settings-nopw" class="hint hidden">This sign-in method has no password to change.</p>
-        <button type="button" id="settings-signout" class="ghost"><svg class="ico lucide" data-icon="log-out" viewBox="0 0 24 24" aria-hidden="true"><path d="m16 17 5-5-5-5" /><path d="M21 12H9" /><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /></svg> Sign out</button>
+        <button type="button" id="settings-signout" class="secondary"><svg class="ico lucide" data-icon="log-out" viewBox="0 0 24 24" aria-hidden="true"><path d="m16 17 5-5-5-5" /><path d="M21 12H9" /><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /></svg> Sign out</button>
       </section>
       </div>
       </div>

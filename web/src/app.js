@@ -2419,6 +2419,10 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
     // only admins get the code from /room, and only they may hand it out
     if (isAdmin) menu.appendChild(wsMenuItem('Invite member', { id: 'ws-invite-member', icon: ICON.mail, onclick: () => { setMenuOpen(false); openInviteModal(); } }));
     menu.appendChild(wsMenuItem('Join with invite link', { id: 'ws-join', icon: ICON.logIn, onclick: () => { setMenuOpen(false); openJoinModal(); } }));
+    // the per-user mute sits on the workspace itself (here and the rail's context
+    // menu), not in Personal settings (Maya, msg d4c52ff2)
+    const ws = room && railEntry(room.slug);
+    if (ws) menu.appendChild(wsMenuItem(ws.muted ? 'Unmute workspace' : 'Mute workspace', { id: 'ws-menu-mute', icon: ws.muted ? ICON.bell : ICON.bellOff, onclick: () => { setMenuOpen(false); setWorkspaceMuted(ws, !ws.muted); } }));
     menu.appendChild(wsMenuItem('Settings', { icon: ICON.settings, href: '/settings?next=' + encodeURIComponent(here) }));
     $('ws-current').textContent = room.name;
     paintRoomMark();
@@ -2428,10 +2432,11 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
     const here = location.pathname + location.search;
     // without the list (fetch failed) the rail still gets the current mark and "+"
     if (!out) { mountRail([], here); return; }
-    mountMenu();
     $('room-head').classList.add('hidden');
     $('ws-switcher-wrap').classList.remove('hidden');
     mountRail(out.workspaces || [], here);
+    // after the rail: the menu's mute label reads this workspace's entry
+    mountMenu();
   };
 
   // the profile row at the foot of the sidebar: avatar with a status dot, the
@@ -2647,6 +2652,8 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
       const out = await api('/api/v1/user/workspaces/' + ws.id, { method: 'PATCH', body: { muted } });
       railRooms = railRooms.map((w) => (w.id === ws.id ? { ...w, ...out } : w));
       paintRailBadges(railRooms);
+      if (room && ws.slug === room.slug) mountMenu();
+      notice((out.muted ? 'Muted ' : 'Unmuted ') + ws.name);
     } catch (e) { console.error('workspace mute', e); }
   };
   // the mark's context menu: move up, move down, mute or unmute

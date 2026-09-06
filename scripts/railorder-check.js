@@ -151,14 +151,19 @@ const errors = [];
   await page.waitForFunction(() => document.title === '(1) AgentChat | rail one', { timeout: 8000 });
 
   step = '8';
-  // 8. Settings > Personal shows the mute of the workspace it came from, and unmuting restores the colours
+  // 8. Personal settings carry no workspace mute any more; the workspace-name
+  // dropdown does, and unmuting there restores the colours
   await openSettings(page, SERVER, 'personal');
-  await page.waitForSelector('#ws-mute-section:not(.hidden)', { timeout: 8000 });
-  assert(await page.$eval('#ws-mute', (el) => el.checked), 'settings toggle should be on');
-  assert((await page.$eval('#ws-mute-name', (el) => el.textContent)) === 'rail one', 'settings names the workspace');
+  await page.waitForSelector('#notify-settings:not(.hidden)', { timeout: 8000 });
+  assert(!(await page.$('#ws-mute-section')) && !(await page.$('#ws-mute')), 'the settings mute block must be gone');
   await shot(page, 'settings.png');
-  await page.click('#ws-mute');
-  await page.waitForFunction(() => !document.getElementById('ws-mute').checked, { timeout: 4000 });
+  await openWorkspace(page, SERVER, session, slugs[0]);
+  await page.waitForSelector('#ws-switcher-wrap:not(.hidden)', { timeout: 8000 });
+  await page.click('#ws-switcher');
+  await page.waitForSelector('#ws-menu-mute', { timeout: 4000 });
+  assert((await page.$eval('#ws-menu-mute', (el) => el.textContent.trim())) === 'Unmute workspace', 'menu should offer Unmute for a muted workspace');
+  await page.click('#ws-menu-mute');
+  await page.waitForFunction((s) => !document.querySelector('#rail-list .rail-item[data-slug="' + s + '"]').classList.contains('is-muted'), { timeout: 4000 }, slugs[0]);
   await new Promise((r) => setTimeout(r, 500));
   const after = (await call(SERVER, '/api/v1/user', { token: session })).workspaces;
   assert(after.find((w) => w.slug === slugs[0]).muted === false, 'unmute did not persist');

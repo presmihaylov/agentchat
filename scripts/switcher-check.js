@@ -104,7 +104,7 @@ const menuSlugs = (page) => page.$$eval('#ws-menu a.ws-item', (els) => els.map((
   await openMenu(pageA);
   if (await pageA.$eval('#ws-switcher', (el) => el.getAttribute('aria-expanded')) !== 'true') throw new Error('aria-expanded not true when open');
   const items = await pageA.$$eval('#ws-menu .ws-item', (els) => els.map((e) => e.textContent));
-  if (items.join('|') !== 'Invite member|Join with invite link|Settings') throw new Error('menu items: ' + items.join('|'));
+  if (items.join('|') !== 'Invite member|Join with invite link|Mute workspace|Settings') throw new Error('menu items: ' + items.join('|'));
   if ((await menuSlugs(pageA)).length) throw new Error('menu still lists workspaces: ' + await menuSlugs(pageA));
   if (!await pageA.$('#ws-menu .ws-sep')) {} else throw new Error('menu still has a divider');
   if ((await railSlugs(pageA)).sort().join(',') !== [slug1, slug2].sort().join(',')) throw new Error('rail links: ' + await railSlugs(pageA));

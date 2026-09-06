@@ -642,11 +642,14 @@ a.chanlink:hover { text-decoration: underline; }
 .settings-panel label { font-size: 15px; color: var(--text); }
 .settings-panel input { padding: 7px 10px; font-size: 15px; }
 .settings-panel .hint { font-size: 12px; margin: 0; }
-.settings-panel button, .settings-panel .upload-btn { width: auto; align-self: flex-start; padding: 7px 12px; font-size: 14px; font-weight: 500; border-radius: 6px; }
-.settings-panel button.secondary { background: none; border: 1px solid var(--border); color: var(--text); }
-.settings-panel button.secondary:hover { background: var(--panel2); }
+.settings-panel button, .settings-panel .upload-btn { width: auto; align-self: flex-start; padding: 6px 12px; font-size: 13px; font-weight: 500; line-height: 20px; border-radius: 6px; }
+.settings-panel button.secondary, .settings-panel .upload-btn, .settings-panel #avatar-remove { background: none; border: 1px solid var(--border); color: var(--text); }
+.settings-panel button.secondary:hover, .settings-panel .upload-btn:hover, .settings-panel #avatar-remove:hover { background: var(--panel2); color: var(--text); }
 .settings-panel button.ghost { background: none; border: 0; color: var(--dim); padding: 4px 0; }
 .settings-panel button.ghost:hover { color: var(--text); text-decoration: underline; }
+.settings-panel > div, .settings-panel > form { display: flex; flex-direction: column; gap: 8px; }
+.settings-panel { gap: 24px; }
+.settings-panel h2 { margin: 0; }
 #avatar-row { display: flex; align-items: center; gap: 14px; }
 #avatar-meta { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 #settings-username { font-weight: 500; }
@@ -660,9 +663,24 @@ a.chanlink:hover { text-decoration: underline; }
 .settings-panel .row-copy { display: flex; gap: 6px; }
 .settings-panel .row-copy input { flex: 1; min-width: 0; font-size: 13px; }
 .settings-panel .row-copy button { padding: 6px 10px; font-size: 13px; }
-.settings-panel label.row-check { flex-direction: row; align-items: center; gap: 8px; color: var(--text); cursor: pointer; }
-.settings-panel label.row-select { flex-direction: row; align-items: center; gap: 8px; color: var(--text); }
-.settings-panel select { background: var(--panel2); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px; font: inherit; font-size: 13px; }
+/* shadcn-style rows: a bordered group, one setting per row, the control on
+   the right; the controls are the native inputs drawn by hand so the checks
+   and the keyboard keep working */
+.settings-panel .rows { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+.settings-panel .rows > label { flex-direction: row; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; margin: 0; color: var(--text); font-size: 14px; }
+.settings-panel .rows > label + label { border-top: 1px solid var(--border); }
+.settings-panel label.row-check { cursor: pointer; }
+.settings-panel .row-text { display: inline-flex; align-items: center; gap: 4px; min-width: 0; }
+.settings-panel input.switch { appearance: none; -webkit-appearance: none; flex: none; width: 36px; height: 20px; margin: 0; padding: 0; border: 0; border-radius: 999px; background: var(--border); position: relative; cursor: pointer; transition: background .15s ease; }
+.settings-panel input.switch::before { content: ''; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: var(--bg); box-shadow: 0 1px 2px var(--shadow); transition: transform .15s ease; }
+.settings-panel input.switch:checked { background: var(--accent); }
+.settings-panel input.switch:checked::before { transform: translateX(16px); }
+.settings-panel input.switch:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.settings-panel .select-wrap { position: relative; display: inline-flex; align-items: center; flex: none; }
+.settings-panel .select-wrap .lucide { position: absolute; right: 8px; pointer-events: none; color: var(--dim); }
+.settings-panel select { appearance: none; -webkit-appearance: none; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 5px 30px 5px 10px; font: inherit; font-size: 13px; line-height: 20px; min-width: 120px; cursor: pointer; }
+.settings-panel select:hover { background: var(--panel2); }
+.settings-panel select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 #settings-avatar { display: flex; justify-content: flex-start; flex: none; }
 #ws-name:disabled { opacity: .7; }
 
@@ -683,7 +701,7 @@ a.chanlink:hover { text-decoration: underline; }
 #ws-menu .ws-item .ws-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #ws-avatar-row { display: flex; align-items: center; gap: 14px; }
 #ws-avatar-actions { display: flex; gap: 8px; }
-.upload-btn, #avatar-remove, #ws-avatar-remove { background: none; border: 1px solid var(--border); color: var(--dim); border-radius: 6px; font-size: 12px; padding: 5px 10px; cursor: pointer; }
+.upload-btn, #avatar-remove, #ws-avatar-remove { background: none; border: 1px solid var(--border); color: var(--text); border-radius: 6px; font-size: 13px; padding: 6px 12px; line-height: 20px; cursor: pointer; }
 .upload-btn:hover, #avatar-remove:hover, #ws-avatar-remove:hover { color: var(--text); }
 
 /* the workspace rail (Discord style): round marks, the current one squared

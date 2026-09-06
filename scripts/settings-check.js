@@ -124,6 +124,37 @@ const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR
   const prefs = await api('/api/v1/me/notifications', { token: adminSession, slug });
   assert(prefs.sound === false, 'sound pref not saved: ' + JSON.stringify(prefs));
   await page.screenshot({ path: path.join(OUT, 'settings-personal.png') });
+
+  // 5b. shadcn-style controls, drawn inline: the checkboxes are switches with
+  // no native look, the selects hide the native arrow behind a Lucide chevron,
+  // every section label has one weight, every button one outline style, and
+  // the workspace mute block is gone from Personal (Maya, msg d4c52ff2)
+  const look = await page.evaluate(() => {
+    const cs = (el) => getComputedStyle(el);
+    const boxes = [...document.querySelectorAll('#settings-personal input[type=checkbox]')];
+    const selects = [...document.querySelectorAll('#settings-personal select')];
+    const heads = [...document.querySelectorAll('#settings-personal h2')].filter((h) => h.offsetParent);
+    const buttons = [...document.querySelectorAll('#settings-personal button, #settings-personal .upload-btn')].filter((b) => b.offsetParent);
+    return {
+      muteBlock: !!document.getElementById('ws-mute-section') || !!document.getElementById('ws-mute'),
+      boxes: boxes.map((b) => ({ id: b.id, role: b.getAttribute('role'), appearance: cs(b).appearance, w: b.getBoundingClientRect().width, radius: cs(b).borderRadius })),
+      selects: selects.map((s) => ({ id: s.id, appearance: cs(s).appearance, border: cs(s).borderWidth, chevron: !!(s.parentElement.querySelector('svg.lucide[data-icon="chevron-down"]')) })),
+      headWeights: [...new Set(heads.map((h) => cs(h).fontWeight + '/' + cs(h).fontSize + '/' + cs(h).textTransform))],
+      buttons: buttons.map((b) => ({ id: b.id || b.className, border: cs(b).borderWidth + ' ' + cs(b).borderStyle, bg: cs(b).backgroundColor, size: cs(b).fontSize })),
+    };
+  });
+  assert(!look.muteBlock, 'the workspace mute block is still in Personal');
+  assert(look.boxes.length === 2 && look.boxes.every((b) => b.role === 'switch' && b.appearance === 'none' && b.w === 36 && b.radius === '999px'), 'switches: ' + JSON.stringify(look.boxes));
+  assert(look.selects.length === 2 && look.selects.every((s) => s.appearance === 'none' && s.border === '1px' && s.chevron), 'selects: ' + JSON.stringify(look.selects));
+  assert(look.headWeights.length === 1 && /^600\/13px\/uppercase$/.test(look.headWeights[0]), 'section labels differ: ' + JSON.stringify(look.headWeights));
+  assert(look.buttons.length >= 3 && look.buttons.every((b) => b.border === '1px solid' && b.bg === 'rgba(0, 0, 0, 0)' && b.size === '13px'), 'buttons: ' + JSON.stringify(look.buttons));
+  // the switch is still a real checkbox: space toggles it and the pref saves
+  await page.focus('#notify-sound');
+  await page.keyboard.press('Space');
+  await page.waitForFunction(() => document.querySelector('#notify-sound').checked, { timeout: 5000 });
+  await sleep(300);
+  assert((await api('/api/v1/me/notifications', { token: adminSession, slug })).sound === true, 'switch did not save');
+
   await page.type('#pw-current', PASSWORD);
   await page.type('#pw-new', 'a brand new passphrase');
   await page.type('#pw-confirm', 'a brand new passphrase');
@@ -140,6 +171,25 @@ const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR
   await page.waitForSelector('#profile-modal:not(.hidden)', { timeout: 5000 });
   const leftovers = await page.$$eval('#profile-card #notify-settings, #profile-card #profile-actions, #profile-card select, #profile-card input', (els) => els.length);
   assert(leftovers === 0, 'profile modal still has settings controls: ' + leftovers);
+
+  // 6b. the mute moved to the workspace: the workspace-name dropdown toggles it
+  // (the rail's context menu has it too, railorder-check covers that)
+  await page.click('#profile-close');
+  await page.waitForSelector('#profile-modal.hidden', { timeout: 4000 });
+  await page.click('#ws-switcher');
+  await page.waitForSelector('#ws-menu-mute', { timeout: 4000 });
+  const wsItems = await page.$$eval('#ws-menu .ws-item', (els) => els.map((e) => e.textContent.trim()));
+  assert(wsItems.join(',') === 'Invite member,Join with invite link,Mute workspace,Settings', 'workspace menu items: ' + wsItems.join(','));
+  await page.click('#ws-menu-mute');
+  await page.waitForFunction((s) => document.querySelector('#rail-list .rail-item[data-slug="' + s + '"]').classList.contains('is-muted'), { timeout: 5000 }, slug);
+  await sleep(300);
+  const wsList = (await api('/api/v1/user', { token: adminSession })).workspaces;
+  assert(wsList.find((w) => w.slug === slug).muted === true, 'mute did not persist');
+  await page.click('#ws-switcher');
+  await page.waitForFunction(() => (document.querySelector('#ws-menu-mute') || {}).textContent === 'Unmute workspace', { timeout: 4000 });
+  await page.screenshot({ path: path.join(OUT, 'ws-menu-mute.png') });
+  await page.click('#ws-menu-mute');
+  await page.waitForFunction((s) => !document.querySelector('#rail-list .rail-item[data-slug="' + s + '"]').classList.contains('is-muted'), { timeout: 5000 }, slug);
 
   // 7. sign out from Personal lands on /login
   await openSettings(page, SERVER);

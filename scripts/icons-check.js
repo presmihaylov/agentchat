@@ -163,7 +163,7 @@ const AUDIT = (names, where) => {
   await dom('#ws-switcher');
   await page.waitForSelector('#ws-menu:not(.hidden)', { timeout: 3000 });
   const wsMenu = await page.$$eval('#ws-menu .ws-item .mi-icon svg', (s) => s.map((x) => x.dataset.icon));
-  assert(wsMenu.join(',') === 'mail,log-in,settings', 'workspace menu icons: ' + wsMenu.join(','));
+  assert(wsMenu.join(',') === 'mail,log-in,bell-off,settings', 'workspace menu icons: ' + wsMenu.join(','));
   await audit('ws-menu');
   await shot('wsmenu');
   await esc();
