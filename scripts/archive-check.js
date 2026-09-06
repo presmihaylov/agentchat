@@ -124,9 +124,11 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   await page.waitForFunction(() => document.querySelector('#channel-title').textContent.includes('plaza'), { timeout: 8000 });
   await say('hey @alice look', { thread_root_id: root.id });
   await waitLeaves((l) => l.includes('alice topic'), 'mention must revive a hidden thread');
-  await sleep(500);
+  // the leaf can come back from the channel switch's thread reload before the
+  // feed delivers the mention itself; the notification follows within a poll tick
+  await page.waitForFunction(() => window.__notes.some((n) => n.why === 'mention'), { timeout: 5000 })
+    .catch(async () => { throw new Error('mention must notify: ' + JSON.stringify(await page.evaluate(() => window.__notes))); });
   const notes = await page.evaluate(() => window.__notes.splice(0));
-  assert(notes.some((n) => n.why === 'mention'), 'mention must notify: ' + JSON.stringify(notes));
 
   // 8. Off keeps a stale thread pinned; the setting survives a reload
   await openSettings(page, SERVER);

@@ -8,7 +8,7 @@
 const fs = require('fs');
 const path = require('path');
 const puppeteer = require('puppeteer-core');
-const { call, createRoom, registerAndLogin, loginPage, openWorkspace, uniqUser } = require('./lib/login.js');
+const { call, createRoom, registerAndLogin, loginPage, openWorkspace, uniqUser, switchTo } = require('./lib/login.js');
 const SERVER = process.env.SERVER || 'http://localhost:8095';
 const OUT = process.env.OUT || 'tmp';
 
@@ -111,10 +111,7 @@ const errors = [];
 
   step = '4';
   // 4. opening away clears it (the channel read marker is written on open)
-  await Promise.all([
-    page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 8000 }),
-    page.click('#rail-list .rail-item[href="/w/' + away.room.slug + '"]'),
-  ]);
+  await switchTo(page, away.room.slug);
   await page.waitForFunction(() => document.querySelectorAll('#rail-list .rail-item').length === 2, { timeout: 8000 });
   await page.waitForSelector('.msg', { timeout: 8000 });
   await waitBadge(page, away.room.slug, 'none');

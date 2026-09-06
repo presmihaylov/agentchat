@@ -749,3 +749,8 @@ button.danger:disabled { opacity: .45; cursor: not-allowed; }
 #join-card { display: block; }
 #join-card input { width: 100%; box-sizing: border-box; margin-top: 4px; background: var(--panel2); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; color: var(--text); font-size: 15px; }
 #join-card button[type=submit] { width: 100%; margin-top: 8px; background: var(--accent); border: 0; border-radius: 6px; padding: 10px; color: var(--on-accent); font-size: 15px; font-weight: 600; cursor: pointer; }
+
+/* task 23: the thin bar over the old workspace while a cold switch target warms */
+#switch-progress { position: fixed; top: 0; left: 0; right: 0; height: 3px; z-index: 60; overflow: hidden; background: var(--accent-soft); }
+#switch-progress::after { content: ''; position: absolute; top: 0; bottom: 0; width: 30%; background: var(--accent); animation: switch-slide 1s ease-in-out infinite; }
+@keyframes switch-slide { from { left: -30%; } to { left: 100%; } }

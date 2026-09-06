@@ -14,11 +14,12 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
   // restored on load and kept in sync so refresh, back/forward and deep links work.
   // /w/<slug> is the switcher's alias of /r/<slug>; the page keeps whichever it got
   const pathSegs = location.pathname.split('/').filter(Boolean);
-  const roomPrefix = pathSegs[0] === 'w' ? '/w/' : '/r/';
+  let roomPrefix = pathSegs[0] === 'w' ? '/w/' : '/r/';
   // /join/<token> is an invite link: the page enters the workspace it opens
   const isJoinPage = pathSegs[0] === 'join';
   const joinToken = isJoinPage ? decodeURIComponent(pathSegs[1] || '') : '';
-  const slug = (isCreatePage || isJoinPage) ? '' : decodeURIComponent(pathSegs[1] || '');
+  // the active workspace; an in-app switch (task 23) moves it
+  let slug = (isCreatePage || isJoinPage) ? '' : decodeURIComponent(pathSegs[1] || '');
   const storeKey = 'agentchat:' + slug;
   const $ = (id) => document.getElementById(id);
 
@@ -36,7 +37,85 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
   let openThreadRoot = null; // message id of the open thread
   let railRooms = [];        // the last /api/v1/user workspace list: badges, mutes, order
   let notifyPrefs = { enabled: true, sound: true, archive_after_secs: 3600 };
-  let cursor = -1;
+
+  // ---------- workspace store (task 23) ----------
+  // One entry per member workspace, keyed by slug. The module state above is
+  // the active entry adopted by reference: an in-place edit (an unread bump)
+  // reaches the entry, a reassignment goes through the entry, then adopt().
+  // Nothing half-loaded ever renders: warm() fills an entry off screen first.
+  const store = new Map();
+  const PAGE_LIMIT = 100;            // messages kept per cached channel page
+  const PAGE_TTL = 30 * 60 * 1000;   // a page not opened for this long is dropped
+  const entryFor = (s) => {
+    let e = store.get(s);
+    if (!e) {
+      e = { slug: s, warm: false, warming: null, me: null, room: null, joinURL: null, isAdmin: false,
+        channels: [], groups: [], participants: [], publicChannels: [], threads: [],
+        pages: new Map(), members: new Map(), lastChannelID: null, refreshTimer: 0, pending: [] };
+      store.set(s, e);
+    }
+    return e;
+  };
+  const active = () => entryFor(slug);
+  const adopt = (e) => {
+    me = e.me; room = e.room; joinURL = e.joinURL; isAdmin = e.isAdmin;
+    channels = e.channels; groups = e.groups; participants = e.participants;
+    publicChannels = e.publicChannels; threads = e.threads;
+  };
+  const pageFor = (e, chID) => e.pages.get(chID) || null;
+  const setPage = (e, chID, list) => {
+    const page = { list: list.slice(-PAGE_LIMIT), openedAt: Date.now() };
+    e.pages.set(chID, page);
+    return page;
+  };
+  // keeps a cached page in step with the room's message events, on screen or
+  // not; false means a message.created the page already holds (a replay)
+  const pageApply = (e, ev) => {
+    const t = ev.type;
+    if (t === 'message.created') {
+      const m = ev.payload;
+      const page = m.thread_root_id ? null : pageFor(e, m.channel_id);
+      if (!page) return true;
+      if (page.list.some((x) => x.id === m.id)) return false;
+      page.list.push(m);
+      if (page.list.length > PAGE_LIMIT) page.list.splice(0, page.list.length - PAGE_LIMIT);
+      return true;
+    }
+    if (t === 'message.edited') {
+      const m = ev.payload;
+      const page = pageFor(e, m.channel_id);
+      if (page) { const i = page.list.findIndex((x) => x.id === m.id); if (i >= 0) page.list[i] = m; }
+      return true;
+    }
+    if (t === 'message.deleted') {
+      for (const page of e.pages.values()) {
+        const i = page.list.findIndex((x) => x.id === ev.payload.message_id);
+        if (i >= 0) page.list.splice(i, 1);
+      }
+      return true;
+    }
+    if (t === 'message.reaction') {
+      // the cached message must carry the live set, or a later render of the
+      // page would put the stale one back into reactionMap
+      for (const page of e.pages.values()) {
+        const m = page.list.find((x) => x.id === ev.payload.message_id);
+        if (m) m.reactions = ev.payload.reactions || [];
+      }
+    }
+    return true;
+  };
+  const evictPages = () => {
+    const cutoff = Date.now() - PAGE_TTL;
+    for (const e of store.values()) {
+      for (const [chID, page] of e.pages) {
+        const onScreen = e === active() && current && current.id === chID;
+        if (page.openedAt < cutoff && chID !== e.lastChannelID && !onScreen) e.pages.delete(chID);
+      }
+    }
+  };
+  setInterval(evictPages, 5 * 60 * 1000);
+  // work that may hit the network, held until a cached render has painted
+  const afterPaint = (fn) => requestAnimationFrame(() => setTimeout(fn, 0));
   // One pending attachment per composer. The thread reply shares the upload
   // endpoint but never the slot: a file staged in one composer must not ride
   // out on the other's send.
@@ -54,12 +133,12 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
 
   // One header builder for every fetch. The login session is the only browser
   // identity; it names its workspace through X-Workspace-Slug on room pages.
-  const authHeaders = (extra) => {
+  const authHeaders = (extra, wsSlug) => {
     const headers = Object.assign({}, extra);
     const ses = sessionToken();
     if (!ses) return headers;
     headers['Authorization'] = 'Bearer ' + ses;
-    if (slug) headers['X-Workspace-Slug'] = slug;
+    if (wsSlug || slug) headers['X-Workspace-Slug'] = wsSlug || slug;
     return headers;
   };
   // a workspace image is served to its members only: the slug must be that workspace's
@@ -98,8 +177,11 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
     return false;
   };
 
+  // opts.ws names another workspace (a background warm, task 23); its 403/404
+  // is the caller's to handle, only a dead session still routes the page
   const api = async (path, opts = {}) => {
-    const headers = authHeaders(opts.headers);
+    const sent = opts.ws || slug; // a late error for a workspace we left must not route
+    const headers = authHeaders(opts.headers, opts.ws);
     if (opts.body && !(opts.body instanceof FormData)) {
       headers['Content-Type'] = 'application/json';
       opts = Object.assign({}, opts, { body: JSON.stringify(opts.body) });
@@ -112,7 +194,7 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
       err.status = resp.status;
       err.code = data && data.code;
       err.reason = data && data.reason;
-      routeAuthError(err);
+      if (sent === slug || err.code === 'session_invalid') routeAuthError(err);
       throw err;
     }
     return data;
@@ -975,9 +1057,10 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
     });
   };
 
-  const fetchGroups = async () => {
-    try { groups = (await api('/api/v1/channel-groups')).groups || []; }
-    catch (e) { groups = []; }
+  const fetchGroups = async (e = active()) => {
+    try { e.groups = (await api('/api/v1/channel-groups', { ws: e.slug })).groups || []; }
+    catch (err) { e.groups = []; }
+    if (e === active()) groups = e.groups;
   };
 
   // Collapse/expand is optimistic: flip locally and re-render, then persist.
@@ -1324,7 +1407,7 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
     let n = 0;
     for (const w of railRooms) {
       if (w.muted || (room && w.slug === room.slug)) continue;
-      n += w.unread_count || 0;
+      n += wsCounts(w).unread;
     }
     if (room && !roomMuted()) n += roomUnread();
     return n;
@@ -1384,22 +1467,26 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
   // clicking it joins. A private one you are not in is not here, so it never
   // links and leaks nothing.
   let publicChannels = [];
-  const fetchPublicChannels = async () => {
+  const fetchPublicChannels = async (e = active()) => {
     try {
-      publicChannels = ((await api('/api/v1/channels/browse')).channels || []).filter((c) => !c.member);
-    } catch { publicChannels = []; }
+      e.publicChannels = ((await api('/api/v1/channels/browse', { ws: e.slug })).channels || []).filter((c) => !c.member);
+    } catch { e.publicChannels = []; }
+    if (e === active()) publicChannels = e.publicChannels;
   };
   const linkableChannels = () => channels.filter((c) => !c.archived).concat(publicChannels);
 
-  const refreshRoom = async () => {
-    const out = await api('/api/v1/room');
-    room = out.room;
-    joinURL = out.join_url;
-    isAdmin = !!out.admin;
-    channels = out.channels || [];
-    participants = out.participants || [];
-    await fetchGroups();
-    await fetchPublicChannels();
+  // the workspace, its sidebar sections and browse list, into the entry; no DOM
+  const loadRoomInto = async (e) => {
+    const out = await api('/api/v1/room', { ws: e.slug });
+    e.room = out.room;
+    e.joinURL = out.join_url;
+    e.isAdmin = !!out.admin;
+    e.channels = out.channels || [];
+    e.participants = out.participants || [];
+    await Promise.all([fetchGroups(e), fetchPublicChannels(e)]);
+  };
+  // every region of the workspace pane from the active entry, in one pass
+  const paintRoom = () => {
     $('room-name').textContent = room.name;
     $('ws-current').textContent = room.name;
     paintRoomMark();
@@ -1407,6 +1494,13 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
     renderChannels();
     renderParticipants();
     setTitle();
+  };
+  const refreshRoom = async () => {
+    const e = active();
+    await loadRoomInto(e);
+    if (e !== active()) return; // switched away meanwhile
+    adopt(e);
+    paintRoom();
   };
 
   // ---------- URL <-> view sync ----------
@@ -1430,6 +1524,11 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
     const segs = location.pathname.split('/').filter(Boolean);
     const chName = segs[2] === 'c' ? decodeURIComponent(segs[3] || '') : '';
     const rootID = segs[4] === 't' ? decodeURIComponent(segs[5] || '') : '';
+    const urlSlug = decodeURIComponent(segs[1] || '');
+    if (urlSlug && urlSlug !== slug) {
+      await switchTo(urlSlug, { push: false, chName }); // back/forward across workspaces
+      if (seq !== navSeq) return;
+    }
     // a permalink ends in /m/<id>, with or without the thread segment
     const msgID = segs[4] === 'm' ? decodeURIComponent(segs[5] || '')
       : (segs[6] === 'm' ? decodeURIComponent(segs[7] || '') : '');
@@ -1490,17 +1589,38 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
     syncURL(changed && !fromURL); // refreshes replace, real navigation pushes
     setChannelTitle(ch);
     $('channel-topic').innerHTML = ch.topic ? linkify(ch.topic) : '';
-    refreshHeaderMembers(ch); // header member count, not worth blocking the feed on
+    const e = active();
+    e.lastChannelID = ch.id;
+    paintHeaderMembers(ch); // the cached count; refreshed after paint
     renderChannels();
-    const out = await api(`/api/v1/channels/${ch.id}/messages?limit=100`);
-    if (!current || current.id !== ch.id) return; // stale response, a newer click won
+    let page = pageFor(e, ch.id);
+    const cached = !!page;
+    if (!cached) {
+      const out = await api(`/api/v1/channels/${ch.id}/messages?limit=100`);
+      if (!current || current.id !== ch.id || e !== active()) return; // stale response, a newer click won
+      page = setPage(e, ch.id, out.messages || []);
+    }
+    page.openedAt = Date.now();
+    renderMessages(page.list, ch);
+    // a cached page paints with no request in flight; the reads and the
+    // reconcile wait for the paint (task 23)
+    afterPaint(() => {
+      if (!current || current.id !== ch.id || e !== active()) return;
+      markRead(ch);
+      loadThreads();
+      refreshHeaderMembers(ch);
+      if (cached) reconcilePage(e, ch);
+    });
+  };
+
+  const renderMessages = (list, ch) => {
     const box = $('messages');
     box.innerHTML = '';
     // "new messages" divider goes where unread starts; join time is the
     // baseline for channels never marked read (matches the server's count)
     const cutoff = ch.unread_count > 0 ? (ch.last_read_at || me.created_at) : null;
     let divided = false;
-    out.messages.forEach((m) => {
+    list.forEach((m) => {
       if (cutoff && !divided && m.author_id !== me.id && m.kind !== 'system' && m.created_at > cutoff) {
         const d = document.createElement('div');
         d.className = 'unread-divider';
@@ -1512,8 +1632,21 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
     });
     syncDateDividers(box);
     box.scrollTop = box.scrollHeight;
-    markRead(ch);
-    loadThreads();
+  };
+
+  // a cached page can have missed an event (a gap while it warmed): fetch the
+  // live page after the paint and repaint only when the two differ
+  const reconcilePage = async (e, ch) => {
+    try {
+      const out = await api(`/api/v1/channels/${ch.id}/messages?limit=100`, { ws: e.slug });
+      const live = out.messages || [];
+      const page = pageFor(e, ch.id);
+      const same = page && page.list.length === live.length
+        && page.list.every((m, i) => m.id === live[i].id && m.body === live[i].body);
+      const fresh = setPage(e, ch.id, live);
+      if (same || e !== active() || !current || current.id !== ch.id) return;
+      renderMessages(fresh.list, ch);
+    } catch (err) { console.error('reconcilePage', err); }
   };
 
   // Pull one page of history above what is rendered, keeping the reader's
@@ -1557,10 +1690,12 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
 
   // Room-wide: the whole thread tree, tagged with channel_id, so leaves can
   // nest under their parent channel in the sidebar.
-  const loadThreads = async () => {
+  const loadThreads = async (e = active()) => {
     try {
-      const out = await api('/api/v1/threads');
-      threads = out.threads || [];
+      const out = await api('/api/v1/threads', { ws: e.slug });
+      e.threads = out.threads || [];
+      if (e !== active()) return;
+      threads = e.threads;
       // a reply that landed in the open thread is being read right now: the
       // fresh count says 1, but its bar must not glow until the panel closes
       await markThreadRead(openThreadRoot);
@@ -1855,6 +1990,9 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
   // notifyPrefs is loaded once at boot and read by the feed
   const applyEvent = async (ev) => {
     const t = ev.type;
+    // the feed cursors predate the boot loads, so a message the page already
+    // holds can come round again: drop it, the counts already include it
+    if (!pageApply(active(), ev)) return;
     if (t === 'message.created') {
       const m = ev.payload;
       maybeNotify(m);
@@ -1972,23 +2110,80 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
     }
   };
 
-  const eventLoop = async () => {
-    try {
-      if (cursor < 0) {
-        const out = await api('/api/v1/events');
-        cursor = out.cursor;
+  // an event for a workspace that is not on screen keeps its entry current,
+  // so a switch back reads the store; its rail badge follows (task 23)
+  const applyStoreEvent = (wsSlug, ev) => {
+    const e = store.get(wsSlug);
+    if (!e) return;
+    if (!e.warm) { // the warm replays these into its pages, then refetches the counts
+      e.pending.push(ev);
+      if (e.pending.length > 200) e.pending.shift();
+      return;
+    }
+    const t = ev.type;
+    if (t === 'message.reaction') {
+      pageApply(e, ev);
+      reactionMap[ev.payload.message_id] = ev.payload.reactions || [];
+      return;
+    }
+    if (t.startsWith('message.')) {
+      if (!pageApply(e, ev)) return;
+      const m = ev.payload;
+      if (t === 'message.created' && !m.thread_root_id && m.author_id !== e.me.id && m.kind !== 'system') {
+        const ch = e.channels.find((c) => c.id === m.channel_id);
+        if (!ch) return;
+        ch.unread_count = (ch.unread_count || 0) + 1;
+        if ((m.mentions || []).includes(e.me.name) || m.is_broadcast) ch.unread_mentions = (ch.unread_mentions || 0) + 1;
+        paintRailBadges();
       }
-      const out = await api(`/api/v1/events?after=${cursor}&wait=25`);
-      cursor = out.cursor;
+      return;
+    }
+    if (t === 'capability.call' || t === 'capability.result' || t === 'capability.registered' || t === 'reminder.fired') return;
+    if (t === 'room.renamed') refreshRail(); // the rail tip carries the name
+    scheduleRoomRefresh(e); // people or structure changed: one refetch per burst
+  };
+  const scheduleRoomRefresh = (e) => {
+    clearTimeout(e.refreshTimer);
+    e.refreshTimer = setTimeout(async () => {
+      try {
+        await loadRoomInto(e);
+        if (e === active()) { adopt(e); paintRoom(); }
+        paintRailBadges();
+      } catch (err) {
+        // removed from it, or it is gone: forget the entry, the rail refetch drops it
+        if (err.status === 403 || err.status === 404) { store.delete(e.slug); refreshRail(); }
+      }
+    }, 800);
+  };
+
+  // one long-poll for every member workspace (task 23): the active one goes
+  // through applyEvent, the rest into the store. The cursor set is the
+  // membership; a change means a workspace was joined or left elsewhere.
+  let feedCursors = {};
+  const feedLoop = async () => {
+    try {
+      const qs = Object.entries(feedCursors).map(([s, c]) => encodeURIComponent(s) + ':' + c).join(',');
+      const out = await api('/api/v1/user/events?wait=25&cursors=' + qs);
+      const before = Object.keys(feedCursors).sort().join(',');
+      feedCursors = out.cursors || {};
+      const after = Object.keys(feedCursors).sort().join(',');
+      if (before && before !== after) {
+        for (const s of before.split(',')) if (!(s in feedCursors) && s !== slug) store.delete(s);
+        if (slug in feedCursors) refreshRail();
+        else refreshRoom().catch(() => {}); // 403 routes to the removed view
+      }
       for (const ev of out.events || []) {
-        // cursor is already advanced: one bad event must not eat the rest of the batch
-        try { await applyEvent(ev); } catch (e) { console.error('applyEvent', ev.type, e); }
+        // the cursors are already advanced: one bad event must not eat the rest of the batch
+        try {
+          if (ev.workspace === slug) await applyEvent(ev);
+          else applyStoreEvent(ev.workspace, ev);
+        } catch (e) { console.error('applyEvent', ev.type, e); }
       }
     } catch (e) {
       if (routeAuthError(e)) return;
       await new Promise((r) => setTimeout(r, 3000));
     }
-    eventLoop();
+    feedLoop();
   };
 
   // ---------- join / boot ----------
@@ -2038,22 +2233,152 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
   // the final layout may ever reach the screen (Maya, msg 62883447)
   const enterChat = async () => {
     document.body.classList.add('booting');
-    const [meOut, prefs, wsOut] = await Promise.all([
+    const e = entryFor(slug);
+    const [meOut, prefs, wsOut, cold] = await Promise.all([
       api('/api/v1/me'),
       api('/api/v1/me/notifications').catch(() => null),
       // a dead session or a lost membership fails /me too, and that one routes
       fetchWorkspaces().catch((e) => { if (!e.status || e.status >= 500) console.error('switcher', e); return null; }),
+      // the feed cursors come before the loads, so nothing in between is lost
+      api('/api/v1/user/events').catch(() => null),
     ]);
+    e.me = meOut;
     me = meOut;
     if (prefs) notifyPrefs = prefs;
+    if (cold) feedCursors = cold.cursors || {};
     $('enter-view').classList.add('hidden');
     $('chat-view').classList.remove('hidden');
-    await refreshRoom();
+    await Promise.all([loadRoomInto(e), loadThreads(e)]);
+    adopt(e);
+    e.warm = true;
+    paintRoom();
     mountSwitcher(wsOut);
     await applyURL();
     syncURL(false); // normalize the address bar without a history entry
     document.body.classList.remove('booting');
-    eventLoop();
+    // the open workspace's counts and page include everything up to now: its
+    // cursor starts here, or the feed would count those messages twice
+    const late = await api('/api/v1/user/events').catch(() => null);
+    if (late && late.cursors && late.cursors[slug] != null) feedCursors[slug] = late.cursors[slug];
+    feedLoop();
+    afterPaint(warmAll);
+    // a warm that failed once is retried: on focus, and on a slow tick
+    setInterval(warmAll, 60 * 1000);
+  };
+
+  // ---------- switching (task 23) ----------
+
+  const pickChannel = (e, chName) => e.channels.find((c) => c.name === chName)
+    || (e.lastChannelID && e.channels.find((c) => c.id === e.lastChannelID))
+    || e.channels.find((c) => c.name === 'general') || e.channels[0];
+  const warmChannel = async (e, ch) => {
+    const [page, members] = await Promise.all([
+      pageFor(e, ch.id) ? null : api(`/api/v1/channels/${ch.id}/messages?limit=100`, { ws: e.slug }),
+      e.members.has(ch.id) ? null : api('/api/v1/channels/' + ch.id + '/members', { ws: e.slug }).catch(() => null),
+    ]);
+    if (page) setPage(e, ch.id, page.messages || []);
+    if (members) e.members.set(ch.id, members.members || []);
+  };
+  // fill an entry off screen: me, the workspace, its sections, browse list and
+  // threads, then the page and members of the channel a switch would open
+  const warm = (e, chName) => {
+    if (e.warming) return e.warming;
+    e.warming = (async () => {
+      try {
+        const [meOut] = await Promise.all([api('/api/v1/me', { ws: e.slug }), loadRoomInto(e), loadThreads(e)]);
+        e.me = meOut;
+        const ch = pickChannel(e, chName);
+        if (ch) await warmChannel(e, ch);
+        e.warm = true;
+        const buf = e.pending;
+        e.pending = [];
+        if (buf.length) {
+          for (const ev of buf) if (ev.type.startsWith('message.')) pageApply(e, ev);
+          scheduleRoomRefresh(e);
+        }
+      } finally { e.warming = null; }
+    })();
+    return e.warming;
+  };
+  const ensureReady = async (e, chName) => {
+    if (!e.warm) await warm(e, chName); // a shared warm may have picked another channel
+    const ch = pickChannel(e, chName);
+    if (ch && !pageFor(e, ch.id)) await warmChannel(e, ch);
+  };
+  // after the first paint: every other member workspace, one at a time, then
+  // every channel page with two fetches in flight; a switch to any of them
+  // then paints with no request before it
+  let warmingAll = null;
+  const warmAll = () => {
+    if (warmingAll) return warmingAll;
+    warmingAll = (async () => {
+      for (const ws of railRooms.slice()) {
+        const e = entryFor(ws.slug);
+        if (e.warm || ws.slug === slug) continue;
+        try { await warm(e); } catch (err) { console.error('warm', ws.slug, err); }
+      }
+      const todo = [];
+      for (const e of store.values()) {
+        if (!e.warm) continue;
+        for (const ch of e.channels) if (!ch.archived && !pageFor(e, ch.id)) todo.push([e, ch]);
+      }
+      const worker = async () => {
+        for (let job = todo.shift(); job; job = todo.shift()) {
+          try { await warmChannel(job[0], job[1]); } catch (err) { /* the switch fetches it */ }
+        }
+      };
+      await Promise.all([worker(), worker()]);
+    })().finally(() => { warmingAll = null; });
+    return warmingAll;
+  };
+
+  const setProgress = (on) => $('switch-progress').classList.toggle('hidden', !on);
+  // the whole pane from the target entry in one synchronous pass: nothing of
+  // the old workspace survives it and nothing of the new one precedes it
+  const swapTo = (e, chName, push) => {
+    closeThread(false);
+    closeMembers(); closeBrowse(); closeSearch(); closeInviteModal(); closeAddAgent();
+    slug = e.slug;
+    roomPrefix = '/w/';
+    adopt(e);
+    current = null;
+    talkedAt = new Map();
+    channelMembers = [];
+    paintRoom();
+    mountMenu();
+    paintRailCurrent();
+    paintRailBadges();
+    const ch = pickChannel(e, chName);
+    if (ch) { selectChannel(ch, !push); return; } // cached: paints before any await
+    $('messages').innerHTML = '';
+    setChannelTitle({ name: '' });
+    if (push) syncURL(true);
+  };
+  let switchSeq = 0;
+  // a rail click: the old workspace stays on screen with a thin bar on top
+  // while a cold target warms, then the swap is one paint
+  const switchTo = async (target, { push = true, chName = '' } = {}) => {
+    if (target === slug) return;
+    const seq = ++switchSeq;
+    const e = entryFor(target);
+    try {
+      const ch = e.warm && pickChannel(e, chName);
+      const ready = e.warm && (!ch || pageFor(e, ch.id));
+      if (!ready) {
+        setProgress(true);
+        await ensureReady(e, chName);
+      }
+    } catch (err) {
+      setProgress(false);
+      // not a member any more, or gone: the full page has the enter and removed views
+      if (err.status === 403 || err.status === 404) { location.href = '/w/' + encodeURIComponent(target); return; }
+      notice('Could not open the workspace', true);
+      console.error('switch', err);
+      return;
+    }
+    if (seq !== switchSeq) return; // a later click won
+    setProgress(false);
+    swapTo(e, chName, push);
   };
 
   // ---------- workspace switcher (session users only) ----------
@@ -2081,14 +2406,10 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
     $('ws-switcher').setAttribute('aria-expanded', open ? 'true' : 'false');
   };
 
-  // one GET /api/v1/user per boot fills the menu; a switch is a full load of
-  // /w/<slug>, so the list never has to stay live
-  const mountSwitcher = (out) => {
+  // the rail is the switcher; this menu holds only the workspace actions (Maya,
+  // msg c61adc39); Create workspace lives on the rail's + alone (Maya, 2026-09-05)
+  const mountMenu = () => {
     const here = location.pathname + location.search;
-    // without the list (fetch failed) the rail still gets the current mark and "+"
-    if (!out) { mountRail([], here); return; }
-    // the rail is the switcher; this menu holds only the workspace actions (Maya,
-    // msg c61adc39); Create workspace lives on the rail's + alone (Maya, 2026-09-05)
     const menu = $('ws-menu');
     menu.innerHTML = '';
     // only admins get the code from /room, and only they may hand it out
@@ -2097,6 +2418,13 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
     menu.appendChild(wsMenuItem('Settings', { icon: '⚙', href: '/settings?next=' + encodeURIComponent(here) }));
     $('ws-current').textContent = room.name;
     paintRoomMark();
+  };
+  // one GET /api/v1/user per boot fills the rail; from then on the feed keeps it
+  const mountSwitcher = (out) => {
+    const here = location.pathname + location.search;
+    // without the list (fetch failed) the rail still gets the current mark and "+"
+    if (!out) { mountRail([], here); return; }
+    mountMenu();
     $('room-head').classList.add('hidden');
     $('ws-switcher-wrap').classList.remove('hidden');
     mountRail(out.workspaces || [], here);
@@ -2133,7 +2461,8 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
   };
 
   // the rail: one round mark per workspace in the user's own order, the
-  // current one marked; a click is a full load of /w/<slug>. "+" opens
+  // current one marked; a plain click switches in place (task 23), the href
+  // still serves a middle click or a new tab. "+" opens
   // create-or-join. Marks drag to reorder (task 18); the right-click menu and
   // Alt+Arrow are the keyboard way, and the menu also holds the mute.
   const mountRail = (workspaces, here) => {
@@ -2160,6 +2489,11 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
       badge.className = 'rail-badge hidden';
       a.appendChild(badge);
       list.appendChild(a);
+      a.addEventListener('click', (ev) => {
+        if (ev.button !== 0 || ev.metaKey || ev.ctrlKey || ev.shiftKey || ev.altKey) return;
+        ev.preventDefault();
+        switchTo(ws.slug, { push: true });
+      });
       if (!listed) continue;
       a.addEventListener('dragstart', (ev) => railDragStart(ev, a));
       a.addEventListener('dragend', railDragEnd);
@@ -2173,21 +2507,39 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
     $('rail-create').href = '/create?next=' + encodeURIComponent(here);
     $('ws-rail').classList.remove('hidden');
     paintRailBadges(workspaces);
-    if (!railTimer) railTimer = setInterval(refreshRail, 60000);
+  };
+  const paintRailCurrent = () => {
+    for (const a of railItems()) {
+      if (a.dataset.slug === slug) a.setAttribute('aria-current', 'true');
+      else a.removeAttribute('aria-current');
+    }
+    $('rail-create').href = '/create?next=' + encodeURIComponent(location.pathname + location.search);
+  };
+  // a workspace's counts: from its entry once warm (the store is the live
+  // truth, task 23), else the roll-up the /user list came with
+  const wsCounts = (ws) => {
+    const e = store.get(ws.slug);
+    if (!e || !e.warm) return { unread: ws.unread_count || 0, mentions: ws.mentions || 0 };
+    const chs = e === active() ? channels : e.channels;
+    return {
+      unread: chs.reduce((n, c) => n + (c.muted ? (c.unread_mentions || 0) : (c.unread_count || 0)), 0),
+      mentions: chs.reduce((n, c) => n + (c.unread_mentions || 0), 0),
+    };
   };
 
   // a count pill on every mark but the current one (the open room's channel
   // badges are the live truth for it): red for @mentions, neutral for plain
   // unreads, gray when the workspace is muted. 99+ caps the number.
   const paintRailBadges = (workspaces) => {
-    railRooms = workspaces;
-    for (const ws of workspaces) {
+    if (workspaces) railRooms = workspaces;
+    for (const ws of railRooms) {
       const a = $('rail-list').querySelector('.rail-item[href="/w/' + encodeURIComponent(ws.slug) + '"]');
       if (!a) continue;
       const badge = a.querySelector('.rail-badge');
       const cur = ws.slug === room.slug;
-      const mentions = cur ? 0 : (ws.mentions || 0);
-      const unread = cur ? 0 : (ws.unread_count || 0);
+      const counts = wsCounts(ws);
+      const mentions = cur ? 0 : counts.mentions;
+      const unread = cur ? 0 : counts.unread;
       const shown = Math.max(unread, mentions);
       badge.classList.toggle('hidden', shown === 0);
       badge.classList.toggle('count', shown > 0);
@@ -2202,12 +2554,14 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
     }
     setTitle();
   };
-  // the session has no token for the other rooms, so this poll is their stream:
-  // every 60 s, and at once when the tab comes back (see the focus handler)
-  let railTimer = null;
+  // the membership list again: after a rename, or when the feed's cursor set
+  // says a workspace was joined or left elsewhere; the counts come from the store
   const refreshRail = async () => {
-    if ($('ws-rail').classList.contains('hidden') || document.hidden) return;
-    try { paintRailBadges((await fetchWorkspaces()).workspaces || []); } catch (e) { console.error('rail', e); }
+    if ($('ws-rail').classList.contains('hidden')) return;
+    try {
+      mountRail((await fetchWorkspaces()).workspaces || [], location.pathname + location.search);
+      warmAll();
+    } catch (e) { console.error('rail', e); }
   };
 
   // ---------- rail order and mute (task 18) ----------
@@ -2570,15 +2924,22 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
 
   // ---------- channel members modal ----------
 
+  const paintHeaderMembers = (ch) => {
+    const list = active().members.get(ch.id);
+    if (!list) return; // the first visit fills it after the paint
+    channelMembers = list;
+    $('members-count').textContent = channelMembers.length;
+    $('members-btn').classList.remove('hidden');
+  };
   const refreshHeaderMembers = async (ch) => {
+    const e = active();
     try {
-      const out = await api('/api/v1/channels/' + ch.id + '/members');
-      if (!current || current.id !== ch.id) return;
-      channelMembers = out.members || [];
-      $('members-count').textContent = channelMembers.length;
-      $('members-btn').classList.remove('hidden');
+      const out = await api('/api/v1/channels/' + ch.id + '/members', { ws: e.slug });
+      e.members.set(ch.id, out.members || []);
+      if (!current || current.id !== ch.id || e !== active()) return;
+      paintHeaderMembers(ch);
       if (!$('members-modal').classList.contains('hidden')) renderMembersModal();
-    } catch (e) { $('members-btn').classList.add('hidden'); }
+    } catch (err) { $('members-btn').classList.add('hidden'); }
   };
 
   const memberRow = (p, action) => {
@@ -3214,7 +3575,7 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
   window.addEventListener('focus', () => {
     // returning to the tab counts as reading what is on screen now
     if (me && current) markRead(current);
-    refreshRail();
+    if (me) warmAll();
   });
 
   // ---------- create workspace (onboarding at /create) ----------

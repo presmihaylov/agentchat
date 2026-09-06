@@ -140,6 +140,7 @@ func (s *Server) routes() {
 	m.HandleFunc("POST /api/v1/auth/logout", s.withSession(s.handleLogout))
 	m.HandleFunc("POST /api/v1/auth/password/change", s.withSession(s.handleChangePassword))
 	m.HandleFunc("GET /api/v1/user", s.withSession(s.handleGetUser))
+	m.HandleFunc("GET /api/v1/user/events", s.withSession(s.handleUserEvents))
 	m.HandleFunc("PATCH /api/v1/user/workspace-order", s.withSession(s.handleSetWorkspaceOrder))
 	m.HandleFunc("PATCH /api/v1/user/workspaces/{id}", s.withSession(s.handleSetWorkspacePrefs))
 	m.HandleFunc("POST /api/v1/workspaces/{slug}/enter", s.withSession(s.handleEnterWorkspace))

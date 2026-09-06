@@ -1,6 +1,6 @@
 // E2E for the workspace rail (task 12): a user with three workspaces sees
 // three round marks on the far left, the current one marked; a click on
-// another is a full load of /w/<slug>; the "+" below the list (tooltip
+// another switches in place to /w/<slug> (task 23); the "+" below the list (tooltip
 // "Create workspace") opens a two-row menu, icon first then label; Create
 // leads to /create, Join enters another workspace with its invite code in a
 // modal. The #ws-menu action rows carry an icon before their label too, and
@@ -9,7 +9,7 @@
 const fs = require('fs');
 const path = require('path');
 const puppeteer = require('puppeteer-core');
-const { createRoom, registerAndLogin, loginPage, openWorkspace, uniqUser } = require('./lib/login.js');
+const { createRoom, registerAndLogin, loginPage, openWorkspace, switchTo, uniqUser } = require('./lib/login.js');
 const SERVER = process.env.SERVER || 'http://localhost:8095';
 const OUT = process.env.OUT || 'tmp';
 
@@ -131,11 +131,8 @@ const iconFirst = (page, sel) => page.$$eval(sel, (els) => els.map((el) => {
   assert(await hiddenNow(page, '#join-modal'), 'Escape did not close the join modal from the ws menu');
 
   step = '4';
-  // 4. a click on another mark is a full load of /w/<slug>, and the mark moves
-  await Promise.all([
-    page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 8000 }),
-    page.click('#rail-list .rail-item[href="/w/' + three.room.slug + '"]'),
-  ]);
+  // 4. a click on another mark switches in place to /w/<slug> (task 23), and the mark moves
+  await switchTo(page, three.room.slug);
   await atPath(page, '/w/' + three.room.slug);
   await visible(page, '#ws-rail');
   await page.waitForFunction((s) => { const a = document.querySelector('#rail-list .rail-item[aria-current]'); return !!a && a.getAttribute('href') === '/w/' + s; }, { timeout: 8000 }, three.room.slug);

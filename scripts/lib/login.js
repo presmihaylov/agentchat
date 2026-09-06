@@ -104,13 +104,12 @@ async function openWorkspace(page, base, session, slug) {
 }
 
 // switchTo picks slug in the workspace rail (the header menu no longer lists
-// workspaces); the switch is a full load of /w/<slug>
+// workspaces); since task 23 the switch is in place: the URL and the rail's
+// current mark move when the whole pane has swapped
 async function switchTo(page, slug) {
   await page.waitForSelector('#rail-list .rail-item[href="/w/' + slug + '"]', { timeout: 8000 });
-  await Promise.all([
-    page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 8000 }),
-    page.click('#rail-list .rail-item[href="/w/' + slug + '"]'),
-  ]);
+  await page.click('#rail-list .rail-item[href="/w/' + slug + '"]');
+  await page.waitForFunction((s) => location.pathname.startsWith('/w/' + s) && document.querySelector('#rail-list .rail-item[aria-current="true"][data-slug="' + s + '"]'), { timeout: 8000 }, slug);
   await page.waitForSelector('#chat-view:not(.hidden)', { timeout: 8000 });
 }
 
