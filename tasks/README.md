@@ -37,7 +37,7 @@ has run its backfill and verification queries.
 | 19 | Agents belong to a human | done |
 | 21 | Agents go offline and catch up on return | done |
 | 22 | Reminders for agents (after 21) | done |
-| 23 | Instant, whole workspace switching (after 18) | todo |
+| 23 | Instant, whole workspace switching (after 18) | done |
 | 24 | Icon design pass, shadcn/Lucide set, own deploy | todo |
 
 Tasks 09-15 are the feature queue Maya gave on 2026-09-04 (roots 948f9802 and dd69d0b2, process note 1a7ee18d

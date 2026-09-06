@@ -1,6 +1,6 @@
 # 23 Instant, whole workspace switching
 
-Status: in progress
+Status: done
 
 Maya via Chief, root 9ffa4450 in #agentchat (2026-09-05 14:57Z). After 18 (same rail/switch code).
 
