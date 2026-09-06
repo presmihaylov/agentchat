@@ -79,6 +79,31 @@ const del = async (url, token, slug) => {
   await page.click('#ws-member-list > li[data-id="' + jill.participant.id + '"] .member-fold');
   list = await rows(page);
   assert(byName('Jill Human').agents.length === 1 && byName('Jill Human').agents[0].owner === jill.participant.id, 'jill agents: ' + JSON.stringify(byName('Jill Human').agents));
+  // 1b. a proper table: every role badge, agents button and Remove sits at one x
+  // with one width on every row, the expanded agent row included; the creator's
+  // empty Remove cell keeps the column; Remove is the red destructive button with
+  // a trash icon; "0 agents" looks disabled
+  const cols = await page.evaluate(() => {
+    const box = (el) => { const r = el.getBoundingClientRect(); return { x: Math.round(r.left), w: Math.round(r.width) }; };
+    const all = (sel) => [...document.querySelectorAll(sel)].map(box);
+    const rm = document.querySelector('#ws-member-list .member-head > .member-remove');
+    const cs = getComputedStyle(rm);
+    return {
+      roles: all('#ws-member-list .member-head .member-role, #ws-member-list .member-agents:not(.hidden) .member-role'),
+      folds: all('#ws-member-list .member-fold'),
+      removes: all('#ws-member-list .member-head > .member-remove, #ws-member-list .member-agents:not(.hidden) .member-remove, #ws-member-list .member-remove-gap'),
+      gap: document.querySelectorAll('#ws-member-list .member-remove-gap').length,
+      gapHidden: [...document.querySelectorAll('#ws-member-list .member-remove-gap')].every((g) => getComputedStyle(g).visibility === 'hidden'),
+      remove: { bg: cs.backgroundColor, color: cs.color, icon: (rm.querySelector('svg') || {}).dataset?.icon, text: rm.textContent.trim() },
+      zero: [...document.querySelectorAll('#ws-member-list .member-fold')].filter((b) => b.textContent.trim().endsWith('0 agents')).map((b) => b.disabled),
+    };
+  });
+  const oneColumn = (boxes) => boxes.length > 1 && boxes.every((b) => b.x === boxes[0].x && b.w === boxes[0].w);
+  assert(cols.roles.length === 4 && oneColumn(cols.roles), 'role badges drift: ' + JSON.stringify(cols.roles));
+  assert(cols.folds.length === 3 && oneColumn(cols.folds), 'agents buttons drift: ' + JSON.stringify(cols.folds));
+  assert(cols.removes.length === 4 && oneColumn(cols.removes) && cols.gap === 2 && cols.gapHidden, 'remove column drift: ' + JSON.stringify({ removes: cols.removes, gap: cols.gap, hidden: cols.gapHidden }));
+  assert(cols.remove.bg === 'rgb(229, 83, 75)' && cols.remove.color === 'rgb(255, 255, 255)' && cols.remove.icon === 'trash-2' && cols.remove.text === 'Remove', 'remove not destructive: ' + JSON.stringify(cols.remove));
+  assert(cols.zero.length === 1 && cols.zero[0] === true, '0 agents not disabled: ' + JSON.stringify(cols.zero));
   await shot(page, 'tree.png');
 
   step = '2';

@@ -473,6 +473,13 @@ const membersSection = async (slug, getRoom) => {
       btn.disabled = false;
     }
   };
+  const removeButton = () => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'destructive member-remove';
+    btn.innerHTML = ICON.trashTwo + ' Remove';
+    return btn;
+  };
   const agentRow = (a, humans) => {
     const li = document.createElement('li');
     li.className = 'member-agent';
@@ -512,12 +519,12 @@ const membersSection = async (slug, getRoom) => {
         sel.disabled = false;
       }
     };
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'secondary member-remove';
-    btn.textContent = 'Remove';
+    const kind = document.createElement('span');
+    kind.className = 'member-role';
+    kind.textContent = 'agent';
+    const btn = removeButton();
     btn.onclick = () => remove(a, btn, 'Remove ' + a.name + ' (agent, its token stops working) from "' + getRoom().name + '"?');
-    li.append(who, sel, btn);
+    li.append(who, kind, sel, btn);
     return li;
   };
   const humanRow = (p, agents, humans) => {
@@ -546,11 +553,16 @@ const membersSection = async (slug, getRoom) => {
     paint();
     fold.disabled = agents.length === 0;
     head.appendChild(fold);
+    // The creator (and my own row) gets an invisible placeholder, so the
+    // Remove column keeps its width on every row.
+    if (isCreator(p) || p.id === me.id) {
+      const gap = document.createElement('span');
+      gap.className = 'member-remove-gap';
+      gap.setAttribute('aria-hidden', 'true');
+      head.appendChild(gap);
+    }
     if (!isCreator(p) && p.id !== me.id) {
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = 'secondary member-remove';
-      btn.textContent = 'Remove';
+      const btn = removeButton();
       const tail = agents.length ? ' and ' + agents.length + (agents.length === 1 ? ' agent (' : ' agents (') + agents.map((a) => a.name).join(', ') + ')' : '';
       btn.onclick = () => remove(p, btn, 'Remove ' + p.name + tail + ' from "' + getRoom().name + '"? The agents\' tokens stop working.');
       head.appendChild(btn);
@@ -594,6 +606,7 @@ const membersSection = async (slug, getRoom) => {
       sub.className = 'member-sub';
       sub.textContent = 'joined before owners existed; pick an owner for each';
       who.append(name, sub);
+      who.classList.add('member-span');
       head.appendChild(who);
       li.appendChild(head);
       const sub2 = document.createElement('ul');

@@ -2,7 +2,7 @@
   color-scheme: dark;
   --bg: #1a1d21; --panel: #222529; --panel2: #2b2e33; --border: #3a3d42;
   --text: #d1d2d3; --dim: #9a9b9c; --accent: #4a9eda; --mention: #3d3222;
-  --broadcast: #402b2b; --online: #2bac76;
+  --broadcast: #402b2b; --danger: #e5534b; --online: #2bac76;
   /* --badge: the unread / mention count fill (Discord red), white bold count on it */
   --badge: #ed4245;
   /* selection fill: translucent so the row reads as a highlight, not a slab */
@@ -16,7 +16,7 @@ html[data-theme="light"] {
   color-scheme: light;
   --bg: #fff; --panel: #f3f4f6; --panel2: #e8eaee; --border: #d3d7dd;
   --text: #1f2328; --dim: #667380; --accent: #1f6fb2; --mention: #fff1d0;
-  --broadcast: #fbe0e0; --online: #1a9e63; --badge: #d83b3e;
+  --broadcast: #fbe0e0; --danger: #e5534b; --online: #1a9e63; --badge: #d83b3e;
   --accent-soft: rgba(31, 111, 178, .22);
   --hot: #0d1117; --glow: rgba(31, 111, 178, .3);
   --code-bg: #eef0f3; --overlay: var(--shadow); --shadow: rgba(0, 0, 0, .18);
@@ -721,20 +721,32 @@ html:not([data-theme="light"]) .rail-item .ws-avatar { color: hsl(var(--ws-h) 55
 .rail-item:hover::before { height: 20px; }
 .rail-item[aria-current]::before { height: 36px; }
 #ws-members { margin-top: 0; }
-#ws-member-list { list-style: none; margin: 0; padding: 0; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+/* Members table (task 19, styled pass): fixed grid columns so the role badge,
+   the agents button and Remove sit at one x on every row, humans and agents alike. */
+.member-grid, #ws-member-list .member-head, #ws-member-list .member-agent { display: grid; grid-template-columns: minmax(0, 1fr) 84px 124px 108px; align-items: center; gap: 12px; padding: 8px 12px; }
+#ws-member-header { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); border: 1px solid var(--border); border-bottom: 0; border-radius: 8px 8px 0 0; background: var(--panel2); }
+#ws-member-list { list-style: none; margin: 0; padding: 0; border: 1px solid var(--border); border-radius: 0 0 8px 8px; overflow: hidden; }
 #ws-member-list > li { border-top: 1px solid var(--border); }
-#ws-member-list > li:first-child { border-top: 0; }
-#ws-member-list .member-head, #ws-member-list .member-agent { display: flex; align-items: center; gap: 10px; padding: 8px 10px; }
-#ws-member-list .member-who { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+#ws-member-list .member-head:hover, #ws-member-list .member-agent:hover { background: var(--panel2); }
+#ws-member-list .member-who { min-width: 0; display: flex; flex-direction: column; }
+#ws-member-list .member-span { grid-column: 1 / -1; }
 #ws-member-list .member-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #ws-member-list .member-sub { font-size: 12px; color: var(--muted); }
-#ws-member-list .member-role { font-size: 12px; color: var(--muted); }
-#ws-member-list .member-fold { padding: 4px 10px; font-size: 12px; white-space: nowrap; }
-#ws-member-list .member-agents { list-style: none; margin: 0; padding: 0 0 4px 22px; }
-#ws-member-list .member-agent { padding: 4px 10px; border-top: 1px dashed var(--border); }
-#ws-member-list .member-owner { font-size: 12px; padding: 3px 6px; max-width: 140px; }
+#ws-member-list .member-role { display: inline-flex; justify-content: center; width: 100%; box-sizing: border-box; padding: 2px 8px; border: 1px solid var(--border); border-radius: 999px; font-size: 11px; font-weight: 600; line-height: 16px; color: var(--text); text-transform: lowercase; white-space: nowrap; }
+#ws-member-list .member-fold { display: inline-flex; align-items: center; justify-content: center; gap: 4px; width: 100%; box-sizing: border-box; padding: 4px 8px; font-size: 12px; white-space: nowrap; }
+#ws-member-list .member-fold:disabled { opacity: .45; cursor: default; }
+#ws-member-list .member-fold:disabled:hover { background: none; }
+#ws-member-list .member-agents { list-style: none; margin: 0; padding: 0; border-top: 1px dashed var(--border); background: color-mix(in srgb, var(--panel2) 40%, transparent); }
+#ws-member-list .member-agent { padding: 6px 12px 6px 32px; border-top: 1px dashed var(--border); }
+#ws-member-list .member-agent:first-child { border-top: 0; }
+#ws-member-list .member-owner { width: 100%; box-sizing: border-box; font-size: 12px; padding: 3px 6px; }
 #ws-member-list .member-unowned .member-name { color: #e0736b; }
-#ws-member-list .member-remove { padding: 4px 10px; font-size: 12px; }
+#ws-member-list .member-remove, #ws-member-list .member-remove-gap { display: inline-flex; align-items: center; justify-content: center; gap: 6px; width: 100%; box-sizing: border-box; padding: 4px 8px; font-size: 12px; white-space: nowrap; }
+#ws-member-list .member-remove-gap { visibility: hidden; }
+.settings-panel button.destructive { background: var(--danger, #e5534b); border: 1px solid var(--danger, #e5534b); color: #fff; font-weight: 600; border-radius: 6px; }
+.settings-panel button.destructive:hover { filter: brightness(.9); }
+.settings-panel button.destructive:disabled { opacity: .5; cursor: not-allowed; }
+.settings-panel button.destructive svg { width: 16px; height: 16px; flex: none; }
 #ws-danger { margin-top: 10px; padding-top: 16px; border-top: 1px solid var(--border); }
 #ws-danger h2 { color: #e0736b; }
 #ws-danger label { flex-direction: column; }
