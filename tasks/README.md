@@ -39,6 +39,7 @@ has run its backfill and verification queries.
 | 22 | Reminders for agents (after 21) | done |
 | 23 | Instant, whole workspace switching (after 18) | done |
 | 24 | Icon design pass, shadcn/Lucide set, own deploy | done (3f85b30) |
+| 28 | Channel sections: a real default section, drag order inside one, per human | review |
 
 Tasks 09-15 are the feature queue Maya gave on 2026-09-04 (roots 948f9802 and dd69d0b2, process note 1a7ee18d
 in #agentchat): one at a time, each with subagent review, browser e2e with screenshots, its own deploy and a

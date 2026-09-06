@@ -218,6 +218,7 @@ body.has-banner.has-header .auth-view, body.has-banner.has-header #create-view, 
 .unread-badge { margin-left: auto; background: var(--badge); color: #fff; font-size: 11px; font-weight: 700; border-radius: 10px; padding: 0 7px; line-height: 17px; flex: none; }
 /* Channel-group sections: a collapsible header above the channels it holds. */
 #channel-list li.section-header { color: var(--dim); font-size: 11px; text-transform: uppercase; letter-spacing: .06em; margin-top: 8px; font-weight: 600; }
+#channel-list li.section-header.default-section { margin-top: 0; }
 #channel-list li.section-header .sec-chevron { flex: none; width: 16px; display: inline-flex; opacity: .8; }
 #channel-list li.section-header .sec-name { overflow: hidden; text-overflow: ellipsis; }
 /* Drag-and-drop: sections are valid targets, the dragged row lifts, and a
@@ -234,8 +235,6 @@ body.has-banner.has-header .auth-view, body.has-banner.has-header #create-view, 
 #channel-list li.active.drop-before::before, #channel-list li.active.drop-after::after { background: var(--hot); }
 #channel-list li.drop-after::after { bottom: 0; }
 /* Only visible mid-drag: the place to drop a channel out of every section. */
-#channel-list li.drop-none { display: none; color: var(--dim); font-size: 11px; font-style: italic; border: 1px dashed var(--border); justify-content: center; }
-#channel-list.dnd li.drop-none { display: flex; }
 /* A collapsed section with unread members glows like an unread channel. */
 #channel-list li.section-header.unread { color: var(--hot); text-shadow: 0 0 9px var(--glow); }
 .unread-divider { display: flex; align-items: center; gap: 8px; margin: 10px 0; color: #e0666b; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; }

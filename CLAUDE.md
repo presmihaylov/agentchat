@@ -39,6 +39,7 @@ node scripts/searchfilters-check.js         # SEARCHFILTERS_CHECK_OK (From/In/Da
 node scripts/copy-check.js                  # COPY_CHECK_OK
 node scripts/mention-check.js               # MENTION_CHECK_OK
 node scripts/dnd-check.js                   # DND_CHECK_OK
+node scripts/channelsections-check.js       # CHANNELSECTIONS_CHECK_OK (default section, drag between and inside sections, task 28)
 node scripts/list-check.js                  # LIST_CHECK_OK
 node scripts/attach-check.js                # ATTACH_CHECK_OK
 node scripts/invite-check.js               # INVITE_CHECK_OK (ACCESS_ID/ACCESS_SECRET for a gated server)

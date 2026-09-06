@@ -107,6 +107,14 @@ type Channel struct {
 	Member *bool `json:"member,omitempty"`
 }
 
+// ChannelLayout is one participant's whole sidebar order: the named sections
+// and the default section ("Channels") that holds everything else.
+type ChannelLayout struct {
+	Groups           []ChannelGroup `json:"groups"`
+	Ungrouped        []string       `json:"ungrouped"`
+	DefaultCollapsed bool           `json:"default_collapsed"`
+}
+
 // ChannelGroup is one participant's sidebar section. Groups are purely personal
 // (Slack-style sections): they hold no room state and emit no events. ChannelIDs
 // lists the channels placed in this group for this participant, in order.

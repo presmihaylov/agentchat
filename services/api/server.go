@@ -194,6 +194,7 @@ func (s *Server) routes() {
 	// personal sidebar sections (channel groups); all caller-scoped, no events
 	m.HandleFunc("GET /api/v1/channel-groups", s.authed(s.handleListChannelGroups))
 	m.HandleFunc("POST /api/v1/channel-groups", s.authed(s.handleCreateChannelGroup))
+	m.HandleFunc("PATCH /api/v1/channel-groups/default", s.authed(s.handleUpdateDefaultSection))
 	m.HandleFunc("PATCH /api/v1/channel-groups/{id}", s.authed(s.handleUpdateChannelGroup))
 	m.HandleFunc("DELETE /api/v1/channel-groups/{id}", s.authed(s.handleDeleteChannelGroup))
 	m.HandleFunc("PUT /api/v1/channels/{id}/group", s.authed(s.handleSetChannelGroup))

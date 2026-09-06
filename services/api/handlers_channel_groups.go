@@ -11,12 +11,34 @@ import (
 // scoped to the caller, holds no room state, and emits no events.
 
 func (s *Server) handleListChannelGroups(w http.ResponseWriter, r *http.Request, p models.Participant) {
-	groups, err := s.store.ListChannelGroups(r.Context(), p.ID)
+	layout, err := s.store.ListChannelLayout(r.Context(), p.ID)
 	if err != nil {
 		writeStoreErr(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"groups": groups})
+	writeJSON(w, http.StatusOK, layout)
+}
+
+type defaultSectionReq struct {
+	Collapsed *bool `json:"collapsed"`
+}
+
+// handleUpdateDefaultSection carries the collapsed flag of the default section.
+// It has no row in channel_groups, so it cannot go through the {id} route.
+func (s *Server) handleUpdateDefaultSection(w http.ResponseWriter, r *http.Request, p models.Participant) {
+	var req defaultSectionReq
+	if !readJSON(w, r, &req) {
+		return
+	}
+	if req.Collapsed == nil {
+		writeErr(w, http.StatusBadRequest, "nothing to update")
+		return
+	}
+	if err := s.store.SetDefaultSectionCollapsed(r.Context(), p.ID, *req.Collapsed); err != nil {
+		writeStoreErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "updated"})
 }
 
 type channelGroupReq struct {

@@ -41,7 +41,6 @@ const assert = (cond, msg) => { if (!cond) throw new Error(msg); };
   await page.waitForSelector('#chat-view:not(.hidden)', { timeout: 8000 });
 
   const rows = () => page.$$eval('#channel-list li', (ns) => ns
-    .filter((n) => !n.classList.contains('drop-none'))
     .map((n) => (n.classList.contains('section-header') ? '§ ' : '') + n.textContent.trim()));
   const rowHandle = async (label) => {
     const h = (await page.$$('#channel-list li'))
@@ -120,8 +119,8 @@ const assert = (cond, msg) => { if (!cond) throw new Error(msg); };
   await dragTo('gamma', 'OPS');
   await expect({ Ops: 'gamma' }, 'collapsed drop failed');
 
-  // 4. the strip drops a channel back out of every section
-  await dragTo('alpha', 'drop here for no section');
+  // 4. the default section's header takes a channel back out of every section
+  await dragTo('alpha', 'CHANNELS');
   await expect({ Work: 'beta' }, 'alpha did not leave Work');
 
   // 5. the mid-drag affordances: lifted row, drop line, sections outlined

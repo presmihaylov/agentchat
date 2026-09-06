@@ -29,6 +29,8 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
   let isAdmin = false;
   let channels = [];
   let groups = [];           // personal sidebar sections (channel groups)
+  let ungrouped = [];        // the default section's channel order (ids)
+  let defaultCollapsed = false;
   let participants = [];
   // up here with the rest of the room state on purpose: the composer mounts
   // before the room loads and its live mention highlight reads this on render 1
@@ -50,7 +52,8 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
     let e = store.get(s);
     if (!e) {
       e = { slug: s, warm: false, warming: null, me: null, room: null, joinURL: null, isAdmin: false,
-        channels: [], groups: [], participants: [], publicChannels: [], threads: [],
+        channels: [], groups: [], ungrouped: [], defaultCollapsed: false,
+        participants: [], publicChannels: [], threads: [],
         pages: new Map(), members: new Map(), lastChannelID: null, refreshTimer: 0, pending: [] };
       store.set(s, e);
     }
@@ -60,6 +63,7 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
   const adopt = (e) => {
     me = e.me; room = e.room; joinURL = e.joinURL; isAdmin = e.isAdmin;
     channels = e.channels; groups = e.groups; participants = e.participants;
+    ungrouped = e.ungrouped || []; defaultCollapsed = !!e.defaultCollapsed;
     publicChannels = e.publicChannels; threads = e.threads;
   };
   const pageFor = (e, chID) => e.pages.get(chID) || null;
@@ -836,26 +840,42 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
     clearDropMarks();
   };
 
+  // Sidebar layout writes run one at a time. Each ends with a fetchGroups, and a
+  // fetch that lands after a newer local change would stomp it back.
+  let layoutQueue = Promise.resolve();
+  const queueLayout = (fn) => {
+    layoutQueue = layoutQueue.catch(() => {}).then(fn);
+    return layoutQueue;
+  };
+
+  // persist a whole section's order, slot by slot. Every channel in the list
+  // gets a row, so a section the user has never dragged stops being row-less.
+  const writeOrder = async (ids, groupID) => {
+    for (let i = 0; i < ids.length; i += 1) {
+      await api('/api/v1/channels/' + ids[i] + '/group', { method: 'PUT', body: { group_id: groupID || null, position: i } });
+    }
+  };
+
   // groupID null drops the channel out of every section; index is its slot.
   const dropChannel = async (ch, groupID, index) => {
     const target = groups.find((g) => g.id === groupID);
-    // the ungrouped area has no stored order, so only the placement changes
-    if (!target) {
-      await moveChannel(ch, null);
-      return;
-    }
-    const ids = (target.channel_ids || []).filter((id) => id !== ch.id);
+    const order = target ? (target.channel_ids || []) : defaultMembers().map((c) => c.id);
+    const ids = order.filter((id) => id !== ch.id);
     ids.splice(Math.max(0, Math.min(index, ids.length)), 0, ch.id);
     groups.forEach((g) => { g.channel_ids = (g.channel_ids || []).filter((id) => id !== ch.id); });
-    target.channel_ids = ids;
+    // hold the store entry the drag started in: a workspace switch mid-write
+    // must not land these positions on the wrong workspace
+    const e = active();
+    if (target) target.channel_ids = ids;
+    else { ungrouped = ids; if (e) e.ungrouped = ids; }
     renderChannels(); // land the row now; the writes only confirm it
-    try {
-      for (let i = 0; i < ids.length; i += 1) {
-        await api('/api/v1/channels/' + ids[i] + '/group', { method: 'PUT', body: { group_id: groupID, position: i } });
-      }
-    } catch (e) { notice(e.message, true); }
-    await fetchGroups();
-    renderChannels();
+    await queueLayout(async () => {
+      try {
+        await writeOrder(ids, groupID);
+      } catch (err) { notice(err.message, true); }
+      await fetchGroups(e);
+      renderChannels();
+    });
   };
 
   const dropEdge = (li, ev) => {
@@ -886,7 +906,8 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
       ev.stopPropagation();
       const moved = dragChannel;
       const g = groups.find((x) => x.id === groupID);
-      const ids = g ? (g.channel_ids || []).filter((id) => id !== moved.id) : [];
+      const order = g ? (g.channel_ids || []) : defaultMembers().map((c) => c.id);
+      const ids = order.filter((id) => id !== moved.id);
       const index = ids.indexOf(ch.id) + dropEdge(li, ev);
       endDrag();
       dropChannel(moved, groupID, index);
@@ -1010,21 +1031,42 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
     return map;
   };
 
+  // The default section holds every channel in no named section. Its stored
+  // order comes first; a channel created since the last drag has no row yet, so
+  // it lands after, in the server's order.
+  const defaultMembers = () => {
+    const placement = groupOf();
+    const loose = channels.filter((ch) => !placement[ch.id]);
+    const known = ungrouped.map((id) => loose.find((c) => c.id === id)).filter(Boolean);
+    return known.concat(loose.filter((ch) => !ungrouped.includes(ch.id)));
+  };
+
   const renderChannels = () => {
     setTitle(); // the open room's channel state is half of the tab badge
     const ul = $('channel-list');
     ul.innerHTML = '';
-    const placement = groupOf();
 
-    // only shown mid-drag: the way back out of every section
-    const none = document.createElement('li');
-    none.className = 'drop-none';
-    none.textContent = 'drop here for no section';
-    makeDropZone(none, null, () => 0);
-    ul.appendChild(none);
-
-    // ungrouped channels first, in their normal order
-    channels.filter((ch) => !placement[ch.id]).forEach((ch) => appendChannel(ul, ch, null));
+    // the default section: a real header like any other, but it cannot be
+    // renamed or deleted, and it is also the drop target for leaving a section
+    const members0 = defaultMembers();
+    const head0 = document.createElement('li');
+    head0.className = 'section-header default-section' + (defaultCollapsed ? ' collapsed' : '');
+    head0.innerHTML = `<span class="sec-chevron">${defaultCollapsed ? ICON.chevronRight : ICON.chevronDown}</span><span class="sec-name">Channels</span>`;
+    const rolled = members0.filter((ch) => ch.unread_count > 0 && (!ch.muted || ch.unread_mentions > 0) && !(current && current.id === ch.id));
+    if (defaultCollapsed && rolled.length) {
+      head0.classList.add('unread');
+      const mentions = members0.reduce((n, ch) => n + (ch.unread_mentions || 0), 0);
+      if (mentions > 0) {
+        const b = document.createElement('span');
+        b.className = 'unread-badge';
+        b.textContent = mentions > 99 ? '99+' : String(mentions);
+        head0.appendChild(b);
+      }
+    }
+    head0.onclick = () => toggleDefaultSection();
+    makeDropZone(head0, null, () => members0.length);
+    ul.appendChild(head0);
+    if (!defaultCollapsed) members0.forEach((ch) => appendChannel(ul, ch, null));
 
     // then each personal section, in order
     groups.forEach((g) => {
@@ -1059,9 +1101,13 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
   };
 
   const fetchGroups = async (e = active()) => {
-    try { e.groups = (await api('/api/v1/channel-groups', { ws: e.slug })).groups || []; }
-    catch (err) { e.groups = []; }
-    if (e === active()) groups = e.groups;
+    try {
+      const layout = await api('/api/v1/channel-groups', { ws: e.slug });
+      e.groups = layout.groups || [];
+      e.ungrouped = layout.ungrouped || [];
+      e.defaultCollapsed = !!layout.default_collapsed;
+    } catch (err) { e.groups = []; e.ungrouped = []; e.defaultCollapsed = false; }
+    if (e === active()) { groups = e.groups; ungrouped = e.ungrouped; defaultCollapsed = e.defaultCollapsed; }
   };
 
   // Collapse/expand is optimistic: flip locally and re-render, then persist.
@@ -1070,6 +1116,15 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
     renderChannels();
     try { await api('/api/v1/channel-groups/' + g.id, { method: 'PATCH', body: { collapsed: g.collapsed } }); }
     catch (e) { /* next refresh corrects the flag */ }
+  };
+
+  const toggleDefaultSection = async () => {
+    defaultCollapsed = !defaultCollapsed;
+    const e = active();
+    if (e) e.defaultCollapsed = defaultCollapsed;
+    renderChannels();
+    try { await api('/api/v1/channel-groups/default', { method: 'PATCH', body: { collapsed: defaultCollapsed } }); }
+    catch (err) { /* next refresh corrects the flag */ }
   };
 
   const muteChannel = async (ch, muted) => {
@@ -1081,13 +1136,13 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
     } catch (e) { alert(e.message); }
   };
 
-  const moveChannel = async (ch, groupID) => {
+  const moveChannel = (ch, groupID) => queueLayout(async () => {
     try {
       await api('/api/v1/channels/' + ch.id + '/group', { method: 'PUT', body: { group_id: groupID } });
       await fetchGroups();
       renderChannels();
     } catch (e) { alert(e.message); }
-  };
+  });
 
   const openMoveMenu = (x, y, ch) => {
     const placement = groupOf();
@@ -1111,20 +1166,32 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
   const renameGroup = async (g) => {
     const name = prompt('Rename section:', g.name);
     if (!name || !name.trim() || name.trim() === g.name) return;
-    try {
-      await api('/api/v1/channel-groups/' + g.id, { method: 'PATCH', body: { name: name.trim() } });
-      await fetchGroups();
-      renderChannels();
-    } catch (e) { alert(e.message); }
+    await queueLayout(async () => {
+      try {
+        await api('/api/v1/channel-groups/' + g.id, { method: 'PATCH', body: { name: name.trim() } });
+        await fetchGroups();
+        renderChannels();
+      } catch (e) { alert(e.message); }
+    });
   };
 
-  const deleteGroup = async (g) => {
+  // Delete drops the section's channels into the default one. The server appends
+  // them after the rows it can see, but a channel never dragged has no row, so
+  // only the client knows the full order. Write it back.
+  const deleteGroup = (g) => queueLayout(async () => {
+    const wanted = defaultMembers().map((c) => c.id).concat((g.channel_ids || []));
+    const e = active();
     try {
       await api('/api/v1/channel-groups/' + g.id, { method: 'DELETE' });
-      await fetchGroups();
+      groups = groups.filter((x) => x.id !== g.id);
+      ungrouped = wanted;
+      if (e) { e.groups = groups; e.ungrouped = wanted; }
       renderChannels();
-    } catch (e) { alert(e.message); }
-  };
+      await writeOrder(wanted, null);
+      await fetchGroups(e);
+      renderChannels();
+    } catch (err) { alert(err.message); }
+  });
 
   // Reply bars in the open channel view share the thread tree's unread state.
   const syncReplyBars = () => {
