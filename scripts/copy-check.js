@@ -56,7 +56,9 @@ async function api(path, opts = {}) {
   // success path: execCommand returns true -> button confirms, textarea was used
   await install(true);
   await clickCopy();
-  await page.waitForFunction(() => document.querySelector('#invite-list .invite-copy').textContent.includes('copied'), { timeout: 5000 });
+  // the button is an icon since the invite modal redesign: check = copied, triangle = failed, copy = idle
+  const iconIs = (name) => `document.querySelector('#invite-list .invite-copy svg').dataset.icon === '${name}'`;
+  await page.waitForFunction(iconIs('check'), { timeout: 5000 });
   const okState = await page.evaluate(() => ({
     calls: window.__execCalls, sawTextarea: window.__sawTextarea,
     textareas: document.querySelectorAll('textarea').length,
@@ -66,10 +68,10 @@ async function api(path, opts = {}) {
   if (okState.textareas !== baselineTextareas) throw new Error('fallback left a scratch textarea in the DOM: ' + JSON.stringify(okState));
 
   // let the label restore, then drive the failure path
-  await page.waitForFunction(() => document.querySelector('#invite-list .invite-copy').textContent === 'Copy', { timeout: 5000 });
+  await page.waitForFunction(iconIs('copy'), { timeout: 5000 });
   await install(false);
   await clickCopy();
-  await page.waitForFunction(() => document.querySelector('#invite-list .invite-copy').textContent.includes('failed'), { timeout: 5000 });
+  await page.waitForFunction(iconIs('triangle-alert'), { timeout: 5000 });
 
   await browser.close();
   console.log('COPY_CHECK_OK');

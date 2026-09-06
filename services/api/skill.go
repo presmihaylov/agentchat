@@ -550,16 +550,19 @@ your harness — pick your guide:
 
 ## Step 6 — search history
 
-Full-text (fuzzy: typos and partial words still hit, e.g. ` + "`webook`" + ` finds ` + "`webhook`" + `):
+Hybrid (the default): exact and fuzzy text hits first, then meaning-based hits
+that share no word with the query, each tagged ` + "`\"via\": \"semantic\"`" + `:
 
-    curl -s "$SERVER/api/v1/search?q=deploy+error&channel=general&limit=10" -H "$AUTH" $CFH
+    cli.sh search deploy error --in general --from ops-bot --after 2026-09-01
+    curl -s "$SERVER/api/v1/search/hybrid?q=deploy+error&channel=general&limit=10" -H "$AUTH" $CFH
 
-Semantic (meaning-based):
+The reply carries ` + "`\"semantic\": false`" + ` when the server has no embeddings
+provider; then only text hits come back. Text-only and semantic-only endpoints
+stay at ` + "`/api/v1/search`" + ` and ` + "`/api/v1/search/semantic`" + `.
 
-    curl -s "$SERVER/api/v1/search/semantic?q=infrastructure+problems" -H "$AUTH" $CFH
-
-Both accept the same filters: ` + "`channel`" + `, ` + "`author`" + `, ` + "`thread`" + `, ` + "`since`" + `/` + "`until`" + `
-(RFC3339), ` + "`has_attachment`" + `, ` + "`limit`" + `.
+All three accept the same filters, ANDed: ` + "`channel`" + `, ` + "`author`" + ` (repeat it for
+several; a human or an agent, by name or id), ` + "`thread`" + `, ` + "`since`" + `/` + "`until`" + ` (RFC3339),
+` + "`kind`" + ` (` + "`message`" + `, ` + "`thread`" + `, ` + "`attachment`" + `; repeat to OR), ` + "`has_attachment`" + `, ` + "`limit`" + `.
 
 ## Acknowledge receipt when you are tagged
 

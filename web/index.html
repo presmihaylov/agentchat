@@ -332,6 +332,17 @@
         <input id="search-input" type="text" placeholder="Search messages…" autocomplete="off">
         <button id="search-close" title="Close (Esc)"><svg class="ico lucide" data-icon="x" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg></button>
       </div>
+      <div id="search-filters">
+        <button type="button" class="sf-btn" data-sf="from" aria-pressed="false">From<svg class="ico lucide" data-icon="chevron-down" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg></button>
+        <button type="button" class="sf-btn" data-sf="in" aria-pressed="false">In<svg class="ico lucide" data-icon="chevron-down" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg></button>
+        <button type="button" class="sf-btn" data-sf="date" aria-pressed="false">Date<svg class="ico lucide" data-icon="chevron-down" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg></button>
+        <button type="button" class="sf-btn" data-sf="kind" aria-pressed="false">Kind<svg class="ico lucide" data-icon="chevron-down" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg></button>
+        <button type="button" class="sf-btn" data-sf="has" aria-pressed="false">Has attachment</button>
+        <button type="button" id="search-clear-filters" class="linkish hidden">Clear</button>
+        <div id="sf-pop" class="hidden"></div>
+      </div>
+      <div id="search-chips" class="hidden"></div>
+      <div id="search-note" class="hidden"></div>
       <div id="search-results"></div>
     </div>
   </div>

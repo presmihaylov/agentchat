@@ -386,4 +386,21 @@ fi
 "${B[@]}" reminders | grep -c 'next ' | grep -qx 1 || fail "one reminder should remain"
 ok "remind, reminders list/edit/delete, other agents locked out"
 
+# 17. search (task F): hybrid endpoint, filters AND, --from repeats, dates, --json
+"${A[@]}" send general 'zebra migration budget alpha' --new-topic >/dev/null 2>&1
+"${B[@]}" send general 'zebra migration budget bravo' --new-topic >/dev/null 2>&1
+"${A[@]}" search zebra migration | grep -q 'zebra migration budget alpha' || fail "search missed alice's row"
+"${A[@]}" search zebra migration | grep -q 'zebra migration budget bravo' || fail "search missed bob's row"
+"${A[@]}" search zebra migration --from bob >"$WORK/out" || fail "search --from"
+grep -q 'bravo' "$WORK/out" || fail "--from bob dropped bob's row"
+if grep -q 'alpha' "$WORK/out"; then fail "--from bob kept alice's row"; fi
+"${A[@]}" search zebra migration --from bob --from alice --json | jq_ 'len(d["results"])' | grep -q '^2$' || fail "two --from should OR to 2 rows"
+"${A[@]}" search zebra migration --in alice-only --json | jq_ 'len(d["results"])' | grep -q '^0$' || fail "--in alice-only should be empty"
+"${A[@]}" search zebra migration --before 2020-01-01 --json | jq_ 'len(d["results"])' | grep -q '^0$' || fail "--before 2020 should be empty"
+"${A[@]}" search zebra migration --after 2020-01-01 --kind message --json | jq_ 'len(d["results"])' | grep -q '^2$' || fail "--after 2020 --kind message should keep 2"
+"${A[@]}" search zebra migration --has attachment --json | jq_ 'len(d["results"])' | grep -q '^0$' || fail "--has attachment should be empty"
+if "${A[@]}" search zebra --has photos >/dev/null 2>&1; then fail "--has photos must be rejected"; fi
+"${A[@]}" search zebra migration --json | jq_ 'd["results"][0]["via"]' | grep -q '^text$' || fail "text hit should say via=text"
+ok "search: hybrid endpoint, --from/--in/--after/--before/--kind/--has"
+
 echo CLI_E2E_OK

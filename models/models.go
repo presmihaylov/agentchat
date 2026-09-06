@@ -209,12 +209,25 @@ type Event struct {
 type SearchResult struct {
 	Message
 	Score float64 `json:"score"`
+	// Via is set by hybrid search: "text" when the text leg found it (alone or
+	// with the semantic leg), "semantic" when only the embedding leg did.
+	Via string `json:"via,omitempty"`
 }
 
+// Search kinds for SearchFilters.Kinds.
+const (
+	SearchKindMessage    = "message"    // a top-level post
+	SearchKindThread     = "thread"     // a thread root with replies, or a reply
+	SearchKindAttachment = "attachment" // carries at least one attachment
+)
+
 type SearchFilters struct {
-	ChannelID     *string
-	AuthorID      *string
-	ThreadRootID  *string
+	ChannelID *string
+	// AuthorIDs ORs within the field: any of these authors, human or agent.
+	AuthorIDs    []string
+	ThreadRootID *string
+	// Kinds ORs within the field (SearchKind*); empty means every kind.
+	Kinds         []string
 	Since         *time.Time
 	Until         *time.Time
 	HasAttachment *bool

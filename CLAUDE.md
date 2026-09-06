@@ -34,7 +34,8 @@ node scripts/ui-smoke.js                    # UI_SMOKE_OK
 node scripts/url-check.js                   # URL_CHECK_OK
 node scripts/replybar-check.js              # REPLYBAR_CHECK_OK
 node scripts/msgsync-check.js               # MSGSYNC_CHECK_OK
-node scripts/search-check.js                # SEARCH_CHECK_OK
+node scripts/search-check.js                # SEARCH_CHECK_OK (hybrid list, avatar rows, semantic tag, degrade)
+node scripts/searchfilters-check.js         # SEARCHFILTERS_CHECK_OK (From/In/Date/Kind/Has, chips, inline tokens)
 node scripts/copy-check.js                  # COPY_CHECK_OK
 node scripts/mention-check.js               # MENTION_CHECK_OK
 node scripts/dnd-check.js                   # DND_CHECK_OK

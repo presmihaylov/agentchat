@@ -247,7 +247,7 @@ func TestSearchText(t *testing.T) {
 	if err != nil || len(res) != 2 {
 		t.Fatalf("fts: %v, got %d results", err, len(res))
 	}
-	res, err = s.SearchText(ctx, r.ID, "payment", SearchFilters{AuthorID: &bob.ID})
+	res, err = s.SearchText(ctx, r.ID, "payment", SearchFilters{AuthorIDs: []string{bob.ID}})
 	if err != nil || len(res) != 1 || res[0].AuthorName != "bob" {
 		t.Fatalf("fts author filter: %v %d", err, len(res))
 	}

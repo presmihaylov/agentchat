@@ -3108,74 +3108,89 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
 
   // ---------- search ----------
 
-  let semanticEnabled = null; // null until the first probe resolves
   let searchSeq = 0;          // drops stale async results when the query moves on
   let searchTimer = null;
+  // filter state: fields AND, repeats within a field OR. Dates are local
+  // YYYY-MM-DD; the request turns them into RFC3339 bounds.
+  const emptyFilters = () => ({ authors: [], channel: null, after: null, before: null, kinds: [], has: false });
+  let searchFilters = emptyFilters();
+  let lastSearchURL = ''; // the checks read the params the UI produced
 
   const openSearch = () => {
     $('search-modal').classList.remove('hidden');
     const input = $('search-input');
     input.focus();
     input.select();
-    probeSemantic();
   };
-  const closeSearch = () => $('search-modal').classList.add('hidden');
-
-  // one-shot probe of the semantic endpoint. When the provider is missing the
-  // handler answers 503 before it validates q, so a blank query cheaply tells
-  // enabled (400, q required) from disabled (503) without spending an embedding.
-  // Knowing it up front lets us grey the semantic section instead of firing a
-  // doomed embedding request on the first keystroke.
-  const probeSemantic = async () => {
-    if (semanticEnabled !== null) return;
-    try {
-      await api('/api/v1/search/semantic?q=%20&limit=1');
-      semanticEnabled = true;
-    } catch (e) {
-      semanticEnabled = e.status !== 503; // only 503 means truly off; treat transient errors as on
-    }
-    if ($('search-input').value.trim()) runSearch(); // repaint now that we know the semantic state
-  };
+  const closeSearch = () => { closeFilterPop(); $('search-modal').classList.add('hidden'); };
 
   const scheduleSearch = () => {
     clearTimeout(searchTimer);
     searchTimer = setTimeout(runSearch, 220);
   };
 
-  // One query, two sections in one panel. Text is instant and paints first;
-  // semantic round-trips an embedding, so it lazy-loads under a loading row and
-  // is deduped against the text hits when it lands. A server with no embeddings
-  // provider shows a greyed "off" note in place of the semantic list.
+  const isoDay = (d) => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  const daysAgo = (n) => { const d = new Date(); d.setDate(d.getDate() - n); return isoDay(d); };
+  const validDay = (s) => /^\d{4}-\d{2}-\d{2}$/.test(s) && !isNaN(Date.parse(s));
+  const byName = (list, name) => list.find((x) => x.name.toLowerCase() === String(name).toLowerCase());
+  const KIND_LABEL = { message: 'messages', thread: 'threads', attachment: 'attachments' };
+
+  // Slack-style inline tokens: a completed token (trailing space) that
+  // resolves lifts into a chip and leaves the box; anything else stays text.
+  const liftInlineTokens = () => {
+    const input = $('search-input');
+    let lifted = false;
+    // lookahead keeps the space, so two adjacent tokens both lift in one pass
+    const rest = input.value.replace(/(?:^|\s)(from|in|has|after|before|kind):(\S+)(?=\s)/gi, (m, key, val) => {
+      const k = key.toLowerCase();
+      const v = val.replace(/^[@#]/, '');
+      let ok = false;
+      if (k === 'from') { const p = byName(participants, v); if (p && !searchFilters.authors.includes(p.id)) searchFilters.authors.push(p.id); ok = !!p; }
+      if (k === 'in') { const c = byName(channels, v); if (c) searchFilters.channel = c.id; ok = !!c; }
+      if (k === 'has') { ok = /^attachments?$/i.test(v); if (ok) searchFilters.has = true; }
+      if (k === 'after' || k === 'before') { ok = validDay(v); if (ok) searchFilters[k] = v; }
+      if (k === 'kind') { const kind = v.replace(/s$/, ''); ok = kind in KIND_LABEL; if (ok && !searchFilters.kinds.includes(kind)) searchFilters.kinds.push(kind); }
+      if (!ok) return m;
+      lifted = true;
+      return ' ';
+    });
+    if (lifted) input.value = rest.replace(/\s{2,}/g, ' ').replace(/^\s+/, '');
+    if (lifted) renderChips();
+  };
+
+  const searchParams = (q) => {
+    const f = searchFilters;
+    const p = new URLSearchParams({ q, limit: '50' });
+    f.authors.forEach((id) => p.append('author', id));
+    if (f.channel) p.set('channel', f.channel);
+    if (f.after) p.set('since', new Date(f.after + 'T00:00:00').toISOString());
+    if (f.before) p.set('until', new Date(f.before + 'T23:59:59.999').toISOString());
+    f.kinds.forEach((k) => p.append('kind', k));
+    if (f.has) p.set('has_attachment', 'true');
+    return p.toString();
+  };
+
+  // One request, one ranked list: the server fuses the text leg and the
+  // semantic leg (when it has an embedder) and tags semantic-only rows.
   const runSearch = () => {
+    liftInlineTokens();
     const q = $('search-input').value.trim();
     const box = $('search-results');
     const seq = ++searchSeq;
-    if (!q) { box.innerHTML = ''; return; }
-
-    const state = { seq, text: 'pending', sem: semanticEnabled === false ? 'off' : 'pending', expanded: {} };
-    paintSearch(state);
-
-    api('/api/v1/search?q=' + encodeURIComponent(q) + '&limit=25')
-      .then((out) => { if (seq === searchSeq) { state.text = out.results || []; paintSearch(state); } })
-      .catch((e) => { if (seq === searchSeq) { state.text = { err: e.message }; paintSearch(state); } });
-
-    if (semanticEnabled !== false) {
-      api('/api/v1/search/semantic?q=' + encodeURIComponent(q) + '&limit=25')
-        .then((out) => { if (seq === searchSeq) { state.sem = out.results || []; paintSearch(state); } })
-        .catch((e) => {
-          if (seq !== searchSeq) return;
-          state.sem = e.status === 503 ? (semanticEnabled = false, 'off') : { err: e.message };
-          paintSearch(state);
-        });
+    if (!q) {
+      box.innerHTML = '';
+      $('search-note').classList.add('hidden');
+      if (hasFilters()) box.appendChild(searchNote('search-empty', 'Type something to search within these filters.'));
+      return;
     }
+    const state = { seq, rows: 'pending', semantic: true, expanded: false };
+    paintSearch(state);
+    lastSearchURL = '/api/v1/search/hybrid?' + searchParams(q);
+    api(lastSearchURL)
+      .then((out) => { if (seq === searchSeq) { state.rows = out.results || []; state.semantic = out.semantic !== false; paintSearch(state); } })
+      .catch((e) => { if (seq === searchSeq) { state.rows = { err: e.message }; paintSearch(state); } });
   };
 
-  const searchSection = (label) => {
-    const h = document.createElement('div');
-    h.className = 'search-section';
-    h.textContent = label;
-    return h;
-  };
   const searchNote = (cls, text) => {
     const d = document.createElement('div');
     d.className = cls;
@@ -3183,46 +3198,27 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
     return d;
   };
 
-  // Long groups collapse to a preview so both stay visible in one glance;
-  // "(see more)" expands inline for this query only, without a new request.
+  // A long list previews a few rows; "(see more)" expands inline for this
+  // query only, without a new request.
   const SEARCH_PREVIEW_ROWS = 5;
-  const appendHitGroup = (box, state, key, rows) => {
-    const shown = state.expanded[key] ? rows : rows.slice(0, SEARCH_PREVIEW_ROWS);
-    shown.forEach((r) => box.appendChild(searchHitRow(r)));
-    if (rows.length <= shown.length) return;
-    const more = document.createElement('div');
-    more.className = 'search-more';
-    more.textContent = '... (see more)';
-    more.onclick = () => { state.expanded[key] = true; paintSearch(state); };
-    box.appendChild(more);
-  };
-
   const paintSearch = (state) => {
     if (state.seq !== searchSeq) return;
     const box = $('search-results');
     box.innerHTML = '';
-    const textIds = new Set(Array.isArray(state.text) ? state.text.map((r) => r.id) : []);
-
-    box.appendChild(searchSection('Direct matches'));
-    if (state.text === 'pending') box.appendChild(searchNote('search-loading', 'Searching…'));
-    else if (state.text && state.text.err) box.appendChild(searchNote('search-empty', 'Search failed: ' + state.text.err));
-    else if (!state.text.length) box.appendChild(searchNote('search-empty', 'No direct matches.'));
-    else appendHitGroup(box, state, 'direct', state.text);
-
-    const semHead = searchSection('Related matches');
-    box.appendChild(semHead);
-    if (state.sem === 'off') {
-      semHead.classList.add('sec-off');
-      box.appendChild(searchNote('search-empty', 'Semantic search is off on this server (no embeddings provider configured).'));
-    } else if (state.sem === 'pending') {
-      box.appendChild(searchNote('search-loading', 'Searching by meaning…'));
-    } else if (state.sem && state.sem.err) {
-      box.appendChild(searchNote('search-empty', 'Semantic search failed: ' + state.sem.err));
-    } else {
-      const fresh = state.sem.filter((r) => !textIds.has(r.id)); // dedupe: a direct hit never repeats here
-      if (!fresh.length) box.appendChild(searchNote('search-empty', 'No additional related matches.'));
-      else appendHitGroup(box, state, 'related', fresh);
-    }
+    const note = $('search-note');
+    note.classList.toggle('hidden', state.semantic);
+    if (!state.semantic) note.textContent = 'Semantic search is off on this server (no embeddings provider configured); showing direct matches only.';
+    if (state.rows === 'pending') { box.appendChild(searchNote('search-loading', 'Searching…')); return; }
+    if (state.rows.err) { box.appendChild(searchNote('search-empty', 'Search failed: ' + state.rows.err)); return; }
+    if (!state.rows.length) { box.appendChild(searchNote('search-empty', hasFilters() ? 'No matches with these filters.' : 'No matches.')); return; }
+    const shown = state.expanded ? state.rows : state.rows.slice(0, SEARCH_PREVIEW_ROWS);
+    shown.forEach((r) => box.appendChild(searchHitRow(r)));
+    if (state.rows.length <= shown.length) return;
+    const more = document.createElement('div');
+    more.className = 'search-more';
+    more.textContent = '... (see more)';
+    more.onclick = () => { state.expanded = true; paintSearch(state); };
+    box.appendChild(more);
   };
 
   const snippet = (body) => {
@@ -3231,23 +3227,161 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
   };
   const fmtSearchTime = (iso) => new Date(iso).toLocaleDateString([], { month: 'short', day: 'numeric' }) + ' ' + fmtTime(iso);
 
+  // a result reads like a message row: avatar, name, time, channel, snippet
   const searchHitRow = (r) => {
     const ch = channels.find((c) => c.id === r.channel_id);
     const row = document.createElement('div');
     row.className = 'search-hit-row';
+    const av = document.createElement('div');
+    av.className = 'sh-avatar';
+    av.appendChild(avatarEl(participants.find((x) => x.id === r.author_id), 'avatar-msg'));
+    const body = document.createElement('div');
+    body.className = 'sh-body';
     const meta = document.createElement('div');
     meta.className = 'sh-meta';
-    meta.innerHTML = `<span class="sh-channel">#${esc(ch ? ch.name : 'channel')}</span>` +
-      `<span class="sh-author">${esc(r.author_name)}</span>` +
+    meta.innerHTML = `<span class="sh-author">${esc(r.author_name)}</span>` +
       `<span class="sh-time">${esc(fmtSearchTime(r.created_at))}</span>` +
-      (r.thread_root_id ? '<span class="sh-thread">in thread</span>' : '');
+      `<span class="sh-channel">#${esc(ch ? ch.name : 'channel')}</span>` +
+      (r.thread_root_id ? '<span class="sh-thread">in thread</span>' : '') +
+      (r.via === 'semantic' ? '<span class="sh-via" title="matched by meaning, not by these words">semantic</span>' : '');
     const snip = document.createElement('div');
     snip.className = 'sh-snippet';
     snip.textContent = snippet(r.body); // textContent, never markdown: search hits stay inert
-    row.append(meta, snip);
+    body.append(meta, snip);
+    row.append(av, body);
     row.onclick = () => jumpToMessage(r);
     return row;
   };
+
+  // ----- filter bar: chips + one popover -----
+  const hasFilters = () => {
+    const f = searchFilters;
+    return f.authors.length > 0 || !!f.channel || !!f.after || !!f.before || f.kinds.length > 0 || f.has;
+  };
+  const chip = (label, text, remove) => {
+    const c = document.createElement('span');
+    c.className = 'search-chip';
+    c.dataset.filter = label;
+    c.innerHTML = `<span class="chip-key">${esc(label)}:</span> <span class="chip-val">${esc(text)}</span>`;
+    const x = document.createElement('button');
+    x.type = 'button';
+    x.className = 'chip-x';
+    x.setAttribute('aria-label', 'remove ' + label + ' filter');
+    x.innerHTML = ICON.x;
+    x.onclick = () => { remove(); renderChips(); runSearch(); };
+    c.appendChild(x);
+    return c;
+  };
+  const renderChips = () => {
+    const f = searchFilters;
+    const box = $('search-chips');
+    box.replaceChildren();
+    f.authors.forEach((id) => {
+      const p = participants.find((x) => x.id === id);
+      box.appendChild(chip('from', p ? p.name : id, () => { f.authors = f.authors.filter((a) => a !== id); }));
+    });
+    if (f.channel) {
+      const c = channels.find((x) => x.id === f.channel);
+      box.appendChild(chip('in', '#' + (c ? c.name : f.channel), () => { f.channel = null; }));
+    }
+    if (f.after) box.appendChild(chip('after', f.after, () => { f.after = null; }));
+    if (f.before) box.appendChild(chip('before', f.before, () => { f.before = null; }));
+    f.kinds.forEach((k) => box.appendChild(chip('kind', KIND_LABEL[k], () => { f.kinds = f.kinds.filter((x) => x !== k); })));
+    if (f.has) box.appendChild(chip('has', 'attachment', () => { f.has = false; }));
+    box.classList.toggle('hidden', !hasFilters());
+    $('search-clear-filters').classList.toggle('hidden', !hasFilters());
+    document.querySelectorAll('#search-filters .sf-btn').forEach((b) => {
+      const on = { from: f.authors.length > 0, in: !!f.channel, date: !!(f.after || f.before), kind: f.kinds.length > 0, has: f.has }[b.dataset.sf];
+      b.classList.toggle('on', !!on);
+      b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+  };
+
+  let filterPopFor = null;
+  const closeFilterPop = () => { $('sf-pop').classList.add('hidden'); $('sf-pop').replaceChildren(); filterPopFor = null; };
+  const popOption = (label, checked, onPick, avatarOf) => {
+    const o = document.createElement('label');
+    o.className = 'sf-opt' + (checked ? ' checked' : '');
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.checked = checked;
+    cb.onchange = () => { onPick(cb.checked, cb); renderChips(); runSearch(); };
+    o.appendChild(cb);
+    if (avatarOf) o.appendChild(avatarEl(avatarOf, 'avatar-sm'));
+    const t = document.createElement('span');
+    t.className = 'sf-opt-label';
+    t.textContent = label;
+    o.appendChild(t);
+    return o;
+  };
+  const openFilterPop = (which, anchor) => {
+    if (filterPopFor === which) { closeFilterPop(); return; }
+    closeFilterPop();
+    const f = searchFilters;
+    const pop = $('sf-pop');
+    pop.dataset.for = which;
+    if (which === 'from') {
+      const people = participants.slice().sort((a, b) => (b.is_human - a.is_human) || a.name.localeCompare(b.name));
+      people.forEach((p) => pop.appendChild(popOption(p.name + (p.is_human ? '' : ' · agent'), f.authors.includes(p.id), (on) => {
+        f.authors = on ? f.authors.concat(p.id) : f.authors.filter((x) => x !== p.id);
+      }, p)));
+    }
+    if (which === 'in') {
+      // one channel at a time: picking one unticks the rest
+      channels.slice().sort((a, b) => a.name.localeCompare(b.name)).forEach((c) => pop.appendChild(popOption('#' + c.name, f.channel === c.id, (on, cb) => {
+        f.channel = on ? c.id : null;
+        pop.querySelectorAll('input').forEach((i) => { if (i !== cb) i.checked = false; });
+      })));
+    }
+    if (which === 'kind') {
+      Object.keys(KIND_LABEL).forEach((k) => pop.appendChild(popOption(KIND_LABEL[k], f.kinds.includes(k), (on) => {
+        f.kinds = on ? f.kinds.concat(k) : f.kinds.filter((x) => x !== k);
+      })));
+    }
+    if (which === 'date') {
+      const presets = document.createElement('div');
+      presets.className = 'sf-presets';
+      [['Today', 0], ['Last 7 days', 7], ['Last 30 days', 30]].forEach(([label, n]) => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'btn-sm';
+        b.dataset.preset = String(n);
+        b.textContent = label;
+        b.onclick = () => { f.after = daysAgo(n); f.before = null; renderChips(); runSearch(); closeFilterPop(); };
+        presets.appendChild(b);
+      });
+      pop.appendChild(presets);
+      const range = document.createElement('div');
+      range.className = 'sf-range';
+      [['after', 'After'], ['before', 'Before']].forEach(([key, label]) => {
+        const l = document.createElement('label');
+        l.textContent = label + ' ';
+        const i = document.createElement('input');
+        i.type = 'date';
+        i.id = 'sf-' + key;
+        i.value = f[key] || '';
+        i.onchange = () => { f[key] = validDay(i.value) ? i.value : null; renderChips(); runSearch(); };
+        l.appendChild(i);
+        range.appendChild(l);
+      });
+      pop.appendChild(range);
+    }
+    const r = anchor.getBoundingClientRect();
+    const card = $('search-card').getBoundingClientRect();
+    pop.style.left = (r.left - card.left) + 'px';
+    pop.classList.remove('hidden');
+    filterPopFor = which;
+  };
+  document.querySelectorAll('#search-filters .sf-btn').forEach((b) => {
+    b.onclick = () => {
+      if (b.dataset.sf === 'has') { searchFilters.has = !searchFilters.has; renderChips(); runSearch(); return; }
+      openFilterPop(b.dataset.sf, b);
+    };
+  });
+  $('search-clear-filters').onclick = () => { searchFilters = emptyFilters(); closeFilterPop(); renderChips(); runSearch(); };
+  document.addEventListener('mousedown', (ev) => {
+    if (filterPopFor && !ev.target.closest('#sf-pop') && !ev.target.closest('#search-filters')) closeFilterPop();
+  });
 
   // land the reader on the hit: switch channel, open its thread if it lives in
   // one, then scroll to and flash the node. Older top-level hits may sit above
@@ -3266,6 +3400,12 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
   $('search-close').onclick = closeSearch;
   $('search-modal').onclick = (ev) => { if (ev.target === $('search-modal')) closeSearch(); };
   $('search-input').addEventListener('input', scheduleSearch);
+  $('search-input').addEventListener('keydown', (ev) => {
+    // Backspace on an empty box pops the last chip, like Slack
+    if (ev.key !== 'Backspace' || $('search-input').value !== '') return;
+    const last = $('search-chips').lastElementChild;
+    if (last) last.querySelector('.chip-x').click();
+  });
 
   document.addEventListener('keydown', (ev) => {
     if ((ev.metaKey || ev.ctrlKey) && (ev.key === 'k' || ev.key === 'K')) {
@@ -3273,7 +3413,10 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
       ev.preventDefault();
       $('search-modal').classList.contains('hidden') ? openSearch() : closeSearch();
     }
-    if (ev.key === 'Escape' && !$('search-modal').classList.contains('hidden')) closeSearch();
+    if (ev.key !== 'Escape' || $('search-modal').classList.contains('hidden')) return;
+    // first Escape closes an open filter popover, the next one the modal
+    if (filterPopFor) { closeFilterPop(); return; }
+    closeSearch();
   });
 
   document.addEventListener('keydown', (ev) => {

@@ -8,7 +8,7 @@
 # thread, whether the id is the root or any reply inside it.
 set -euo pipefail
 
-VERSION="1.14.0"
+VERSION="1.15.0"
 DEFAULT_SERVER="{{SERVER}}"
 # Cloudflare Access service token, baked in by the server when the room sits
 # behind a Cloudflare tunnel. Empty otherwise. The env file can override both.
@@ -38,6 +38,11 @@ READ
   thread <message-id>            a whole thread in order
   msg <message-id>               one message
   mentions                       messages that mention you, and broadcasts
+  search <query>                 hybrid search: exact/fuzzy text hits first, then
+                                 semantic (by meaning) hits tagged "semantic";
+                                 --from H (repeatable, human or agent) --in CHANNEL
+                                 --after TS --before TS (RFC3339 or YYYY-MM-DD)
+                                 --kind message|thread|attachment --has attachment
   inbox                          drain your delivery inbox: every event addressed to
                                  you that you have not acked, oldest first (--peek
                                  only looks; the drain marks them delivered)
@@ -586,6 +591,43 @@ cmd_msg() {
   print_messages "$RESP" '[d]'
 }
 
+# search <query>: one call to the hybrid endpoint; filters AND together
+cmd_search() {
+  [ $# -ge 1 ] || die "usage: cli.sh search <query> [--from H] [--in CHANNEL] [--after TS] [--before TS] [--kind K] [--has attachment]"
+  local qs; qs=$(SEARCH_FROM_NL="$(printf '%s\n' ${SEARCH_FROM[@]+"${SEARCH_FROM[@]}"})" python3 -c '
+import sys, os, urllib.parse
+q = [("q", sys.argv[1]), ("limit", sys.argv[2])]
+q += [("author", h) for h in os.environ["SEARCH_FROM_NL"].split("\n") if h]
+a = sys.argv[3:]
+def day(v, end):
+    # a bare date means the whole day, in UTC
+    if len(v) != 10: return v
+    return v + ("T23:59:59Z" if end else "T00:00:00Z")
+while a:
+    k, v = a[0], a[1]; a = a[2:]
+    if not v: continue
+    if k == "since": v = day(v, False)
+    if k == "until": v = day(v, True)
+    q.append((k, v))
+print(urllib.parse.urlencode(q))
+' "$*" "$LIMIT" channel "$SEARCH_IN" since "$SEARCH_AFTER" until "$SEARCH_BEFORE" kind "$SEARCH_KIND" has_attachment "$SEARCH_HAS")
+  api GET "/api/v1/search/hybrid?$qs"
+  if [ "$JSON" = "1" ]; then json_pretty "$RESP"; return; fi
+  [ "$(json_str "$RESP" 'd.get("semantic")')" = "False" ] && printf 'note: semantic search is off on this server; text matches only\n' >&2
+  printf '%s' "$RESP" | python3 -c "$THREAD_TAG_PY"'
+import sys, json, textwrap
+d = json.load(sys.stdin)
+for m in d.get("results") or []:
+    when = m.get("created_at", "")[5:16].replace("T", " ") + "Z"
+    tags = [thread_tag(m)]
+    if m.get("via") == "semantic": tags.append("semantic")
+    print("%s  %s  [%s]  (%s)" % (when, m.get("author_name", "?"), m.get("id", ""), ", ".join(tags)))
+    for line in (m.get("body") or "").splitlines() or [""]:
+        print(textwrap.indent(line, "    "))
+    print()
+'
+}
+
 cursor_file() { printf '%s/cursor%s' "$(state_dir)" "$(state_key)"; }
 
 cmd_mentions() {
@@ -933,6 +975,7 @@ JSON=0; LIMIT=30; SINCE=""; WAIT=0; ORDER="oldest"; OUT="."; CHANNEL=""; FORCE_M
 NEW_TOPIC=0
 PEEK=0; LATEST=""; WRAP_CODE=0; WRAP_LANG=""; FORCE=0; BODY_FILE=""
 ENV_FILE=""; SERVER_FLAG=""; ATTACH=(); TIMEOUT=""; CALL_ERROR=""; REM_TZ=""; REM_TEXT=""; REM_SCHEDULE=""
+SEARCH_FROM=(); SEARCH_IN=""; SEARCH_AFTER=""; SEARCH_BEFORE=""; SEARCH_KIND=""; SEARCH_HAS=""
 ARGS=()
 
 while [ $# -gt 0 ]; do
@@ -952,6 +995,12 @@ while [ $# -gt 0 ]; do
     --schedule) REM_SCHEDULE="${2:?--schedule needs a value}"; shift ;;
     --error) CALL_ERROR="${2:?--error needs a message}"; shift ;;
     --channel) CHANNEL="${2:?--channel needs a name or id}"; shift ;;
+    --from) SEARCH_FROM+=("${2:?--from needs a handle}"); shift ;;
+    --in) SEARCH_IN="${2:?--in needs a channel}"; shift ;;
+    --after) SEARCH_AFTER="${2:?--after needs a timestamp}"; shift ;;
+    --before) SEARCH_BEFORE="${2:?--before needs a timestamp}"; shift ;;
+    --kind) SEARCH_KIND="${2:?--kind needs message, thread or attachment}"; shift ;;
+    --has) [ "${2:-}" = "attachment" ] || die "--has takes only: attachment"; SEARCH_HAS="true"; shift ;;
     --force-mentions) FORCE_MENTIONS=1 ;;
     --new-topic) NEW_TOPIC=1 ;;
     --peek) PEEK=1 ;;
@@ -986,6 +1035,7 @@ case "$cmd" in
   thread) cmd_thread "$@" ;;
   msg) cmd_msg "$@" ;;
   mentions) cmd_mentions "$@" ;;
+  search) cmd_search "$@" ;;
   inbox) cmd_inbox "$@" ;;
   ack) cmd_ack "$@" ;;
   channels) cmd_channels "$@" ;;

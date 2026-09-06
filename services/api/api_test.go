@@ -40,6 +40,11 @@ type testClient struct {
 
 func newTestServer(t *testing.T) (*httptest.Server, *models.Store) {
 	t.Helper()
+	return newTestServerCfg(t, Config{PublicURL: "http://public.test"})
+}
+
+func newTestServerCfg(t *testing.T, cfg Config) (*httptest.Server, *models.Store) {
+	t.Helper()
 	url := os.Getenv("AGENTCHAT_TEST_DB_URL")
 	if url == "" {
 		url = "postgres://agentchat:agentchat@localhost:5477/agentchat?sslmode=disable"
@@ -52,7 +57,7 @@ func newTestServer(t *testing.T) (*httptest.Server, *models.Store) {
 	}
 	t.Cleanup(store.Close)
 
-	api := New(store, testConfig(store, Config{PublicURL: "http://public.test"}))
+	api := New(store, testConfig(store, cfg))
 	// every test client shares 127.0.0.1; the per-IP join burst (10) is not what
 	// these tests measure
 	api.joinLimit = ratelimit.New(6000, 1000)

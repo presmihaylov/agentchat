@@ -1,11 +1,12 @@
-// E2E for the unified search panel (FR-I). One query renders TWO sections in
-// one panel: "Direct matches" (instant, fuzzy so typos still hit) on top and
-// "Related matches" (semantic; lazy-loads under a loading row) beneath. A long
-// group previews ~5 rows with a "... (see more)" inline expand. A message shown
-// in Direct does not repeat in Related. On a server with no embeddings provider
-// the Related section greys out with an "off" note; Direct still works.
+// E2E for hybrid search (task F). One query, one request to
+// /api/v1/search/hybrid, one ranked list: direct (fuzzy text) hits first,
+// semantic-only hits fill in below with a small "semantic" tag. Rows read like
+// message rows (avatar, name, time, channel, snippet). A long list previews 5
+// rows with "... (see more)". A server with no embeddings provider answers
+// semantic:false and the panel says so while text hits still render.
 // Run: NODE_PATH=<dir with puppeteer-core> SERVER=http://localhost:8095 node scripts/search-check.js
 const puppeteer = require('puppeteer-core');
+const fs = require('fs');
 const { newRoom, openAsHuman } = require('./lib/login.js');
 const SERVER = process.env.SERVER || 'http://localhost:8095';
 
@@ -27,17 +28,15 @@ async function seedLogin(page, slug, joined) {
   await openAsHuman(page, SERVER, slug, joined);
   await page.waitForSelector('#chat-view:not(.hidden)', { timeout: 6000 });
 }
-// collect the .search-hit-row snippets that sit under a given section label
-const rowsUnder = (page, label) => page.evaluate((lab) => {
-  const heads = [...document.querySelectorAll('#search-results .search-section')];
-  const head = heads.find((h) => h.textContent.trim().toLowerCase().startsWith(lab.toLowerCase()));
-  if (!head) return null;
-  const out = [];
-  for (let n = head.nextElementSibling; n && !n.classList.contains('search-section'); n = n.nextElementSibling) {
-    if (n.classList.contains('search-hit-row')) out.push(n.querySelector('.sh-snippet').textContent);
-  }
-  return out;
-}, label);
+const rows = (page) => page.evaluate(() => [...document.querySelectorAll('#search-results .search-hit-row')].map((r) => ({
+  snippet: r.querySelector('.sh-snippet').textContent,
+  author: r.querySelector('.sh-author').textContent,
+  channel: r.querySelector('.sh-channel').textContent,
+  avatar: !!r.querySelector('.sh-avatar .avatar-msg'),
+  avatarW: r.querySelector('.sh-avatar .avatar-msg') ? Math.round(r.querySelector('.sh-avatar .avatar-msg').getBoundingClientRect().width) : 0,
+  via: r.querySelector('.sh-via') ? r.querySelector('.sh-via').textContent : '',
+})));
+const retype = async (page, q) => { await page.click('#search-input', { clickCount: 3 }); await page.type('#search-input', q); };
 
 (async () => {
   const created = await newRoom(SERVER, 'search check');
@@ -57,17 +56,20 @@ const rowsUnder = (page, label) => page.evaluate((lab) => {
   await page.setViewport({ width: 1000, height: 800 });
   page.on('pageerror', (e) => { console.error('PAGEERROR', e.message); process.exitCode = 1; });
   await seedLogin(page, slug, human);
+  // the message list's avatar size is the reference for result rows
+  const msgAvatarW = await page.evaluate(() => Math.round(document.querySelector('#messages .msg .avatar-msg').getBoundingClientRect().width));
 
-  // A) open search, exact text query renders under "Direct matches"
+  // A) exact text query: the hit renders like a message row, via=text (no tag)
   await page.evaluate(() => document.getElementById('open-search').click());
   await page.waitForSelector('#search-modal:not(.hidden)', { timeout: 3000 });
   await page.type('#search-input', 'budget');
-  await page.waitForFunction(() => {
-    const rows = [...document.querySelectorAll('#search-results .search-hit-row')];
-    return rows.some((r) => r.textContent.toLowerCase().includes('budget'));
-  }, { timeout: 5000 });
-  const textRows = await rowsUnder(page, 'direct matches');
-  if (!textRows || !textRows.some((s) => s.toLowerCase().includes('budget'))) throw new Error('budget not under Direct matches: ' + JSON.stringify(textRows));
+  await page.waitForFunction(() => [...document.querySelectorAll('#search-results .search-hit-row')].some((r) => r.textContent.toLowerCase().includes('budget')), { timeout: 5000 });
+  let got = await rows(page);
+  const hit = got.find((r) => r.snippet.includes('budget'));
+  if (!hit.avatar || hit.avatarW !== msgAvatarW) throw new Error('result row lacks the message-sized avatar: ' + JSON.stringify(hit) + ' msg=' + msgAvatarW);
+  if (hit.author !== 'searchbot' || hit.channel !== '#general') throw new Error('row meta: ' + JSON.stringify(hit));
+  if (hit.via !== '') throw new Error('direct hit must not carry the semantic tag');
+  if (!got.every((r) => r.avatar)) throw new Error('every result row needs an avatar');
 
   // click-through still flashes the target message
   await page.click('#search-results .search-hit-row');
@@ -77,26 +79,17 @@ const rowsUnder = (page, label) => page.evaluate((lab) => {
     return n && n.classList.contains('msg-flash');
   }, { timeout: 3000 }, budget.id);
 
-  // A2) FUZZY: a typo of "webhook" still hits under Direct matches
+  // A2) FUZZY: a typo of "webhook" still hits as a direct (untagged) match
   await page.evaluate(() => document.getElementById('open-search').click());
   await page.waitForSelector('#search-modal:not(.hidden)', { timeout: 3000 });
-  await page.click('#search-input', { clickCount: 3 });
-  await page.type('#search-input', 'webook');
-  // wait specifically for webhook UNDER the Text section (semantic may also surface
-  // it; the point here is that fuzzy TEXT matching works), not just anywhere
-  await page.waitForFunction(() => {
-    const heads = [...document.querySelectorAll('#search-results .search-section')];
-    const head = heads.find((h) => h.textContent.trim().toLowerCase().startsWith('direct'));
-    if (!head) return false;
-    for (let n = head.nextElementSibling; n && !n.classList.contains('search-section'); n = n.nextElementSibling) {
-      if (n.classList.contains('search-hit-row') && n.textContent.toLowerCase().includes('webhook')) return true;
-    }
-    return false;
-  }, { timeout: 6000 });
+  await retype(page, 'webook');
+  await page.waitForFunction(() => [...document.querySelectorAll('#search-results .search-hit-row')]
+    .some((r) => r.textContent.toLowerCase().includes('webhook') && !r.querySelector('.sh-via')), { timeout: 6000 })
+    .catch(() => { throw new Error('fuzzy text match for webook did not land untagged'); });
 
-  // B) SEMANTIC: pre-warm the embedding, then a meaning query fills the Semantic
-  // section (which starts as a loading row). Also assert DEDUP: the budget hit,
-  // which is a text match too, appears once total.
+  // B) SEMANTIC: pre-warm the embedding, then a query that shares no word with
+  // the budget message surfaces it with the "semantic" tag; the direct query
+  // shows it once (dedup across legs) and untagged.
   let embedded = false;
   for (let i = 0; i < 25; i++) {
     const s = await api('/api/v1/search/semantic?q=' + encodeURIComponent('company financial planning'), { token: bot.token });
@@ -104,81 +97,52 @@ const rowsUnder = (page, label) => page.evaluate((lab) => {
     await new Promise((r) => setTimeout(r, 1000));
   }
   if (!embedded) throw new Error('message never embedded; semantic path cannot be verified');
-
-  await page.click('#search-input', { clickCount: 3 });
-  await page.type('#search-input', 'budget');
-  // both sections present; budget appears exactly once across all hit rows (dedup)
-  await page.waitForFunction((id) => {
-    const rows = [...document.querySelectorAll('#search-results .search-hit-row')];
-    return rows.some((r) => r.textContent.toLowerCase().includes('budget'));
-  }, { timeout: 8000 }, budget.id);
-  // give the semantic round-trip time to land, then check dedup
-  await new Promise((r) => setTimeout(r, 2500));
-  const budgetCount = await page.evaluate(() =>
-    [...document.querySelectorAll('#search-results .search-hit-row .sh-snippet')]
-      .filter((s) => s.textContent.toLowerCase().includes('budget')).length);
-  if (budgetCount !== 1) throw new Error('dedup failed: budget row count = ' + budgetCount);
-  // the Related section header exists (loaded, not greyed)
-  const semHead = await page.evaluate(() => {
-    const h = [...document.querySelectorAll('#search-results .search-section')].find((x) => x.textContent.toLowerCase().startsWith('related'));
-    return h ? { off: h.classList.contains('sec-off') } : null;
-  });
-  if (!semHead) throw new Error('no Related matches section rendered');
-  if (semHead.off) throw new Error('Related section greyed while embeddings are enabled');
+  await retype(page, 'company financial planning');
+  await page.waitForFunction(() => [...document.querySelectorAll('#search-results .search-hit-row')]
+    .some((r) => r.textContent.toLowerCase().includes('budget') && r.querySelector('.sh-via')), { timeout: 8000 })
+    .catch(() => { throw new Error('semantic-only query did not surface the budget row with a semantic tag'); });
+  const note = await page.evaluate(() => document.querySelector('#search-note').classList.contains('hidden'));
+  if (!note) throw new Error('off note shown while embeddings are enabled');
+  if (process.env.OUT) { fs.mkdirSync(process.env.OUT, { recursive: true }); await page.screenshot({ path: process.env.OUT + '/search-semantic.png' }); }
+  await retype(page, 'budget');
+  await page.waitForFunction(() => [...document.querySelectorAll('#search-results .search-hit-row')].some((r) => r.textContent.toLowerCase().includes('budget')), { timeout: 8000 });
+  await new Promise((r) => setTimeout(r, 1500));
+  got = await rows(page);
+  const budgetRows = got.filter((r) => r.snippet.includes('budget'));
+  if (budgetRows.length !== 1 || budgetRows[0].via !== '') throw new Error('dedup/rank: ' + JSON.stringify(budgetRows));
+  if (got[0].snippet !== budgetRows[0].snippet) throw new Error('exact hit must rank first, got ' + JSON.stringify(got[0]));
 
   // B2) SEE-MORE: 7 direct hits preview as 5 rows + "... (see more)"; the click
-  // expands the group inline to all 7 without a new query.
-  await page.click('#search-input', { clickCount: 3 });
-  await page.type('#search-input', 'sprint retro notes');
-  // wait for the FINAL paint (typing debounces per keystroke): 5 preview rows
-  // under Direct plus a see-more row
+  // expands inline to all 7 without a new query.
+  await retype(page, 'sprint retro notes');
   await page.waitForFunction(() => {
-    const heads = [...document.querySelectorAll('#search-results .search-section')];
-    const head = heads.find((h) => h.textContent.trim().toLowerCase().startsWith('direct'));
-    if (!head) return false;
-    let count = 0;
-    let more = false;
-    for (let n = head.nextElementSibling; n && !n.classList.contains('search-section'); n = n.nextElementSibling) {
-      if (n.classList.contains('search-hit-row') && n.textContent.toLowerCase().includes('sprint')) count++;
-      if (n.classList.contains('search-more')) more = true;
-    }
-    return count === 5 && more;
-  }, { timeout: 8000 }).catch(() => { throw new Error('7-hit group never previewed as 5 rows + see-more'); });
+    const n = [...document.querySelectorAll('#search-results .search-hit-row')].filter((r) => r.textContent.includes('sprint')).length;
+    return n === 5 && !!document.querySelector('#search-results .search-more');
+  }, { timeout: 8000 }).catch(() => { throw new Error('7-hit list never previewed as 5 rows + see-more'); });
   await page.evaluate(() => document.querySelector('#search-results .search-more').click());
-  await page.waitForFunction(() => {
-    const heads = [...document.querySelectorAll('#search-results .search-section')];
-    const head = heads.find((h) => h.textContent.trim().toLowerCase().startsWith('direct'));
-    let count = 0;
-    for (let n = head.nextElementSibling; n && !n.classList.contains('search-section'); n = n.nextElementSibling) {
-      if (n.classList.contains('search-hit-row')) count++;
-    }
-    return count === 7;
-  }, { timeout: 4000 }).catch(() => { throw new Error('see-more did not expand to 7 rows'); });
+  await page.waitForFunction(() => document.querySelectorAll('#search-results .search-hit-row').length === 7 && !document.querySelector('#search-results .search-more'), { timeout: 4000 })
+    .catch(() => { throw new Error('see-more did not expand to 7 rows'); });
   await browser.close();
 
-  // C) DEGRADE: semantic endpoint answers 503 -> Related section greys with an
-  // "off" note; Direct section still returns results.
+  // C) DEGRADE: the server answers semantic:false -> the panel says semantic is
+  // off; the text hit still renders.
   const b2 = await launch();
   const p2 = await b2.newPage();
   await p2.setRequestInterception(true);
   p2.on('request', (req) => {
-    if (req.url().includes('/api/v1/search/semantic')) {
-      req.respond({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'semantic search is disabled (no embeddings provider configured)' }) });
-      return;
-    }
-    req.continue();
+    if (!req.url().includes('/api/v1/search/hybrid')) { req.continue(); return; }
+    req.respond({ status: 200, contentType: 'application/json', body: JSON.stringify({ semantic: false, results: [Object.assign({}, budget, { author_name: 'searchbot', score: 1, via: 'text' })] }) });
   });
   await seedLogin(p2, slug, human);
   await p2.evaluate(() => document.getElementById('open-search').click());
   await p2.waitForSelector('#search-modal:not(.hidden)', { timeout: 3000 });
   await p2.type('#search-input', 'budget');
   await p2.waitForFunction(() => {
-    const h = [...document.querySelectorAll('#search-results .search-section')].find((x) => x.textContent.toLowerCase().startsWith('related'));
-    const off = h && h.classList.contains('sec-off');
-    const note = [...document.querySelectorAll('#search-results .search-empty')].some((n) => n.textContent.toLowerCase().includes('off on this server'));
-    const textHit = [...document.querySelectorAll('#search-results .search-hit-row')].some((r) => r.textContent.toLowerCase().includes('budget'));
-    return off && note && textHit;
-  }, { timeout: 6000 });
+    const note = document.querySelector('#search-note');
+    const off = !note.classList.contains('hidden') && note.textContent.toLowerCase().includes('off on this server');
+    const textHit = [...document.querySelectorAll('#search-results .search-hit-row')].some((r) => r.textContent.toLowerCase().includes('budget') && !r.querySelector('.sh-via'));
+    return off && textHit;
+  }, { timeout: 6000 }).catch(() => { throw new Error('semantic:false did not show the off note with the text hit'); });
   await b2.close();
 
   if (!process.exitCode) console.log('SEARCH_CHECK_OK');

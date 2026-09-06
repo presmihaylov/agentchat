@@ -240,6 +240,7 @@ func (s *Server) routes() {
 
 	m.HandleFunc("GET /api/v1/search", s.authed(s.handleSearchText))
 	m.HandleFunc("GET /api/v1/search/semantic", s.authed(s.handleSearchSemantic))
+	m.HandleFunc("GET /api/v1/search/hybrid", s.authed(s.handleSearchHybrid))
 }
 
 type authedHandler func(w http.ResponseWriter, r *http.Request, p models.Participant)

@@ -103,3 +103,24 @@ func (s *Store) ResetStaleEmbeddings(ctx context.Context) error {
 		   AND (embed_claimed_at IS NULL OR embed_claimed_at < now() - interval '5 minutes')`)
 	return err
 }
+
+// PutEmbedding writes a vector regardless of queue state and marks the row
+// done. For tests and repair tools; the worker path is SaveEmbedding.
+func (s *Store) PutEmbedding(ctx context.Context, messageID string, embedding []float32) error {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	if _, err := tx.Exec(ctx, `UPDATE messages SET embed_status = 'done' WHERE id = $1`, messageID); err != nil {
+		return err
+	}
+	_, err = tx.Exec(ctx,
+		`INSERT INTO message_embeddings (message_id, embedding) VALUES ($1, $2)
+		 ON CONFLICT (message_id) DO UPDATE SET embedding = EXCLUDED.embedding`,
+		messageID, pgvector.NewVector(embedding))
+	if err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
