@@ -9,7 +9,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const puppeteer = require('puppeteer-core');
-const { newRoom, enterAs, loginPage, enterWithCode, openSettings, openInviteModal, backToRoom, PASSWORD, sleep } = require('./lib/login.js');
+const { newRoom, enterAs, loginPage, enterWithCode, openSettings, openInviteModal, backToRoom, createRoom, switchTo, call, PASSWORD, sleep } = require('./lib/login.js');
 const SERVER = process.env.SERVER || 'http://localhost:8095';
 const OUT = process.env.OUT || 'tmp';
 
@@ -198,6 +198,45 @@ const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR
   await page.screenshot({ path: path.join(OUT, 'ws-menu-mute.png') });
   await page.click('#ws-menu-mute');
   await page.waitForFunction((s) => !document.querySelector('#rail-list .rail-item[data-slug="' + s + '"]').classList.contains('is-muted'), { timeout: 5000 }, slug);
+
+  // 6c. REGRESSION (Maya): with two workspaces, Settings > Workspace must show and
+  // edit the workspace that is focused in the rail, not the first one. The menu
+  // link used to bake ?next= in at mount time, before the switch pushed its URL.
+  const second = await createRoom(SERVER, adminSession, 'Second workspace');
+  const slug2 = second.room.slug;
+  await page.reload({ waitUntil: 'networkidle2' });
+  await page.waitForSelector('#chat-view:not(.hidden)', { timeout: 8000 });
+  await switchTo(page, slug2);
+  await page.click('#ws-switcher');
+  await page.waitForSelector('#ws-menu:not(.hidden)', { timeout: 4000 });
+  // the href attribute itself must be right once the menu is open (middle-click, copy link address)
+  const liveHref = await page.$eval('#ws-menu a[href^="/settings"]', (a) => a.getAttribute('href'));
+  assert(decodeURIComponent(liveHref).includes('next=/w/' + slug2), 'open menu holds a stale settings href: ' + liveHref);
+  await Promise.all([page.waitForNavigation({ waitUntil: 'networkidle2' }), page.click('#ws-menu a[href^="/settings"]')]);
+  await page.waitForSelector('#settings-view:not(.hidden)', { timeout: 8000 });
+  assert(new URL(page.url()).searchParams.get('next').startsWith('/w/' + slug2), 'settings link points at the wrong workspace: ' + page.url());
+  await page.click('#tab-workspace');
+  await page.waitForSelector('#ws-panel:not(.hidden)', { timeout: 8000 });
+  await page.waitForFunction(() => document.getElementById('ws-name').value !== '', { timeout: 8000 });
+  assert((await page.$eval('#ws-name', (el) => el.value)) === 'Second workspace', 'Workspace tab shows the wrong workspace: ' + await page.$eval('#ws-name', (el) => el.value));
+  assert(await page.$eval('#ws-slug', (el) => el.value).then((v) => v.endsWith('/w/' + slug2)), 'link shows the wrong slug');
+  await page.$eval('#ws-name', (el) => { el.value = ''; });
+  await page.type('#ws-name', 'Second renamed');
+  await page.click('#ws-name-save');
+  await page.waitForSelector('#ws-name-ok:not(.hidden)', { timeout: 8000 });
+  const wsHeaders = (s) => ({ 'X-Workspace-Slug': s });
+  const first = await call(SERVER, '/api/v1/room', { token: adminSession, headers: wsHeaders(slug) });
+  const renamed = await call(SERVER, '/api/v1/room', { token: adminSession, headers: wsHeaders(slug2) });
+  assert(renamed.room.name === 'Second renamed', 'Save did not rename the second workspace: ' + JSON.stringify(renamed));
+  assert(first.room.name === 'Renamed by settings', 'Save touched the first workspace: ' + JSON.stringify(first));
+  // the personal menu's Settings door is bound the same way: two warm switches
+  // without a reload, so the footer mounted while the URL still named the first
+  await backToRoom(page);
+  await switchTo(page, slug);
+  await switchTo(page, slug2);
+  const meHref = await page.evaluate(() => { document.getElementById('me-footer').click(); return document.getElementById('me-settings').getAttribute('href'); });
+  assert(decodeURIComponent(meHref).includes('next=/w/' + slug2), 'personal Settings link points at the wrong workspace: ' + meHref);
+  await page.keyboard.press('Escape');
 
   // 7. sign out from Personal lands on /login
   await openSettings(page, SERVER);

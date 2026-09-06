@@ -2381,6 +2381,9 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
 
   // ---------- workspace switcher (session users only) ----------
 
+  // /settings binds its Workspace tab to the room in ?next=: always the page we
+  // are on right now, never a path captured at mount time
+  const settingsHref = (tab) => '/settings?' + (tab ? 'tab=' + tab + '&' : '') + 'next=' + encodeURIComponent(location.pathname + location.search);
   const wsMenuItem = (label, opts = {}) => {
     const el = document.createElement(opts.href ? 'a' : 'button');
     el.className = 'ws-item' + (opts.current ? ' current' : '');
@@ -2390,7 +2393,10 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
     text.className = 'ws-label';
     text.textContent = label;
     el.appendChild(text);
-    if (opts.href) el.href = opts.href;
+    // a function href resolves on click: the menu mounts before a warm switch
+    // pushes its URL, so a baked-in ?next= would name the previous workspace
+    if (typeof opts.href === 'function') { el.href = opts.href(); el.dataset.liveHref = '1'; el._resolveHref = () => { el.href = opts.href(); }; }
+    if (opts.href && typeof opts.href !== 'function') el.href = opts.href;
     if (!opts.href) el.type = 'button';
     if (opts.onclick) el.onclick = opts.onclick;
     if (opts.id) el.id = opts.id;
@@ -2405,7 +2411,11 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
     return el;
   };
 
+  // live hrefs (Settings) resolve when the menu opens, so middle-click and
+  // "copy link address" see the workspace on screen, not the one at mount
+  const resolveLiveHrefs = (menu) => menu.querySelectorAll('[data-live-href]').forEach((a) => a._resolveHref());
   const setMenuOpen = (open) => {
+    if (open) resolveLiveHrefs($('ws-menu'));
     $('ws-menu').classList.toggle('hidden', !open);
     $('ws-switcher').setAttribute('aria-expanded', open ? 'true' : 'false');
   };
@@ -2413,7 +2423,6 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
   // the rail is the switcher; this menu holds only the workspace actions (Maya,
   // msg c61adc39); Create workspace lives on the rail's + alone (Maya, 2026-09-05)
   const mountMenu = () => {
-    const here = location.pathname + location.search;
     const menu = $('ws-menu');
     menu.innerHTML = '';
     // only admins get the code from /room, and only they may hand it out
@@ -2423,7 +2432,7 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
     // menu), not in Personal settings (Maya, msg d4c52ff2)
     const ws = room && railEntry(room.slug);
     if (ws) menu.appendChild(wsMenuItem(ws.muted ? 'Unmute workspace' : 'Mute workspace', { id: 'ws-menu-mute', icon: ws.muted ? ICON.bell : ICON.bellOff, onclick: () => { setMenuOpen(false); setWorkspaceMuted(ws, !ws.muted); } }));
-    menu.appendChild(wsMenuItem('Settings', { icon: ICON.settings, href: '/settings?next=' + encodeURIComponent(here) }));
+    menu.appendChild(wsMenuItem('Settings', { icon: ICON.settings, href: () => settingsHref() }));
     $('ws-current').textContent = room.name;
     paintRoomMark();
   };
@@ -2442,6 +2451,7 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
   // the profile row at the foot of the sidebar: avatar with a status dot, the
   // name; the hover background says it is clickable, a click opens the personal menu
   const setMeMenuOpen = (open) => {
+    if (open) resolveLiveHrefs($('me-menu'));
     $('me-menu').classList.toggle('hidden', !open);
     $('me-footer').setAttribute('aria-expanded', open ? 'true' : 'false');
     // the menu sits above the button in the DOM, so Tab would leave it; land on the first item
@@ -2461,11 +2471,10 @@ import { sessionToken, isAccountPage, loginURL, onSessionInvalid, backTarget, fe
     name.className = 'me-name';
     name.textContent = me.name; // the role lives in Members and settings
     foot.append(wrap, name);
-    const here = location.pathname + location.search;
     const menu = $('me-menu');
     menu.replaceChildren();
     menu.appendChild(wsMenuItem('View profile', { id: 'me-profile', onclick: () => { setMeMenuOpen(false); showProfile(me); } }));
-    menu.appendChild(wsMenuItem('Settings', { id: 'me-settings', href: '/settings?tab=personal&next=' + encodeURIComponent(here) }));
+    menu.appendChild(wsMenuItem('Settings', { id: 'me-settings', href: () => settingsHref('personal') }));
     menu.appendChild(wsMenuItem('Sign out', { id: 'me-signout', onclick: () => { setMeMenuOpen(false); signOut(); } }));
   };
 
